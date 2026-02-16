@@ -1,0 +1,67 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 216 43% 97%;
+    --foreground: 218 25% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 218 25% 11%;
+    --primary: 209 28% 43%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 36% 97%;
+    --secondary-foreground: 217 22% 24%;
+    --muted: 210 36% 97%;
+    --muted-foreground: 215 12% 52%;
+    --accent: 208 38% 95%;
+    --accent-foreground: 217 22% 24%;
+    --destructive: 6 61% 46%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 216 27% 90%;
+    --input: 216 27% 90%;
+    --ring: 209 28% 43%;
+    --radius: 12px;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply m-0 bg-background font-sans text-foreground antialiased;
+    background-image: radial-gradient(circle at top left, #f8fbff, hsl(var(--background)));
+  }
+}
+
+@layer components {
+  .app-window-drag-layer {
+    position: absolute;
+    left: 320px;
+    right: 0;
+    top: 0;
+    height: 25%;
+    z-index: 30;
+    -webkit-app-region: drag;
+  }
+
+  .app-shell button,
+  .app-shell input,
+  .app-shell textarea,
+  .app-shell select,
+  .app-shell a,
+  .app-shell [role="button"],
+  .app-shell [data-no-drag="true"] {
+    position: relative;
+    z-index: 40;
+    -webkit-app-region: no-drag;
+  }
+}
