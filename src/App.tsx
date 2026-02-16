@@ -227,6 +227,20 @@ export const App = () => {
     );
   };
 
+  const removeAssistantPlaceholderIfEmpty = (sessionId: string, messageId: string) => {
+    upsertSession(sessionId, (session) => {
+      const target = session.messages.find((message) => message.id === messageId);
+      if (!target || target.role !== "assistant" || target.content.trim()) {
+        return session;
+      }
+      return {
+        ...session,
+        updatedAt: nowIso(),
+        messages: session.messages.filter((message) => message.id !== messageId)
+      };
+    });
+  };
+
   const clearDraftAttachments = () => {
     setDraftAttachments((previous) => {
       previous.forEach(revokeAttachmentPreview);
@@ -687,18 +701,21 @@ export const App = () => {
 
         if (event.type === "error") {
           flushPendingDelta();
+          removeAssistantPlaceholderIfEmpty(streamState.sessionId, streamState.assistantMessageId);
           setErrorBanner(event.message);
           finishActiveStream();
           return;
         }
 
         flushPendingDelta();
+        removeAssistantPlaceholderIfEmpty(streamState.sessionId, streamState.assistantMessageId);
         finishActiveStream();
       });
 
       streamState.unsubscribe = unsubscribe;
       activeStreamRef.current = streamState;
     } catch (error) {
+      removeAssistantPlaceholderIfEmpty(session.id, assistantMessage.id);
       setErrorBanner(error instanceof Error ? error.message : "Failed to start streaming.");
       setIsGenerating(false);
     }

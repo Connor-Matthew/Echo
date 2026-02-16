@@ -32,6 +32,10 @@ export type MuApi = {
 
 const SETTINGS_KEY = "mu.settings.v1";
 const SESSIONS_KEY = "mu.sessions.v1";
+const MIN_REQUEST_TIMEOUT_MS = 5000;
+const MAX_REQUEST_TIMEOUT_MS = 180000;
+const MIN_RETRY_COUNT = 0;
+const MAX_RETRY_COUNT = 3;
 
 const readLocalStorage = <T>(key: string, fallback: T): T => {
   try {
@@ -86,6 +90,71 @@ const extractModelIds = (payload: unknown): string[] => {
     a.localeCompare(b)
   );
 };
+
+const clampInteger = (value: number, min: number, max: number, fallback: number) => {
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, Math.round(value)));
+};
+
+const normalizeRequestTimeoutMs = (value: number) =>
+  clampInteger(value, MIN_REQUEST_TIMEOUT_MS, MAX_REQUEST_TIMEOUT_MS, DEFAULT_SETTINGS.requestTimeoutMs);
+
+const normalizeRetryCount = (value: number) =>
+  clampInteger(value, MIN_RETRY_COUNT, MAX_RETRY_COUNT, DEFAULT_SETTINGS.retryCount);
+
+const isAbortError = (error: unknown): error is Error =>
+  error instanceof Error && error.name === "AbortError";
+
+const runStreamWithTimeout = async (
+  signal: AbortSignal,
+  timeoutMs: number,
+  execute: (attemptSignal: AbortSignal) => Promise<void>
+) => {
+  if (timeoutMs <= 0) {
+    await execute(signal);
+    return;
+  }
+
+  const attemptController = new AbortController();
+  let didTimeout = false;
+  const syncAbortState = () => {
+    attemptController.abort();
+  };
+
+  if (signal.aborted) {
+    attemptController.abort();
+  } else {
+    signal.addEventListener("abort", syncAbortState, { once: true });
+  }
+
+  const timeoutId = window.setTimeout(() => {
+    didTimeout = true;
+    attemptController.abort();
+  }, timeoutMs);
+
+  try {
+    await execute(attemptController.signal);
+  } catch (error) {
+    if (didTimeout && isAbortError(error)) {
+      throw new Error(`Request timed out after ${timeoutMs} ms.`);
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
+    signal.removeEventListener("abort", syncAbortState);
+  }
+};
+
+const createSseDebugLogger =
+  (enabled: boolean, streamId: string) =>
+  (...parts: unknown[]) => {
+    if (!enabled) {
+      return;
+    }
+    console.info(`[sse:${streamId}]`, ...parts);
+  };
 
 const createBrowserFallbackApi = (): MuApi => {
   const listeners = new Map<string, Set<(event: ChatStreamEvent) => void>>();
@@ -201,120 +270,182 @@ const createBrowserFallbackApi = (): MuApi => {
         const controller = new AbortController();
         controllers.set(streamId, controller);
         listeners.set(streamId, listeners.get(streamId) ?? new Set());
+        const timeoutMs = normalizeRequestTimeoutMs(settings.requestTimeoutMs);
+        const retryCount = normalizeRetryCount(settings.retryCount);
+        const debug = createSseDebugLogger(Boolean(settings.sseDebug), streamId);
 
         void (async () => {
-          try {
-            const isAnthropic = settings.providerType === "anthropic";
-            const endpoint = isAnthropic
-              ? resolveAnthropicEndpoint(baseUrl, "messages")
-              : `${baseUrl}/chat/completions`;
-            const body = isAnthropic
-              ? (() => {
-                  const system = messages
-                    .filter((message) => message.role === "system")
-                    .map((message) => message.content.trim())
-                    .filter(Boolean)
-                    .join("\n\n");
-                  return {
-                    model: settings.model.trim(),
-                    stream: true,
-                    max_tokens: settings.maxTokens,
-                    temperature: settings.temperature,
-                    system: system || undefined,
-                    messages: messages
-                      .filter((message) => message.role !== "system" && Boolean(message.content.trim()))
-                      .map((message) => ({
-                        role: message.role as "user" | "assistant",
-                        content: [{ type: "text", text: message.content }]
-                      }))
-                  };
-                })()
-              : {
+          const isAnthropic = settings.providerType === "anthropic";
+          const endpoint = isAnthropic
+            ? resolveAnthropicEndpoint(baseUrl, "messages")
+            : `${baseUrl}/chat/completions`;
+          const body = isAnthropic
+            ? (() => {
+                const system = messages
+                  .filter((message) => message.role === "system")
+                  .map((message) => message.content.trim())
+                  .filter(Boolean)
+                  .join("\n\n");
+                return {
                   model: settings.model.trim(),
                   stream: true,
-                  messages
+                  max_tokens: settings.maxTokens,
+                  temperature: settings.temperature,
+                  system: system || undefined,
+                  messages: messages
+                    .filter((message) => message.role !== "system" && Boolean(message.content.trim()))
+                    .map((message) => ({
+                      role: message.role as "user" | "assistant",
+                      content: [{ type: "text", text: message.content }]
+                    }))
                 };
-            const headers: Record<string, string> = isAnthropic
-              ? {
-                  "Content-Type": "application/json",
-                  "x-api-key": settings.apiKey.trim(),
-                  "anthropic-version": "2023-06-01"
-                }
-              : {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${settings.apiKey.trim()}`
-                };
-            const response = await fetch(endpoint, {
-              method: "POST",
-              headers,
-              signal: controller.signal,
-              body: JSON.stringify(body)
-            });
-
-            if (!response.ok || !response.body) {
-              throw new Error(`Request failed: ${response.status}`);
-            }
-
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = "";
-
-            while (true) {
-              const { value, done } = await reader.read();
-              if (done) {
-                emit(streamId, { type: "done" });
-                break;
+              })()
+            : {
+                model: settings.model.trim(),
+                stream: true,
+                messages
+              };
+          const headers: Record<string, string> = isAnthropic
+            ? {
+                "Content-Type": "application/json",
+                "x-api-key": settings.apiKey.trim(),
+                "anthropic-version": "2023-06-01"
               }
-              buffer += decoder.decode(value, { stream: true });
-              const lines = buffer.split(/\r?\n/);
-              buffer = lines.pop() ?? "";
+            : {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${settings.apiKey.trim()}`
+              };
 
-              for (const line of lines) {
-                const trimmed = line.trim();
-                if (!trimmed.startsWith("data:")) {
-                  continue;
+          let attempt = 0;
+
+          while (attempt <= retryCount) {
+            let emittedDelta = false;
+            const attemptNumber = attempt + 1;
+            debug(`attempt ${attemptNumber}/${retryCount + 1} started`);
+
+            try {
+              await runStreamWithTimeout(controller.signal, timeoutMs, async (attemptSignal) => {
+                const response = await fetch(endpoint, {
+                  method: "POST",
+                  headers,
+                  signal: attemptSignal,
+                  body: JSON.stringify(body)
+                });
+
+                if (!response.ok || !response.body) {
+                  const detail = await response.text().catch(() => "");
+                  throw new Error(
+                    `Request failed: HTTP ${response.status}${detail ? `: ${detail.slice(0, 160)}` : ""}`
+                  );
                 }
-                const data = trimmed.slice(5).trim();
-                if (data === "[DONE]") {
-                  emit(streamId, { type: "done" });
-                  break;
-                }
-                try {
-                  const parsed = JSON.parse(data) as {
-                    choices?: Array<{ delta?: { content?: string }; finish_reason?: string }>;
-                    type?: string;
-                    delta?: { text?: string };
-                  };
-                  const delta = isAnthropic
-                    ? parsed.delta?.text
-                    : parsed.choices?.[0]?.delta?.content;
-                  if (delta) {
-                    emit(streamId, { type: "delta", delta });
-                  }
-                  if (
-                    (!isAnthropic && parsed.choices?.[0]?.finish_reason) ||
-                    (isAnthropic && parsed.type === "message_stop")
-                  ) {
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = "";
+
+                while (true) {
+                  const { value, done } = await reader.read();
+                  if (done) {
                     emit(streamId, { type: "done" });
+                    return;
                   }
-                } catch {
-                  continue;
+
+                  buffer += decoder.decode(value, { stream: true });
+                  const lines = buffer.split(/\r?\n/);
+                  buffer = lines.pop() ?? "";
+
+                  for (const line of lines) {
+                    const trimmed = line.trim();
+                    if (!trimmed.startsWith("data:")) {
+                      continue;
+                    }
+
+                    const data = trimmed.slice(5).trim();
+                    if (isAnthropic) {
+                      if (!data || data === "[DONE]") {
+                        emit(streamId, { type: "done" });
+                        return;
+                      }
+                    } else {
+                      if (data === "[DONE]") {
+                        emit(streamId, { type: "done" });
+                        return;
+                      }
+                      if (!data) {
+                        continue;
+                      }
+                    }
+
+                    try {
+                      const parsed = JSON.parse(data) as {
+                        choices?: Array<{ delta?: { content?: string }; finish_reason?: string }>;
+                        type?: string;
+                        delta?: { text?: string };
+                        error?: { message?: string };
+                      };
+
+                      if (isAnthropic && parsed.type === "error") {
+                        emit(streamId, {
+                          type: "error",
+                          message: parsed.error?.message || "Streaming failed."
+                        });
+                        emit(streamId, { type: "done" });
+                        return;
+                      }
+
+                      if (!isAnthropic && parsed.error?.message) {
+                        emit(streamId, { type: "error", message: parsed.error.message });
+                        emit(streamId, { type: "done" });
+                        return;
+                      }
+
+                      const delta = isAnthropic
+                        ? parsed.delta?.text
+                        : parsed.choices?.[0]?.delta?.content;
+                      if (delta) {
+                        emittedDelta = true;
+                        emit(streamId, { type: "delta", delta });
+                      }
+
+                      if (
+                        (!isAnthropic && parsed.choices?.[0]?.finish_reason) ||
+                        (isAnthropic && parsed.type === "message_stop")
+                      ) {
+                        emit(streamId, { type: "done" });
+                        return;
+                      }
+                    } catch {
+                      continue;
+                    }
+                  }
                 }
-              }
-            }
-          } catch (error) {
-            if ((error as Error).name === "AbortError") {
-              emit(streamId, { type: "done" });
-            } else {
-              emit(streamId, {
-                type: "error",
-                message: error instanceof Error ? error.message : "Streaming failed."
               });
+
+              debug(`attempt ${attemptNumber} completed`, { emittedDelta });
+              return;
+            } catch (error) {
+              if (controller.signal.aborted && isAbortError(error)) {
+                debug("aborted by user");
+                emit(streamId, { type: "done" });
+                return;
+              }
+
+              const message = error instanceof Error ? error.message : "Streaming failed.";
+              const shouldRetry = attempt < retryCount && !emittedDelta;
+              debug(`attempt ${attemptNumber} failed`, { message, emittedDelta, shouldRetry });
+              if (shouldRetry) {
+                attempt += 1;
+                continue;
+              }
+
+              emit(streamId, { type: "error", message });
+              return;
             }
-          } finally {
-            controllers.delete(streamId);
           }
-        })();
+        })()
+          .finally(() => {
+            controllers.delete(streamId);
+          });
 
         return { streamId };
       },

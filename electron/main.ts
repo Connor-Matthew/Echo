@@ -17,6 +17,10 @@ const STORE_DIR_NAME = "store";
 const SETTINGS_FILE = "settings.json";
 const SESSIONS_FILE = "sessions.json";
 const STREAM_EVENT_CHANNEL = "chat:stream:event";
+const MIN_REQUEST_TIMEOUT_MS = 5000;
+const MAX_REQUEST_TIMEOUT_MS = 180000;
+const MIN_RETRY_COUNT = 0;
+const MAX_RETRY_COUNT = 3;
 
 const streamControllers = new Map<string, AbortController>();
 
@@ -93,6 +97,71 @@ const extractModelIds = (payload: unknown): string[] => {
 const isSettingsConfigured = (settings: AppSettings) =>
   Boolean(settings.baseUrl.trim() && settings.apiKey.trim() && settings.model.trim());
 
+const clampInteger = (value: number, min: number, max: number, fallback: number) => {
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, Math.round(value)));
+};
+
+const normalizeRequestTimeoutMs = (value: number) =>
+  clampInteger(value, MIN_REQUEST_TIMEOUT_MS, MAX_REQUEST_TIMEOUT_MS, DEFAULT_SETTINGS.requestTimeoutMs);
+
+const normalizeRetryCount = (value: number) =>
+  clampInteger(value, MIN_RETRY_COUNT, MAX_RETRY_COUNT, DEFAULT_SETTINGS.retryCount);
+
+const isAbortError = (error: unknown): error is Error =>
+  error instanceof Error && error.name === "AbortError";
+
+const runStreamWithTimeout = async (
+  signal: AbortSignal,
+  timeoutMs: number,
+  execute: (attemptSignal: AbortSignal) => Promise<void>
+) => {
+  if (timeoutMs <= 0) {
+    await execute(signal);
+    return;
+  }
+
+  const attemptController = new AbortController();
+  let didTimeout = false;
+  const syncAbortState = () => {
+    attemptController.abort();
+  };
+
+  if (signal.aborted) {
+    attemptController.abort();
+  } else {
+    signal.addEventListener("abort", syncAbortState, { once: true });
+  }
+
+  const timeoutId = setTimeout(() => {
+    didTimeout = true;
+    attemptController.abort();
+  }, timeoutMs);
+
+  try {
+    await execute(attemptController.signal);
+  } catch (error) {
+    if (didTimeout && isAbortError(error)) {
+      throw new Error(`Request timed out after ${timeoutMs} ms.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+    signal.removeEventListener("abort", syncAbortState);
+  }
+};
+
+const createSseDebugLogger =
+  (enabled: boolean, streamId: string) =>
+  (...parts: unknown[]) => {
+    if (!enabled) {
+      return;
+    }
+    console.info(`[sse:${streamId}]`, ...parts);
+  };
+
 const fetchModelIds = async (settings: AppSettings): Promise<ModelListResult> => {
   const baseUrl = normalizeBaseUrl(settings.baseUrl);
   if (!baseUrl || !settings.apiKey.trim()) {
@@ -162,7 +231,8 @@ const streamOpenAICompatible = async (
   sender: IpcMainInvokeEvent["sender"],
   streamId: string,
   payload: ChatStreamRequest,
-  signal: AbortSignal
+  signal: AbortSignal,
+  onDelta?: () => void
 ) => {
   const baseUrl = normalizeBaseUrl(payload.settings.baseUrl);
   const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -241,6 +311,7 @@ const streamOpenAICompatible = async (
 
         const delta = parsed.choices?.[0]?.delta?.content;
         if (delta) {
+          onDelta?.();
           sendStreamEvent(sender, streamId, { type: "delta", delta });
         }
 
@@ -259,7 +330,8 @@ const streamAnthropic = async (
   sender: IpcMainInvokeEvent["sender"],
   streamId: string,
   payload: ChatStreamRequest,
-  signal: AbortSignal
+  signal: AbortSignal,
+  onDelta?: () => void
 ) => {
   const endpoint = resolveAnthropicEndpoint(payload.settings.baseUrl, "messages");
   const systemPrompt = payload.messages
@@ -352,6 +424,7 @@ const streamAnthropic = async (
 
         const delta = parsed.delta?.text;
         if (delta) {
+          onDelta?.();
           sendStreamEvent(sender, streamId, { type: "delta", delta });
         }
 
@@ -412,18 +485,46 @@ const registerIpcHandlers = () => {
 
       const stream =
         payload.settings.providerType === "anthropic" ? streamAnthropic : streamOpenAICompatible;
+      const timeoutMs = normalizeRequestTimeoutMs(payload.settings.requestTimeoutMs);
+      const retryCount = normalizeRetryCount(payload.settings.retryCount);
+      const debug = createSseDebugLogger(Boolean(payload.settings.sseDebug), streamId);
 
-      void stream(event.sender, streamId, payload, controller.signal)
-        .catch((error) => {
-          if (error instanceof Error && error.name === "AbortError") {
-            sendStreamEvent(event.sender, streamId, { type: "done" });
+      void (async () => {
+        let attempt = 0;
+
+        while (attempt <= retryCount) {
+          let emittedDelta = false;
+          const attemptNumber = attempt + 1;
+          debug(`attempt ${attemptNumber}/${retryCount + 1} started`);
+
+          try {
+            await runStreamWithTimeout(controller.signal, timeoutMs, (attemptSignal) =>
+              stream(event.sender, streamId, payload, attemptSignal, () => {
+                emittedDelta = true;
+              })
+            );
+            debug(`attempt ${attemptNumber} completed`, { emittedDelta });
+            return;
+          } catch (error) {
+            if (controller.signal.aborted && isAbortError(error)) {
+              debug("aborted by user");
+              sendStreamEvent(event.sender, streamId, { type: "done" });
+              return;
+            }
+
+            const message = error instanceof Error ? error.message : "Streaming failed.";
+            const shouldRetry = attempt < retryCount && !emittedDelta;
+            debug(`attempt ${attemptNumber} failed`, { message, emittedDelta, shouldRetry });
+            if (shouldRetry) {
+              attempt += 1;
+              continue;
+            }
+
+            sendStreamEvent(event.sender, streamId, { type: "error", message });
             return;
           }
-          sendStreamEvent(event.sender, streamId, {
-            type: "error",
-            message: error instanceof Error ? error.message : "Streaming failed."
-          });
-        })
+        }
+      })()
         .finally(() => {
           streamControllers.delete(streamId);
         });
