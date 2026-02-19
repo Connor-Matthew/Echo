@@ -26,6 +26,26 @@
     --radius: 12px;
   }
 
+  .dark {
+    --background: 218 43% 9%;
+    --foreground: 210 33% 96%;
+    --card: 220 34% 13%;
+    --card-foreground: 210 33% 96%;
+    --primary: 208 85% 68%;
+    --primary-foreground: 221 45% 10%;
+    --secondary: 219 30% 18%;
+    --secondary-foreground: 210 24% 86%;
+    --muted: 220 30% 16%;
+    --muted-foreground: 214 17% 70%;
+    --accent: 214 44% 20%;
+    --accent-foreground: 210 28% 92%;
+    --destructive: 5 76% 58%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 216 25% 24%;
+    --input: 216 25% 24%;
+    --ring: 208 85% 68%;
+  }
+
   * {
     @apply border-border;
   }
@@ -39,6 +59,10 @@
   body {
     @apply m-0 bg-background font-sans text-foreground antialiased;
     background-image: radial-gradient(circle at top left, #f8fbff, hsl(var(--background)));
+  }
+
+  .dark body {
+    background-image: radial-gradient(circle at top left, #13233a, hsl(var(--background)));
   }
 }
 

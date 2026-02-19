@@ -308,6 +308,31 @@ export const App = () => {
   }, [draftAttachments]);
 
   useEffect(() => {
+    const root = document.documentElement;
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+
+    const applyTheme = () => {
+      const resolvedTheme =
+        settings.theme === "system" ? (mediaQuery.matches ? "dark" : "light") : settings.theme;
+      root.classList.toggle("dark", resolvedTheme === "dark");
+      root.style.colorScheme = resolvedTheme;
+    };
+
+    applyTheme();
+
+    if (settings.theme !== "system") {
+      return;
+    }
+
+    const handleChange = () => {
+      applyTheme();
+    };
+
+    mediaQuery.addEventListener("change", handleChange);
+    return () => mediaQuery.removeEventListener("change", handleChange);
+  }, [settings.theme]);
+
+  useEffect(() => {
     return () => {
       finishActiveStream();
       if (removedTimeoutRef.current !== null) {
@@ -779,15 +804,15 @@ export const App = () => {
   }
 
   return (
-    <div className="app-shell relative h-screen min-w-[1100px] overflow-hidden bg-[#e8edf4] p-4">
+    <div className="app-shell relative h-screen min-w-[1100px] overflow-hidden bg-background/95 p-4">
       <div className="app-window-drag-layer" aria-hidden />
-      <div className="pointer-events-none absolute -top-20 left-1/4 h-72 w-72 rounded-full bg-[#c8dcff]/50 blur-3xl" />
-      <div className="pointer-events-none absolute -bottom-24 right-12 h-80 w-80 rounded-full bg-[#c9ece9]/45 blur-3xl" />
+      <div className="pointer-events-none absolute -top-20 left-1/4 h-72 w-72 rounded-full bg-[#c8dcff]/50 blur-3xl dark:bg-[#1f3d65]/55" />
+      <div className="pointer-events-none absolute -bottom-24 right-12 h-80 w-80 rounded-full bg-[#c9ece9]/45 blur-3xl dark:bg-[#184a57]/40" />
 
       <div className="relative grid h-full grid-cols-[290px_minmax(760px,1fr)] gap-4">
         <div
           data-no-drag="true"
-          className="overflow-hidden rounded-[28px] border border-white/60 bg-white/45 shadow-[0_14px_34px_rgba(15,23,42,0.08)] backdrop-blur-xl animate-rise-fade"
+          className="overflow-hidden rounded-[28px] border border-white/60 bg-white/45 shadow-[0_14px_34px_rgba(15,23,42,0.08)] backdrop-blur-xl animate-rise-fade dark:border-white/10 dark:bg-[#0f1728]/70 dark:shadow-[0_14px_34px_rgba(2,8,23,0.55)]"
         >
           {activeView === "chat" ? (
             <Sidebar
@@ -815,14 +840,14 @@ export const App = () => {
 
         <main
           data-no-drag="true"
-          className="relative min-h-0 overflow-hidden rounded-[30px] border border-white/70 bg-white/58 shadow-[0_20px_46px_rgba(15,23,42,0.12)] backdrop-blur-xl animate-rise-fade-delayed"
+          className="relative min-h-0 overflow-hidden rounded-[30px] border border-white/70 bg-white/58 shadow-[0_20px_46px_rgba(15,23,42,0.12)] backdrop-blur-xl animate-rise-fade-delayed dark:border-white/10 dark:bg-[#101b2d]/78 dark:shadow-[0_20px_46px_rgba(2,8,23,0.58)]"
         >
           {activeView === "chat" ? (
             <>
               {removedSession || errorBanner ? (
                 <div className="mx-auto mt-3 grid w-[min(900px,calc(100%-64px))] gap-3">
                   {removedSession ? (
-                    <div className="flex items-center justify-between rounded-xl border border-[#dbe5f0] bg-[#f8fbff] px-3 py-2 text-[#2f4157]">
+                    <div className="flex items-center justify-between rounded-xl border border-[#dbe5f0] bg-[#f8fbff] px-3 py-2 text-[#2f4157] dark:border-[#2a3d59] dark:bg-[#132238] dark:text-[#c6d7ee]">
                       <span>Thread deleted.</span>
                       <Button
                         variant="ghost"
@@ -855,7 +880,7 @@ export const App = () => {
                 />
               </div>
 
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-[#edf3f9] via-[#edf3f9]/95 to-transparent px-8 pb-6 pt-12">
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-[#edf3f9] via-[#edf3f9]/95 to-transparent px-8 pb-6 pt-12 dark:from-[#101b2d] dark:via-[#101b2d]/92">
                 <div className="pointer-events-auto mx-auto w-full max-w-[980px]">
                   <Composer
                     value={draft}
