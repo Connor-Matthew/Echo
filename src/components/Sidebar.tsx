@@ -60,7 +60,7 @@ export const Sidebar = (props: SidebarProps) => {
     ];
 
     return (
-      <aside className="flex h-full flex-col overflow-hidden border-r border-border bg-[#edf1f5] px-3 pb-3 pt-5">
+      <aside className="flex h-full flex-col overflow-hidden border-r border-border bg-[#edf1f5] px-3 pb-3 pt-5 dark:bg-[#121f33]">
         <div className="space-y-1 pb-4">
           <Button
             variant="ghost"
@@ -88,8 +88,8 @@ export const Sidebar = (props: SidebarProps) => {
                   className={cn(
                     "h-9 w-full justify-start gap-2 rounded-md border border-transparent px-2 text-sm",
                     active
-                      ? "border-[#d5dfea] bg-[#f8fbff] text-[#22374d]"
-                      : "text-foreground/80 hover:bg-white/60"
+                      ? "border-[#d5dfea] bg-[#f8fbff] text-[#22374d] dark:border-[#355073] dark:bg-[#1a2a44] dark:text-[#d8e7fa]"
+                      : "text-foreground/80 hover:bg-white/60 dark:hover:bg-[#192941]"
                   )}
                   onClick={() => props.onSelectSettingsSection(item.key)}
                 >
@@ -112,7 +112,7 @@ export const Sidebar = (props: SidebarProps) => {
   }
 
   return (
-    <aside className="flex h-full flex-col overflow-hidden border-r border-border bg-[#edf1f5] px-3 pb-3 pt-5">
+    <aside className="flex h-full flex-col overflow-hidden border-r border-border bg-[#edf1f5] px-3 pb-3 pt-5 dark:bg-[#121f33]">
       <div className="space-y-1 pb-4">
         <Button
           variant="ghost"
@@ -158,7 +158,7 @@ export const Sidebar = (props: SidebarProps) => {
                 key={session.id}
                 className={cn(
                   "group relative rounded-md border border-transparent bg-transparent transition-colors",
-                  active && "border-[#d5dfea] bg-[#f8fbff]"
+                  active && "border-[#d5dfea] bg-[#f8fbff] dark:border-[#355073] dark:bg-[#1a2a44]"
                 )}
               >
                 <span
