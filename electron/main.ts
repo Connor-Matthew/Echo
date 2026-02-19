@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from "electron";
+import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -21,6 +22,7 @@ const MIN_REQUEST_TIMEOUT_MS = 5000;
 const MAX_REQUEST_TIMEOUT_MS = 180000;
 const MIN_RETRY_COUNT = 0;
 const MAX_RETRY_COUNT = 3;
+const CODEX_RUNTIME_CHECK_TIMEOUT_MS = 12000;
 
 const streamControllers = new Map<string, AbortController>();
 
@@ -104,11 +106,19 @@ const extractModelIds = (payload: unknown): string[] => {
   );
 };
 
-const isSettingsConfigured = (settings: AppSettings) =>
-  Boolean(settings.baseUrl.trim() && parseApiKeys(settings.apiKey).length && settings.model.trim());
+const isSettingsConfigured = (settings: AppSettings) => {
+  if (settings.providerType === "acp") {
+    return true;
+  }
+  return Boolean(settings.baseUrl.trim() && parseApiKeys(settings.apiKey).length && settings.model.trim());
+};
 
-const isConnectionConfigured = (settings: AppSettings) =>
-  Boolean(settings.baseUrl.trim() && parseApiKeys(settings.apiKey).length);
+const isConnectionConfigured = (settings: AppSettings) => {
+  if (settings.providerType === "acp") {
+    return true;
+  }
+  return Boolean(settings.baseUrl.trim() && parseApiKeys(settings.apiKey).length);
+};
 
 const clampInteger = (value: number, min: number, max: number, fallback: number) => {
   if (!Number.isFinite(value)) {
@@ -175,7 +185,221 @@ const createSseDebugLogger =
     console.info(`[sse:${streamId}]`, ...parts);
   };
 
+const runCodexCommand = async (
+  args: string[],
+  timeoutMs = CODEX_RUNTIME_CHECK_TIMEOUT_MS
+): Promise<{ ok: boolean; message: string }> =>
+  new Promise((resolve) => {
+    let settled = false;
+    const child = spawn("codex", args, { stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+
+    const settle = (ok: boolean, message: string) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve({ ok, message });
+    };
+
+    const timer = setTimeout(() => {
+      child.kill("SIGTERM");
+      settle(false, "Codex runtime check timed out.");
+    }, timeoutMs);
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdout = `${stdout}${chunk.toString("utf-8")}`.slice(-2000);
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr = `${stderr}${chunk.toString("utf-8")}`.slice(-2000);
+    });
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      settle(false, `Failed to launch codex: ${error.message}`);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (code === 0) {
+        settle(true, (stdout.trim() || "Codex runtime is available.").slice(0, 200));
+        return;
+      }
+      const detail = (stderr.trim() || stdout.trim() || `Exit ${code ?? "unknown"}`).slice(0, 200);
+      settle(false, `Codex runtime check failed: ${detail}`);
+    });
+  });
+
+const listCodexAcpModels = async (timeoutMs = CODEX_RUNTIME_CHECK_TIMEOUT_MS): Promise<string[]> =>
+  new Promise((resolve, reject) => {
+    const child = spawn("codex", ["app-server", "--listen", "stdio://"], {
+      stdio: ["pipe", "pipe", "pipe"]
+    });
+    let settled = false;
+    let stderr = "";
+    let stdoutBuffer = "";
+    const initializeId = createId();
+    const modelListId = createId();
+
+    const settleResolve = (models: string[]) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (!child.killed) {
+        child.kill("SIGTERM");
+      }
+      resolve(models);
+    };
+
+    const settleReject = (error: Error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (!child.killed) {
+        child.kill("SIGTERM");
+      }
+      reject(error);
+    };
+
+    const writeRpc = (envelope: unknown) => {
+      if (!child.stdin.writable) {
+        return;
+      }
+      try {
+        child.stdin.write(`${JSON.stringify(envelope)}\n`);
+      } catch {
+        // Child lifecycle handlers surface the final error.
+      }
+    };
+
+    const timer = setTimeout(() => {
+      settleReject(new Error("Codex model/list timed out."));
+    }, timeoutMs);
+
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr = `${stderr}${chunk.toString("utf-8")}`.slice(-4000);
+    });
+
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      settleReject(new Error(`Failed to start codex app-server: ${error.message}`));
+    });
+
+    child.on("close", (code) => {
+      if (settled) {
+        return;
+      }
+      clearTimeout(timer);
+      const detail = stderr.trim().slice(0, 240);
+      const suffix = detail ? `: ${detail}` : "";
+      settleReject(new Error(`Codex app-server exited (${code ?? "unknown"})${suffix}`));
+    });
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdoutBuffer += chunk.toString("utf-8");
+      const lines = stdoutBuffer.split(/\r?\n/);
+      stdoutBuffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          continue;
+        }
+
+        let parsed: {
+          id?: string;
+          result?: Record<string, unknown>;
+          error?: { message?: string };
+        };
+
+        try {
+          parsed = JSON.parse(trimmed) as typeof parsed;
+        } catch {
+          continue;
+        }
+
+        if (parsed.error?.message) {
+          clearTimeout(timer);
+          settleReject(new Error(parsed.error.message));
+          return;
+        }
+
+        if (parsed.id === initializeId) {
+          writeRpc({ method: "initialized" });
+          writeRpc({
+            method: "model/list",
+            id: modelListId,
+            params: { includeHidden: false, limit: 1000, cursor: null }
+          });
+          continue;
+        }
+
+        if (parsed.id === modelListId) {
+          clearTimeout(timer);
+          const data = Array.isArray(parsed.result?.data) ? parsed.result?.data : [];
+          const models = data
+            .map((item) => {
+              if (!item || typeof item !== "object") {
+                return "";
+              }
+              const candidate = item as { model?: string; id?: string; displayName?: string };
+              return (candidate.model || candidate.id || candidate.displayName || "").trim();
+            })
+            .filter((item): item is string => Boolean(item));
+          settleResolve(Array.from(new Set(models)).sort((a, b) => a.localeCompare(b)));
+          return;
+        }
+      }
+    });
+
+    writeRpc({
+      method: "initialize",
+      id: initializeId,
+      params: {
+        clientInfo: {
+          name: "echo-desktop",
+          title: "Echo Desktop",
+          version: app.getVersion()
+        },
+        capabilities: {
+          experimentalApi: true,
+          optOutNotificationMethods: null
+        }
+      }
+    });
+  });
+
+const formatMessagesForAcpTurn = (payload: ChatStreamRequest) =>
+  payload.messages
+    .map((message) => ({
+      role: message.role.toUpperCase(),
+      content: message.content.trim()
+    }))
+    .filter((message) => Boolean(message.content))
+    .map((message) => `[${message.role}]\n${message.content}`)
+    .join("\n\n");
+
 const fetchModelIds = async (settings: AppSettings): Promise<ModelListResult> => {
+  if (settings.providerType === "acp") {
+    try {
+      const models = await listCodexAcpModels();
+      return {
+        ok: true,
+        message: models.length
+          ? `Fetched ${models.length} ACP model(s).`
+          : "ACP runtime is reachable, but no models were returned.",
+        models
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        message: `Failed to fetch ACP models. ${error instanceof Error ? error.message : "Unknown error."}`,
+        models: []
+      };
+    }
+  }
+
   const baseUrl = normalizeBaseUrl(settings.baseUrl);
   const apiKeys = parseApiKeys(settings.apiKey);
   if (!baseUrl || !apiKeys.length) {
@@ -468,6 +692,273 @@ const streamAnthropic = async (
   }
 };
 
+const streamCodexAcp = async (
+  sender: IpcMainInvokeEvent["sender"],
+  streamId: string,
+  payload: ChatStreamRequest,
+  _apiKey: string,
+  signal: AbortSignal,
+  onDelta?: () => void
+) => {
+  const turnInput = formatMessagesForAcpTurn(payload);
+  if (!turnInput) {
+    throw new Error("No message content to send.");
+  }
+
+  const child = spawn("codex", ["app-server", "--listen", "stdio://"], {
+    stdio: ["pipe", "pipe", "pipe"]
+  });
+
+  let stderr = "";
+  let stdoutBuffer = "";
+  let doneSent = false;
+  let settled = false;
+  let emittedAnyDelta = false;
+
+  const emitDone = () => {
+    if (!doneSent) {
+      doneSent = true;
+      sendStreamEvent(sender, streamId, { type: "done" });
+    }
+  };
+
+  const emitError = (message: string) => {
+    sendStreamEvent(sender, streamId, { type: "error", message });
+  };
+
+  const initializeId = createId();
+  const threadStartId = createId();
+  const turnStartId = createId();
+
+  const writeRpc = (envelope: unknown) => {
+    if (!child.stdin.writable) {
+      return;
+    }
+    try {
+      child.stdin.write(`${JSON.stringify(envelope)}\n`);
+    } catch {
+      // Ignore write errors; process close/error handlers surface the final status.
+    }
+  };
+
+  const cleanup = () => {
+    signal.removeEventListener("abort", onAbort);
+    if (!child.killed) {
+      child.kill("SIGTERM");
+    }
+  };
+
+  const settleResolve = (resolve: () => void) => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    cleanup();
+    resolve();
+  };
+
+  const settleReject = (reject: (error: Error) => void, error: Error) => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    cleanup();
+    reject(error);
+  };
+
+  const onAbort = () => {
+    if (child.killed) {
+      return;
+    }
+    child.kill("SIGTERM");
+  };
+
+  if (signal.aborted) {
+    child.kill("SIGTERM");
+    throw Object.assign(new Error("Aborted"), { name: "AbortError" });
+  }
+  signal.addEventListener("abort", onAbort, { once: true });
+
+  await new Promise<void>((resolve, reject) => {
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr = `${stderr}${chunk.toString("utf-8")}`.slice(-4000);
+    });
+
+    child.on("error", (error) => {
+      settleReject(reject, new Error(`Failed to start codex ACP runtime: ${error.message}`));
+    });
+
+    child.on("close", (code) => {
+      if (settled) {
+        return;
+      }
+      if (signal.aborted) {
+        settleReject(reject, Object.assign(new Error("Aborted"), { name: "AbortError" }));
+        return;
+      }
+      const detail = stderr.trim().slice(0, 240);
+      const suffix = detail ? `: ${detail}` : "";
+      settleReject(reject, new Error(`Codex ACP process exited (${code ?? "unknown"})${suffix}`));
+    });
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdoutBuffer += chunk.toString("utf-8");
+      const lines = stdoutBuffer.split(/\r?\n/);
+      stdoutBuffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          continue;
+        }
+
+        let parsed: {
+          id?: string;
+          method?: string;
+          params?: Record<string, unknown>;
+          result?: Record<string, unknown>;
+          error?: { message?: string };
+        };
+
+        try {
+          parsed = JSON.parse(trimmed) as typeof parsed;
+        } catch {
+          continue;
+        }
+
+        if (parsed.error?.message) {
+          settleReject(reject, new Error(parsed.error.message));
+          return;
+        }
+
+        if (parsed.id === initializeId) {
+          writeRpc({ method: "initialized" });
+          writeRpc({
+            method: "thread/start",
+            id: threadStartId,
+            params: {
+              model: payload.settings.model.trim() || null,
+              modelProvider: null,
+              cwd: process.cwd(),
+              approvalPolicy: null,
+              sandbox: null,
+              config: null,
+              baseInstructions: null,
+              developerInstructions: null,
+              personality: null,
+              ephemeral: true,
+              experimentalRawEvents: false,
+              persistExtendedHistory: false
+            }
+          });
+          continue;
+        }
+
+        if (parsed.id === threadStartId) {
+          const threadId = parsed.result?.thread && typeof parsed.result.thread === "object"
+            ? (parsed.result.thread as { id?: string }).id
+            : null;
+          if (!threadId) {
+            settleReject(reject, new Error("ACP thread/start did not return a thread id."));
+            return;
+          }
+          writeRpc({
+            method: "turn/start",
+            id: turnStartId,
+            params: {
+              threadId,
+              input: [{ type: "text", text: turnInput, text_elements: [] }],
+              cwd: process.cwd(),
+              approvalPolicy: null,
+              sandboxPolicy: null,
+              model: payload.settings.model.trim() || null,
+              effort: null,
+              summary: null,
+              personality: null,
+              outputSchema: null,
+              collaborationMode: null
+            }
+          });
+          continue;
+        }
+
+        if (parsed.id === turnStartId) {
+          continue;
+        }
+
+        if (parsed.method === "item/agentMessage/delta") {
+          const delta = parsed.params?.delta;
+          if (typeof delta === "string" && delta) {
+            emittedAnyDelta = true;
+            onDelta?.();
+            sendStreamEvent(sender, streamId, { type: "delta", delta });
+          }
+          continue;
+        }
+
+        if (parsed.method === "item/completed") {
+          const item = parsed.params?.item as
+            | { type?: string; content?: Array<{ type?: string; text?: string }> }
+            | undefined;
+          if (!emittedAnyDelta && item?.type === "agentMessage" && Array.isArray(item.content)) {
+            const text = item.content
+              .filter((part) => part?.type === "text" && typeof part.text === "string")
+              .map((part) => part.text ?? "")
+              .join("");
+            if (text) {
+              emittedAnyDelta = true;
+              onDelta?.();
+              sendStreamEvent(sender, streamId, { type: "delta", delta: text });
+            }
+          }
+          continue;
+        }
+
+        if (parsed.method === "error") {
+          const errorPayload = parsed.params?.error as { message?: string } | undefined;
+          const retrying = parsed.params?.willRetry === true;
+          if (!retrying) {
+            emitError(errorPayload?.message || "ACP streaming failed.");
+            emitDone();
+            settleResolve(resolve);
+            return;
+          }
+          continue;
+        }
+
+        if (parsed.method === "turn/completed") {
+          const turn = parsed.params?.turn as
+            | { status?: string; error?: { message?: string } | null }
+            | undefined;
+          const status = turn?.status;
+          if (status && status !== "completed") {
+            emitError(turn?.error?.message || "ACP turn failed.");
+          }
+          emitDone();
+          settleResolve(resolve);
+          return;
+        }
+      }
+    });
+
+    writeRpc({
+      method: "initialize",
+      id: initializeId,
+      params: {
+        clientInfo: {
+          name: "echo-desktop",
+          title: "Echo Desktop",
+          version: app.getVersion()
+        },
+        capabilities: {
+          experimentalApi: true,
+          optOutNotificationMethods: null
+        }
+      }
+    });
+  });
+};
+
 const registerIpcHandlers = () => {
   ipcMain.handle("settings:get", async () => {
     const saved = await readJson<Partial<AppSettings>>(SETTINGS_FILE, {});
@@ -481,6 +972,14 @@ const registerIpcHandlers = () => {
   ipcMain.handle(
     "settings:testConnection",
     async (_, settings: AppSettings): Promise<ConnectionTestResult> => {
+      if (settings.providerType === "acp") {
+        const result = await runCodexCommand(["--version"]);
+        return {
+          ok: result.ok,
+          message: result.ok ? `Codex runtime is available (${result.message}).` : result.message
+        };
+      }
+
       if (!isConnectionConfigured(settings)) {
         return { ok: false, message: "Please fill Base URL and API key." };
       }
@@ -513,11 +1012,17 @@ const registerIpcHandlers = () => {
       streamControllers.set(streamId, controller);
 
       const stream =
-        payload.settings.providerType === "anthropic" ? streamAnthropic : streamOpenAICompatible;
+        payload.settings.providerType === "acp"
+          ? streamCodexAcp
+          : payload.settings.providerType === "anthropic"
+            ? streamAnthropic
+            : streamOpenAICompatible;
       const timeoutMs = normalizeRequestTimeoutMs(payload.settings.requestTimeoutMs);
       const retryCount = normalizeRetryCount(payload.settings.retryCount);
-      const apiKeys = parseApiKeys(payload.settings.apiKey);
-      const maxAttempts = Math.max(retryCount + 1, apiKeys.length);
+      const apiKeys =
+        payload.settings.providerType === "acp" ? ["__acp__"] : parseApiKeys(payload.settings.apiKey);
+      const maxAttempts =
+        payload.settings.providerType === "acp" ? 1 : Math.max(retryCount + 1, apiKeys.length);
       const debug = createSseDebugLogger(Boolean(payload.settings.sseDebug), streamId);
 
       void (async () => {
@@ -528,7 +1033,10 @@ const registerIpcHandlers = () => {
           const attemptNumber = attempt + 1;
           const apiKey = apiKeys[attempt % apiKeys.length];
           debug(`attempt ${attemptNumber}/${maxAttempts} started`, {
-            apiKeySlot: `${(attempt % apiKeys.length) + 1}/${apiKeys.length}`
+            apiKeySlot:
+              payload.settings.providerType === "acp"
+                ? "ACP"
+                : `${(attempt % apiKeys.length) + 1}/${apiKeys.length}`
           });
 
           try {

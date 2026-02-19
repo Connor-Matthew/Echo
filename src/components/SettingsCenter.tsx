@@ -119,6 +119,13 @@ const providerPresets: ProviderPreset[] = [
     baseUrl: "http://127.0.0.1:1234/v1",
     defaultModel: "local-model",
     providerType: "openai"
+  },
+  {
+    id: "codex-acp",
+    label: "Codex CLI (ACP)",
+    baseUrl: "",
+    defaultModel: "gpt-5-codex",
+    providerType: "acp"
   }
 ];
 
@@ -132,6 +139,14 @@ const resolveAnthropicEndpoint = (baseUrl: string, resource: "models" | "message
 };
 
 const resolveProviderEndpoints = (baseUrl: string, providerType: ProviderType) => {
+  if (providerType === "acp") {
+    return {
+      normalized: "local-codex",
+      models: "model/list (not exposed)",
+      chat: "codex app-server --listen stdio://"
+    };
+  }
+
   const normalized = normalizeBaseUrl(baseUrl);
   if (!normalized) {
     return null;
@@ -244,7 +259,12 @@ const normalizeDraft = (settings: AppSettings): AppSettings => {
       apiKey: provider.apiKey.trim(),
       model,
       savedModels,
-      providerType: provider.providerType === "anthropic" ? "anthropic" : "openai",
+      providerType:
+        provider.providerType === "anthropic"
+          ? "anthropic"
+          : provider.providerType === "acp"
+            ? "acp"
+            : "openai",
       enabled: provider.enabled !== false,
       isPinned: Boolean(provider.isPinned)
     };
@@ -254,6 +274,10 @@ const normalizeDraft = (settings: AppSettings): AppSettings => {
 };
 
 const resolvePresetByBaseUrl = (baseUrl: string, providerType: ProviderType) => {
+  if (providerType === "acp") {
+    return providerPresets.find((preset) => preset.id === "codex-acp") ?? null;
+  }
+
   const normalized = normalizeBaseUrl(baseUrl);
   return (
     providerPresets.find(
@@ -273,7 +297,8 @@ const providerBadgeByPreset: Record<
   deepseek: { token: "DS", bgClass: "bg-[#dce7ff]", textClass: "text-[#2d4f95]" },
   claude: { token: "CL", bgClass: "bg-[#ffe8d9]", textClass: "text-[#874f20]" },
   ollama: { token: "OL", bgClass: "bg-[#dff7e9]", textClass: "text-[#226b48]" },
-  lmstudio: { token: "LM", bgClass: "bg-[#e9e4ff]", textClass: "text-[#4f3f8b]" }
+  lmstudio: { token: "LM", bgClass: "bg-[#e9e4ff]", textClass: "text-[#4f3f8b]" },
+  "codex-acp": { token: "CP", bgClass: "bg-[#dbeefe]", textClass: "text-[#23557a]" }
 };
 
 const inferProviderPresetId = (provider: StoredProvider) => {
@@ -304,6 +329,9 @@ const inferProviderPresetId = (provider: StoredProvider) => {
   if (probe.includes("lmstudio") || probe.includes("1234")) {
     return "lmstudio";
   }
+  if (probe.includes("codex") || probe.includes("acp")) {
+    return "codex-acp";
+  }
   return "custom";
 };
 
@@ -330,6 +358,9 @@ const validateSettingsForSection = (draft: AppSettings, section: SettingsSection
     }
     if (!activeProvider.name.trim()) {
       return "Provider name is required.";
+    }
+    if (activeProvider.providerType === "acp") {
+      return null;
     }
     if (!activeProvider.baseUrl.trim() || !isValidHttpUrl(activeProvider.baseUrl.trim())) {
       return "Base URL is invalid.";
@@ -442,6 +473,7 @@ export const SettingsCenter = ({
 
   const isDirty = useMemo(() => !areSettingsEqual(draft, settings), [draft, settings]);
   const activeProvider = useMemo(() => getActiveProvider(draft), [draft]);
+  const isAcpProvider = activeProvider.providerType === "acp";
   const activeProviderPreset = useMemo(
     () => resolvePresetByBaseUrl(activeProvider.baseUrl, activeProvider.providerType)?.id ?? "custom",
     [activeProvider.baseUrl, activeProvider.providerType]
@@ -515,7 +547,13 @@ export const SettingsCenter = ({
               ...provider,
               [field]:
                 field === "providerType"
-                  ? ((value === "anthropic" ? "anthropic" : "openai") as StoredProvider["providerType"])
+                  ? ((
+                      value === "anthropic"
+                        ? "anthropic"
+                        : value === "acp"
+                          ? "acp"
+                          : "openai"
+                    ) as StoredProvider["providerType"])
                   : value
             }
           : provider
@@ -740,9 +778,11 @@ export const SettingsCenter = ({
         provider.id === previous.activeProviderId
           ? (() => {
               const nextModel = provider.model.trim() ? provider.model.trim() : preset.defaultModel;
+              const nextApiKey = preset.providerType === "acp" ? "" : provider.apiKey;
               return {
                 ...provider,
                 baseUrl: preset.baseUrl,
+                apiKey: nextApiKey,
                 model: nextModel,
                 savedModels: Array.from(
                   new Set([...(provider.savedModels ?? []), nextModel].map((entry) => entry.trim()))
@@ -978,45 +1018,61 @@ export const SettingsCenter = ({
                     />
                   </div>
 
-                  <div className="space-y-1.5">
-                    <label htmlFor="apiKey" className="text-sm text-muted-foreground">
-                      API Key
-                    </label>
-                    <div className="flex gap-2">
-                      <Input
-                        id="apiKey"
-                        type={isApiKeyVisible ? "text" : "password"}
-                        placeholder="sk-..."
-                        value={activeProvider.apiKey}
-                        onChange={(event) => updateActiveProviderField("apiKey", event.target.value)}
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="px-2"
-                        onClick={() => setIsApiKeyVisible((previous) => !previous)}
-                        aria-label={isApiKeyVisible ? "Hide API key" : "Show API key"}
-                      >
-                        {isApiKeyVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="px-2"
-                        onClick={copyApiKey}
-                        disabled={!activeProvider.apiKey.trim()}
-                        aria-label="Copy API key"
-                      >
-                        {isApiKeyCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                      </Button>
-                      <Button type="button" variant="outline" onClick={testConnection} disabled={isTesting}>
-                        {isTesting ? "Testing..." : "Test"}
-                      </Button>
+                  {!isAcpProvider ? (
+                    <div className="space-y-1.5">
+                      <label htmlFor="apiKey" className="text-sm text-muted-foreground">
+                        API Key
+                      </label>
+                      <div className="flex gap-2">
+                        <Input
+                          id="apiKey"
+                          type={isApiKeyVisible ? "text" : "password"}
+                          placeholder="sk-..."
+                          value={activeProvider.apiKey}
+                          onChange={(event) => updateActiveProviderField("apiKey", event.target.value)}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="px-2"
+                          onClick={() => setIsApiKeyVisible((previous) => !previous)}
+                          aria-label={isApiKeyVisible ? "Hide API key" : "Show API key"}
+                        >
+                          {isApiKeyVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="px-2"
+                          onClick={copyApiKey}
+                          disabled={!activeProvider.apiKey.trim()}
+                          aria-label="Copy API key"
+                        >
+                          {isApiKeyCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                        </Button>
+                        <Button type="button" variant="outline" onClick={testConnection} disabled={isTesting}>
+                          {isTesting ? "Testing..." : "Test"}
+                        </Button>
+                      </div>
+                      <p className="text-xs text-[#73859a]">Use commas to separate multiple API keys.</p>
                     </div>
-                    <p className="text-xs text-[#73859a]">Use commas to separate multiple API keys.</p>
-                  </div>
+                  ) : (
+                    <div className="rounded-md border border-[#d9e3ee] bg-[#f6faff] p-3 text-sm text-[#42566d]">
+                      <p>ACP uses your local Codex CLI login and config.</p>
+                      <div className="mt-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={testConnection}
+                          disabled={isTesting}
+                        >
+                          {isTesting ? "Checking..." : "Check Codex runtime"}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-1.5">
@@ -1050,29 +1106,46 @@ export const SettingsCenter = ({
                       >
                         <option value="openai">OpenAI-compatible</option>
                         <option value="anthropic">Anthropic Messages API</option>
+                        <option value="acp">Codex CLI ACP</option>
                       </select>
                     </div>
                   </div>
 
-                  <div className="space-y-1.5">
-                    <label htmlFor="baseUrl" className="text-sm text-muted-foreground">
-                      API URL
-                    </label>
-                    <Input
-                      id="baseUrl"
-                      placeholder="https://api.openai.com/v1"
-                      value={activeProvider.baseUrl}
-                      onChange={(event) => updateActiveProviderField("baseUrl", event.target.value)}
-                    />
-                    {activeProviderEndpoints ? (
+                  {!isAcpProvider ? (
+                    <div className="space-y-1.5">
+                      <label htmlFor="baseUrl" className="text-sm text-muted-foreground">
+                        API URL
+                      </label>
+                      <Input
+                        id="baseUrl"
+                        placeholder="https://api.openai.com/v1"
+                        value={activeProvider.baseUrl}
+                        onChange={(event) => updateActiveProviderField("baseUrl", event.target.value)}
+                      />
+                      {activeProviderEndpoints ? (
+                        <div className="rounded-md border border-[#d9e3ee] bg-[#f6faff] p-2.5 text-xs text-[#42566d]">
+                          <p>
+                            Preview endpoint:{" "}
+                            <span className="font-mono text-[#2b3f56]">
+                              {activeProviderEndpoints.chat}
+                            </span>
+                          </p>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      <label className="text-sm text-muted-foreground">Runtime</label>
                       <div className="rounded-md border border-[#d9e3ee] bg-[#f6faff] p-2.5 text-xs text-[#42566d]">
                         <p>
-                          Preview endpoint:{" "}
-                          <span className="font-mono text-[#2b3f56]">{activeProviderEndpoints.chat}</span>
+                          Transport:{" "}
+                          <span className="font-mono text-[#2b3f56]">
+                            {activeProviderEndpoints?.chat ?? "codex app-server --listen stdio://"}
+                          </span>
                         </p>
                       </div>
-                    ) : null}
-                  </div>
+                    </div>
+                  )}
 
                   <div className="space-y-2">
                     <div className="flex items-center justify-between gap-3">
@@ -1099,7 +1172,13 @@ export const SettingsCenter = ({
                           onClick={fetchModels}
                           disabled={isFetchingModels}
                         >
-                          {isFetchingModels ? "Fetching..." : "Fetch models"}
+                          {isFetchingModels
+                            ? isAcpProvider
+                              ? "Checking..."
+                              : "Fetching..."
+                            : isAcpProvider
+                              ? "Check models"
+                              : "Fetch models"}
                         </Button>
                       </div>
                     </div>
@@ -1114,7 +1193,7 @@ export const SettingsCenter = ({
                     </div>
                     <Input
                       id="model"
-                      placeholder="gpt-4.1-mini"
+                      placeholder={isAcpProvider ? "gpt-5-codex (optional)" : "gpt-4.1-mini"}
                       value={activeProvider.model}
                       onChange={(event) => setActiveProviderModel(event.target.value, false)}
                     />

@@ -186,6 +186,12 @@ const createBrowserFallbackApi = (): MuApi => {
       },
       save: async (settings) => writeLocalStorage(SETTINGS_KEY, normalizeSettings(settings)),
       testConnection: async (settings) => {
+        if (settings.providerType === "acp") {
+          return {
+            ok: false,
+            message: "ACP is only available in the Electron desktop runtime."
+          };
+        }
         const baseUrl = normalizeBaseUrl(settings.baseUrl);
         const apiKeys = parseApiKeys(settings.apiKey);
         if (!baseUrl || !apiKeys.length) {
@@ -238,6 +244,13 @@ const createBrowserFallbackApi = (): MuApi => {
         }
       },
       listModels: async (settings) => {
+        if (settings.providerType === "acp") {
+          return {
+            ok: false,
+            message: "ACP model listing is only available in the Electron desktop runtime.",
+            models: []
+          };
+        }
         const baseUrl = normalizeBaseUrl(settings.baseUrl);
         const apiKeys = parseApiKeys(settings.apiKey);
         if (!baseUrl || !apiKeys.length) {
@@ -313,6 +326,9 @@ const createBrowserFallbackApi = (): MuApi => {
     },
     chat: {
       startStream: async ({ settings, messages }) => {
+        if (settings.providerType === "acp") {
+          throw new Error("ACP is only available in the Electron desktop runtime.");
+        }
         const streamId = crypto.randomUUID();
         const baseUrl = normalizeBaseUrl(settings.baseUrl);
         const apiKeys = parseApiKeys(settings.apiKey);

@@ -1,7 +1,7 @@
 export type ThemeMode = "system" | "light" | "dark";
 export type FontScale = "sm" | "md" | "lg";
 export type MessageDensity = "compact" | "comfortable";
-export type ProviderType = "openai" | "anthropic";
+export type ProviderType = "openai" | "anthropic" | "acp";
 export type AttachmentKind = "text" | "image" | "file";
 
 export type StoredProvider = {
@@ -125,6 +125,16 @@ export const DEFAULT_SETTINGS: AppSettings = {
   sseDebug: false
 };
 
+const normalizeProviderType = (providerType: unknown): ProviderType => {
+  if (providerType === "anthropic") {
+    return "anthropic";
+  }
+  if (providerType === "acp") {
+    return "acp";
+  }
+  return "openai";
+};
+
 const sanitizeProvider = (
   candidate: Partial<StoredProvider> | undefined,
   fallbackIndex: number
@@ -146,7 +156,7 @@ const sanitizeProvider = (
     apiKey: typeof candidate?.apiKey === "string" ? candidate.apiKey : "",
     model,
     savedModels: dedupedSavedModels,
-    providerType: candidate?.providerType === "anthropic" ? "anthropic" : "openai",
+    providerType: normalizeProviderType(candidate?.providerType),
     enabled: candidate?.enabled !== false,
     isPinned: Boolean(candidate?.isPinned)
   };
@@ -182,7 +192,7 @@ export const normalizeSettings = (saved: Partial<AppSettings>): AppSettings => {
       apiKey: merged.apiKey,
       model: merged.model,
       savedModels: merged.model.trim() ? [merged.model.trim()] : [],
-      providerType: merged.providerType === "anthropic" ? "anthropic" : "openai",
+      providerType: normalizeProviderType(merged.providerType),
       enabled: true,
       isPinned: false
     }
