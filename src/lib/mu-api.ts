@@ -54,6 +54,16 @@ const writeLocalStorage = (key: string, value: unknown) => {
 };
 
 const normalizeBaseUrl = (value: string) => value.trim().replace(/\/+$/, "");
+const normalizeApiKeyToken = (value: string) => value.trim().replace(/^['"]|['"]$/g, "");
+const parseApiKeys = (raw: string) =>
+  Array.from(
+    new Set(
+      raw
+        .split(/[,\n]/)
+        .map((entry) => normalizeApiKeyToken(entry))
+        .filter(Boolean)
+    )
+  );
 const resolveAnthropicEndpoint = (baseUrl: string, resource: "models" | "messages") => {
   const normalized = normalizeBaseUrl(baseUrl);
   return normalized.endsWith("/v1")
@@ -177,25 +187,49 @@ const createBrowserFallbackApi = (): MuApi => {
       save: async (settings) => writeLocalStorage(SETTINGS_KEY, normalizeSettings(settings)),
       testConnection: async (settings) => {
         const baseUrl = normalizeBaseUrl(settings.baseUrl);
-        if (!baseUrl || !settings.apiKey.trim()) {
+        const apiKeys = parseApiKeys(settings.apiKey);
+        if (!baseUrl || !apiKeys.length) {
           return { ok: false, message: "Missing Base URL or API key." };
         }
         try {
           const isAnthropic = settings.providerType === "anthropic";
-          const endpoint = isAnthropic ? resolveAnthropicEndpoint(baseUrl, "models") : `${baseUrl}/models`;
-          const headers: Record<string, string> = isAnthropic
-            ? {
-                "x-api-key": settings.apiKey.trim(),
-                "anthropic-version": "2023-06-01"
-              }
-            : {
-                Authorization: `Bearer ${settings.apiKey.trim()}`
-              };
-          const res = await fetch(endpoint, { headers });
-          if (!res.ok) {
-            return { ok: false, message: `HTTP ${res.status}` };
+          const attempts: Array<{ endpoint: string; headers: Record<string, string> }> = isAnthropic
+            ? apiKeys.flatMap((apiKey) => [
+                {
+                  endpoint: resolveAnthropicEndpoint(baseUrl, "models"),
+                  headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01" } as Record<
+                    string,
+                    string
+                  >
+                },
+                {
+                  endpoint: `${baseUrl}/models`,
+                  headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01" } as Record<
+                    string,
+                    string
+                  >
+                },
+                {
+                  endpoint: resolveAnthropicEndpoint(baseUrl, "models"),
+                  headers: { Authorization: `Bearer ${apiKey}` } as Record<string, string>
+                },
+                {
+                  endpoint: `${baseUrl}/models`,
+                  headers: { Authorization: `Bearer ${apiKey}` } as Record<string, string>
+                }
+              ])
+            : apiKeys.map((apiKey) => ({
+                endpoint: `${baseUrl}/models`,
+                headers: { Authorization: `Bearer ${apiKey}` } as Record<string, string>
+              }));
+
+          for (const attempt of attempts) {
+            const res = await fetch(attempt.endpoint, { headers: attempt.headers });
+            if (res.ok) {
+              return { ok: true, message: "Connection succeeded." };
+            }
           }
-          return { ok: true, message: "Connection succeeded." };
+          return { ok: false, message: "Connection failed: all API keys were rejected." };
         } catch (error) {
           return {
             ok: false,
@@ -205,27 +239,41 @@ const createBrowserFallbackApi = (): MuApi => {
       },
       listModels: async (settings) => {
         const baseUrl = normalizeBaseUrl(settings.baseUrl);
-        if (!baseUrl || !settings.apiKey.trim()) {
+        const apiKeys = parseApiKeys(settings.apiKey);
+        if (!baseUrl || !apiKeys.length) {
           return { ok: false, message: "Missing Base URL or API key.", models: [] };
         }
 
         const isAnthropic = settings.providerType === "anthropic";
-        const anthropicHeaders: Record<string, string> = {
-          "x-api-key": settings.apiKey.trim(),
-          "anthropic-version": "2023-06-01"
-        };
-        const bearerHeaders: Record<string, string> = {
-          Authorization: `Bearer ${settings.apiKey.trim()}`
-        };
-
         const attempts: Array<{ endpoint: string; headers: Record<string, string> }> = isAnthropic
-          ? [
-              { endpoint: resolveAnthropicEndpoint(baseUrl, "models"), headers: anthropicHeaders },
-              { endpoint: `${baseUrl}/models`, headers: anthropicHeaders },
-              { endpoint: resolveAnthropicEndpoint(baseUrl, "models"), headers: bearerHeaders },
-              { endpoint: `${baseUrl}/models`, headers: bearerHeaders }
-            ]
-          : [{ endpoint: `${baseUrl}/models`, headers: bearerHeaders }];
+          ? apiKeys.flatMap((apiKey) => [
+              {
+                endpoint: resolveAnthropicEndpoint(baseUrl, "models"),
+                headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01" } as Record<
+                  string,
+                  string
+                >
+              },
+              {
+                endpoint: `${baseUrl}/models`,
+                headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01" } as Record<
+                  string,
+                  string
+                >
+              },
+              {
+                endpoint: resolveAnthropicEndpoint(baseUrl, "models"),
+                headers: { Authorization: `Bearer ${apiKey}` } as Record<string, string>
+              },
+              {
+                endpoint: `${baseUrl}/models`,
+                headers: { Authorization: `Bearer ${apiKey}` } as Record<string, string>
+              }
+            ])
+          : apiKeys.map((apiKey) => ({
+              endpoint: `${baseUrl}/models`,
+              headers: { Authorization: `Bearer ${apiKey}` } as Record<string, string>
+            }));
 
         let lastFailure = "Unknown error.";
 
@@ -267,11 +315,16 @@ const createBrowserFallbackApi = (): MuApi => {
       startStream: async ({ settings, messages }) => {
         const streamId = crypto.randomUUID();
         const baseUrl = normalizeBaseUrl(settings.baseUrl);
+        const apiKeys = parseApiKeys(settings.apiKey);
+        if (!apiKeys.length) {
+          throw new Error("Missing API key.");
+        }
         const controller = new AbortController();
         controllers.set(streamId, controller);
         listeners.set(streamId, listeners.get(streamId) ?? new Set());
         const timeoutMs = normalizeRequestTimeoutMs(settings.requestTimeoutMs);
         const retryCount = normalizeRetryCount(settings.retryCount);
+        const maxAttempts = Math.max(retryCount + 1, apiKeys.length);
         const debug = createSseDebugLogger(Boolean(settings.sseDebug), streamId);
 
         void (async () => {
@@ -305,23 +358,25 @@ const createBrowserFallbackApi = (): MuApi => {
                 stream: true,
                 messages
               };
-          const headers: Record<string, string> = isAnthropic
-            ? {
-                "Content-Type": "application/json",
-                "x-api-key": settings.apiKey.trim(),
-                "anthropic-version": "2023-06-01"
-              }
-            : {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${settings.apiKey.trim()}`
-              };
-
           let attempt = 0;
 
-          while (attempt <= retryCount) {
+          while (attempt < maxAttempts) {
             let emittedDelta = false;
             const attemptNumber = attempt + 1;
-            debug(`attempt ${attemptNumber}/${retryCount + 1} started`);
+            const apiKey = apiKeys[attempt % apiKeys.length];
+            const headers: Record<string, string> = isAnthropic
+              ? {
+                  "Content-Type": "application/json",
+                  "x-api-key": apiKey,
+                  "anthropic-version": "2023-06-01"
+                }
+              : {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${apiKey}`
+                };
+            debug(`attempt ${attemptNumber}/${maxAttempts} started`, {
+              apiKeySlot: `${(attempt % apiKeys.length) + 1}/${apiKeys.length}`
+            });
 
             try {
               await runStreamWithTimeout(controller.signal, timeoutMs, async (attemptSignal) => {
@@ -431,7 +486,7 @@ const createBrowserFallbackApi = (): MuApi => {
               }
 
               const message = error instanceof Error ? error.message : "Streaming failed.";
-              const shouldRetry = attempt < retryCount && !emittedDelta;
+              const shouldRetry = attempt + 1 < maxAttempts && !emittedDelta;
               debug(`attempt ${attemptNumber} failed`, { message, emittedDelta, shouldRetry });
               if (shouldRetry) {
                 attempt += 1;

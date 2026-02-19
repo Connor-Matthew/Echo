@@ -50,6 +50,16 @@ const writeJson = async (filename: string, value: unknown): Promise<void> => {
 };
 
 const normalizeBaseUrl = (value: string) => value.trim().replace(/\/+$/, "");
+const normalizeApiKeyToken = (value: string) => value.trim().replace(/^['"]|['"]$/g, "");
+const parseApiKeys = (raw: string) =>
+  Array.from(
+    new Set(
+      raw
+        .split(/[,\n]/)
+        .map((entry) => normalizeApiKeyToken(entry))
+        .filter(Boolean)
+    )
+  );
 const resolveAnthropicEndpoint = (baseUrl: string, resource: "models" | "messages") => {
   const normalized = normalizeBaseUrl(baseUrl);
   return normalized.endsWith("/v1")
@@ -95,7 +105,10 @@ const extractModelIds = (payload: unknown): string[] => {
 };
 
 const isSettingsConfigured = (settings: AppSettings) =>
-  Boolean(settings.baseUrl.trim() && settings.apiKey.trim() && settings.model.trim());
+  Boolean(settings.baseUrl.trim() && parseApiKeys(settings.apiKey).length && settings.model.trim());
+
+const isConnectionConfigured = (settings: AppSettings) =>
+  Boolean(settings.baseUrl.trim() && parseApiKeys(settings.apiKey).length);
 
 const clampInteger = (value: number, min: number, max: number, fallback: number) => {
   if (!Number.isFinite(value)) {
@@ -164,27 +177,41 @@ const createSseDebugLogger =
 
 const fetchModelIds = async (settings: AppSettings): Promise<ModelListResult> => {
   const baseUrl = normalizeBaseUrl(settings.baseUrl);
-  if (!baseUrl || !settings.apiKey.trim()) {
+  const apiKeys = parseApiKeys(settings.apiKey);
+  if (!baseUrl || !apiKeys.length) {
     return { ok: false, message: "Please fill Base URL and API key.", models: [] };
   }
 
   const isAnthropic = settings.providerType === "anthropic";
-  const anthropicHeaders: Record<string, string> = {
-    "x-api-key": settings.apiKey.trim(),
-    "anthropic-version": "2023-06-01"
-  };
-  const bearerHeaders: Record<string, string> = {
-    Authorization: `Bearer ${settings.apiKey.trim()}`
-  };
-
   const attempts: Array<{ endpoint: string; headers: Record<string, string> }> = isAnthropic
-    ? [
-        { endpoint: resolveAnthropicEndpoint(baseUrl, "models"), headers: anthropicHeaders },
-        { endpoint: `${baseUrl}/models`, headers: anthropicHeaders },
-        { endpoint: resolveAnthropicEndpoint(baseUrl, "models"), headers: bearerHeaders },
-        { endpoint: `${baseUrl}/models`, headers: bearerHeaders }
-      ]
-    : [{ endpoint: `${baseUrl}/models`, headers: bearerHeaders }];
+    ? apiKeys.flatMap((apiKey) => [
+        {
+          endpoint: resolveAnthropicEndpoint(baseUrl, "models"),
+          headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01" } as Record<
+            string,
+            string
+          >
+        },
+        {
+          endpoint: `${baseUrl}/models`,
+          headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01" } as Record<
+            string,
+            string
+          >
+        },
+        {
+          endpoint: resolveAnthropicEndpoint(baseUrl, "models"),
+          headers: { Authorization: `Bearer ${apiKey}` } as Record<string, string>
+        },
+        {
+          endpoint: `${baseUrl}/models`,
+          headers: { Authorization: `Bearer ${apiKey}` } as Record<string, string>
+        }
+      ])
+    : apiKeys.map((apiKey) => ({
+        endpoint: `${baseUrl}/models`,
+        headers: { Authorization: `Bearer ${apiKey}` } as Record<string, string>
+      }));
 
   let lastFailure = "Unknown error.";
 
@@ -231,6 +258,7 @@ const streamOpenAICompatible = async (
   sender: IpcMainInvokeEvent["sender"],
   streamId: string,
   payload: ChatStreamRequest,
+  apiKey: string,
   signal: AbortSignal,
   onDelta?: () => void
 ) => {
@@ -239,7 +267,7 @@ const streamOpenAICompatible = async (
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${payload.settings.apiKey.trim()}`
+      Authorization: `Bearer ${apiKey}`
     },
     body: JSON.stringify({
       model: payload.settings.model.trim(),
@@ -330,6 +358,7 @@ const streamAnthropic = async (
   sender: IpcMainInvokeEvent["sender"],
   streamId: string,
   payload: ChatStreamRequest,
+  apiKey: string,
   signal: AbortSignal,
   onDelta?: () => void
 ) => {
@@ -350,7 +379,7 @@ const streamAnthropic = async (
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-api-key": payload.settings.apiKey.trim(),
+      "x-api-key": apiKey,
       "anthropic-version": "2023-06-01"
     },
     body: JSON.stringify({
@@ -452,8 +481,8 @@ const registerIpcHandlers = () => {
   ipcMain.handle(
     "settings:testConnection",
     async (_, settings: AppSettings): Promise<ConnectionTestResult> => {
-      if (!isSettingsConfigured(settings)) {
-        return { ok: false, message: "Please fill Base URL, API key, and model." };
+      if (!isConnectionConfigured(settings)) {
+        return { ok: false, message: "Please fill Base URL and API key." };
       }
       const result = await fetchModelIds(settings);
       if (!result.ok) {
@@ -487,19 +516,24 @@ const registerIpcHandlers = () => {
         payload.settings.providerType === "anthropic" ? streamAnthropic : streamOpenAICompatible;
       const timeoutMs = normalizeRequestTimeoutMs(payload.settings.requestTimeoutMs);
       const retryCount = normalizeRetryCount(payload.settings.retryCount);
+      const apiKeys = parseApiKeys(payload.settings.apiKey);
+      const maxAttempts = Math.max(retryCount + 1, apiKeys.length);
       const debug = createSseDebugLogger(Boolean(payload.settings.sseDebug), streamId);
 
       void (async () => {
         let attempt = 0;
 
-        while (attempt <= retryCount) {
+        while (attempt < maxAttempts) {
           let emittedDelta = false;
           const attemptNumber = attempt + 1;
-          debug(`attempt ${attemptNumber}/${retryCount + 1} started`);
+          const apiKey = apiKeys[attempt % apiKeys.length];
+          debug(`attempt ${attemptNumber}/${maxAttempts} started`, {
+            apiKeySlot: `${(attempt % apiKeys.length) + 1}/${apiKeys.length}`
+          });
 
           try {
             await runStreamWithTimeout(controller.signal, timeoutMs, (attemptSignal) =>
-              stream(event.sender, streamId, payload, attemptSignal, () => {
+              stream(event.sender, streamId, payload, apiKey, attemptSignal, () => {
                 emittedDelta = true;
               })
             );
@@ -513,7 +547,7 @@ const registerIpcHandlers = () => {
             }
 
             const message = error instanceof Error ? error.message : "Streaming failed.";
-            const shouldRetry = attempt < retryCount && !emittedDelta;
+            const shouldRetry = attempt + 1 < maxAttempts && !emittedDelta;
             debug(`attempt ${attemptNumber} failed`, { message, emittedDelta, shouldRetry });
             if (shouldRetry) {
               attempt += 1;
