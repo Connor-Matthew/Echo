@@ -57,10 +57,26 @@ const nowIso = () => new Date().toISOString();
 const TEXT_ATTACHMENT_LIMIT = 60000;
 const TEXT_ATTACHMENT_EXTENSIONS = new Set([".md", ".txt"]);
 const COMPOSER_MODEL_DELIMITER = "::";
-const SIDEBAR_AUTO_HIDE_WIDTH = 1280;
+const SIDEBAR_AUTO_HIDE_WIDTH = 800;
+const SIDEBAR_MIN_WIDTH = 228;
+const SIDEBAR_MAX_WIDTH = 322;
+const SIDEBAR_FULL_WIDTH_AT = 1400;
 
 const getCurrentViewportWidth = () =>
   typeof window === "undefined" ? SIDEBAR_AUTO_HIDE_WIDTH + 1 : window.innerWidth;
+
+const getResponsiveSidebarWidth = (viewportWidth: number) => {
+  const widthRange = SIDEBAR_FULL_WIDTH_AT - SIDEBAR_AUTO_HIDE_WIDTH;
+  if (widthRange <= 0) {
+    return SIDEBAR_MAX_WIDTH;
+  }
+
+  const progress = (viewportWidth - SIDEBAR_AUTO_HIDE_WIDTH) / widthRange;
+  const normalizedProgress = Math.min(Math.max(progress, 0), 1);
+  return Math.round(
+    SIDEBAR_MIN_WIDTH + (SIDEBAR_MAX_WIDTH - SIDEBAR_MIN_WIDTH) * normalizedProgress
+  );
+};
 
 const encodeComposerModelOption = (providerId: string, modelId: string) =>
   `${encodeURIComponent(providerId)}${COMPOSER_MODEL_DELIMITER}${encodeURIComponent(modelId)}`;
@@ -847,7 +863,8 @@ export const App = () => {
     }
   };
 
-  const sidebarWidth = !isCompactLayout || isSidebarOpen ? 322 : 0;
+  const sidebarWidth =
+    !isCompactLayout || isSidebarOpen ? getResponsiveSidebarWidth(viewportWidth) : 0;
 
   const sidebarContent =
     activeView === "chat" ? (
@@ -898,7 +915,7 @@ export const App = () => {
   }
 
   return (
-    <div className="app-shell relative h-screen min-w-[680px] overflow-hidden bg-background px-2 py-2 sm:px-3 sm:py-3 md:px-4 md:py-4 lg:px-5 lg:py-5">
+    <div className="app-shell relative h-screen min-w-0 overflow-hidden bg-background px-2 py-2 sm:px-3 sm:py-3 md:px-4 md:py-4 lg:px-5 lg:py-5">
       <div className="app-window-drag-layer" aria-hidden />
       <div className="pointer-events-none absolute inset-x-0 top-0 h-[120px] bg-gradient-to-b from-white/75 to-transparent dark:from-[#1d2533]/45" />
       <div className="pointer-events-none absolute -left-24 top-20 h-72 w-72 rounded-full bg-[#cfd8ea]/35 blur-3xl dark:bg-[#38506f]/25" />
@@ -980,7 +997,7 @@ export const App = () => {
                 </div>
               ) : null}
 
-              <div className="sketch-grid-paper h-full min-h-0 bg-card/40 pb-[170px] sm:pb-[190px] md:pb-[220px]">
+              <div className="sketch-grid-paper h-full min-h-0 bg-card/40 pb-[136px] sm:pb-[152px] md:pb-[176px]">
                 <ChatView
                   messages={activeSession?.messages ?? []}
                   isConfigured={isConfigured}
@@ -993,8 +1010,8 @@ export const App = () => {
                 />
               </div>
 
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-[#f5f8fe] via-[#f5f8fe]/95 to-transparent px-2 pb-2 pt-8 dark:from-[#20293a] dark:via-[#20293a]/94 sm:px-3 sm:pb-3 sm:pt-10 md:px-8 md:pb-6 md:pt-12">
-                <div className="pointer-events-auto mx-auto w-full max-w-[980px]">
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-[#f5f8fe] via-[#f5f8fe]/95 to-transparent px-2 pb-2 pt-6 dark:from-[#20293a] dark:via-[#20293a]/94 sm:px-3 sm:pb-3 sm:pt-8 md:px-6 md:pb-4 md:pt-10">
+                <div className="pointer-events-auto mx-auto w-full min-w-0 max-w-[980px]">
                   <Composer
                     value={draft}
                     modelLabel={settings.model || "Model"}

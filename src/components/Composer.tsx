@@ -34,7 +34,7 @@ type ComposerProps = {
   isGenerating: boolean;
 };
 
-const MAX_TEXTAREA_HEIGHT = 24 * 7;
+const MAX_TEXTAREA_HEIGHT = 24 * 5;
 
 const formatBytes = (size: number) => {
   if (size < 1024) {
@@ -121,7 +121,7 @@ export const Composer = ({
 
   return (
     <footer className="w-full">
-      <div className="w-full rounded-[8px] border border-border bg-card/95 px-4 py-4 shadow-[4px_4px_0_hsl(var(--border))] md:px-5">
+      <div className="w-full rounded-[8px] border border-border bg-card/95 px-3 py-3 shadow-[4px_4px_0_hsl(var(--border))] sm:px-4 sm:py-3.5 md:px-5 md:py-4">
         <input
           ref={fileInputRef}
           type="file"
@@ -185,7 +185,7 @@ export const Composer = ({
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={onKeyDown}
           rows={1}
-          className="max-h-[168px] min-h-[52px] resize-none border-0 bg-transparent p-0 text-[18px] leading-7 text-foreground shadow-none placeholder:text-muted-foreground focus-visible:ring-0"
+          className="max-h-[120px] min-h-[44px] resize-none border-0 bg-transparent p-0 text-[17px] leading-6 text-foreground shadow-none placeholder:text-muted-foreground focus-visible:ring-0"
           placeholder={
             disabled
               ? "Configure provider settings to start chatting"
@@ -193,8 +193,8 @@ export const Composer = ({
           }
         />
 
-        <div className="mt-3 flex items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2 text-muted-foreground">
+        <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 sm:mt-3 sm:gap-3">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-muted-foreground sm:gap-2">
             <Button
               type="button"
               variant="ghost"
@@ -204,12 +204,12 @@ export const Composer = ({
             >
               <Plus className="h-4.5 w-4.5" />
             </Button>
-            <div className="relative">
+            <div className="relative w-[136px] sm:w-auto">
               <select
                 value={hasSelectedModel ? modelValue : ""}
                 onChange={(event) => onSelectModel(event.target.value)}
                 disabled={!normalizedModelOptions.length}
-                className="h-8 min-w-[160px] appearance-none rounded-[4px] border border-transparent bg-transparent px-2.5 pr-7 text-sm font-medium text-muted-foreground hover:border-border/70 hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-70"
+                className="h-8 w-full appearance-none rounded-[4px] border border-transparent bg-transparent px-2.5 pr-7 text-sm font-medium text-muted-foreground hover:border-border/70 hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-70 sm:min-w-[160px]"
               >
                 {!hasSelectedModel ? (
                   <option value="">{modelLabel || "Model"}</option>
@@ -225,13 +225,13 @@ export const Composer = ({
             <Button
               type="button"
               variant="ghost"
-              className="h-8 gap-1.5 rounded-[4px] px-2.5 text-sm font-medium text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+              className="h-8 gap-1 rounded-[4px] px-2 text-sm font-medium text-muted-foreground hover:bg-accent/60 hover:text-foreground sm:gap-1.5 sm:px-2.5"
             >
               <span>High</span>
               <ChevronDown className="h-4 w-4" />
             </Button>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="ml-auto flex shrink-0 items-center gap-2">
             <Button
               type="button"
               variant="ghost"
