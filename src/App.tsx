@@ -6,6 +6,7 @@ import { SettingsCenter } from "./components/SettingsCenter";
 import { Sidebar, type SettingsSection } from "./components/Sidebar";
 import { Button } from "./components/ui/button";
 import { getMuApi } from "./lib/mu-api";
+import { resolveProviderModelCapabilities } from "./lib/model-capabilities";
 import {
   DEFAULT_SETTINGS,
   normalizeSettings,
@@ -68,6 +69,8 @@ const TEXT_ATTACHMENT_MIME_TYPES = new Set([
   "application/x-yaml",
   "text/csv"
 ]);
+const AUDIO_ATTACHMENT_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".ogg", ".flac", ".aac"]);
+const VIDEO_ATTACHMENT_EXTENSIONS = new Set([".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"]);
 const COMPOSER_MODEL_DELIMITER = "::";
 const SIDEBAR_AUTO_HIDE_WIDTH = 800;
 const SIDEBAR_MIN_WIDTH = 228;
@@ -122,6 +125,12 @@ const isTextAttachment = (file: File) => {
   }
   return TEXT_ATTACHMENT_EXTENSIONS.has(getExtension(file.name));
 };
+
+const isAudioAttachment = (file: File) =>
+  file.type.startsWith("audio/") || AUDIO_ATTACHMENT_EXTENSIONS.has(getExtension(file.name));
+
+const isVideoAttachment = (file: File) =>
+  file.type.startsWith("video/") || VIDEO_ATTACHMENT_EXTENSIONS.has(getExtension(file.name));
 
 const readFileAsDataUrl = (file: File) =>
   new Promise<string>((resolve, reject) => {
@@ -287,6 +296,10 @@ export const App = () => {
     }
     return encodeComposerModelOption(activeProvider.id, modelId);
   }, [activeProvider?.id, settings.model]);
+  const activeModelCapabilities = useMemo(
+    () => resolveProviderModelCapabilities(activeProvider, settings.model),
+    [activeProvider, settings.model]
+  );
 
   const upsertSession = (
     sessionId: string,
@@ -633,8 +646,9 @@ export const App = () => {
     }
 
     void (async () => {
+      const blockedMessages: string[] = [];
       const nextAttachments = await Promise.all(
-        Array.from(files).map(async (file): Promise<DraftAttachment> => {
+        Array.from(files).map(async (file): Promise<DraftAttachment | null> => {
           const base: DraftAttachment = {
             id: createId(),
             name: file.name,
@@ -644,6 +658,10 @@ export const App = () => {
           };
 
           if (file.type.startsWith("image/")) {
+            if (!activeModelCapabilities.imageInput) {
+              blockedMessages.push(`模型 "${settings.model}" 不支持图片输入：${file.name}`);
+              return null;
+            }
             const previewUrl = URL.createObjectURL(file);
             if (file.size > IMAGE_ATTACHMENT_LIMIT) {
               return {
@@ -672,6 +690,22 @@ export const App = () => {
             }
           }
 
+          if (isAudioAttachment(file)) {
+            if (!activeModelCapabilities.audioInput) {
+              blockedMessages.push(`模型 "${settings.model}" 不支持音频输入：${file.name}`);
+              return null;
+            }
+            return base;
+          }
+
+          if (isVideoAttachment(file)) {
+            if (!activeModelCapabilities.videoInput) {
+              blockedMessages.push(`模型 "${settings.model}" 不支持视频输入：${file.name}`);
+              return null;
+            }
+            return base;
+          }
+
           if (isTextAttachment(file)) {
             try {
               const content = await file.text();
@@ -697,7 +731,18 @@ export const App = () => {
         })
       );
 
-      setDraftAttachments((previous) => [...previous, ...nextAttachments]);
+      if (blockedMessages.length) {
+        const uniqueMessages = Array.from(new Set(blockedMessages));
+        setErrorBanner(uniqueMessages.slice(0, 3).join("；"));
+      }
+
+      const accepted = nextAttachments.filter((attachment): attachment is DraftAttachment =>
+        Boolean(attachment)
+      );
+      if (!accepted.length) {
+        return;
+      }
+      setDraftAttachments((previous) => [...previous, ...accepted]);
     })();
   };
 
@@ -1144,6 +1189,7 @@ export const App = () => {
                     modelLabel={settings.model || "Model"}
                     modelValue={activeComposerModelValue}
                     modelOptions={composerModelOptions}
+                    modelCapabilities={activeModelCapabilities}
                     sendWithEnter={settings.sendWithEnter}
                     attachments={draftAttachments}
                     onAddFiles={addFiles}

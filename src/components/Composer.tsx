@@ -1,5 +1,17 @@
 import { useEffect, useMemo, useRef, type KeyboardEventHandler } from "react";
-import { ArrowUp, ChevronDown, CircleStop, FileText, ImageIcon, Mic, Plus, X } from "lucide-react";
+import {
+  ArrowUp,
+  Brain,
+  ChevronDown,
+  CircleStop,
+  FileText,
+  ImageIcon,
+  Mic,
+  Plus,
+  Video,
+  X
+} from "lucide-react";
+import type { ModelCapabilities } from "../shared/contracts";
 import { Button } from "./ui/button";
 import { Textarea } from "./ui/textarea";
 
@@ -22,6 +34,7 @@ type ComposerProps = {
   modelLabel: string;
   modelValue: string;
   modelOptions: ComposerModelOption[];
+  modelCapabilities: ModelCapabilities;
   sendWithEnter: boolean;
   attachments: ComposerAttachment[];
   onAddFiles: (files: FileList | null) => void;
@@ -51,6 +64,7 @@ export const Composer = ({
   modelLabel,
   modelValue,
   modelOptions,
+  modelCapabilities,
   sendWithEnter,
   attachments,
   onAddFiles,
@@ -230,6 +244,47 @@ export const Composer = ({
               <span>High</span>
               <ChevronDown className="h-4 w-4" />
             </Button>
+            <div className="ml-0.5 flex items-center gap-1">
+              {[
+                {
+                  key: "imageInput",
+                  label: "图片输入",
+                  Icon: ImageIcon,
+                  enabled: modelCapabilities.imageInput
+                },
+                {
+                  key: "audioInput",
+                  label: "音频输入",
+                  Icon: Mic,
+                  enabled: modelCapabilities.audioInput
+                },
+                {
+                  key: "videoInput",
+                  label: "视频输入",
+                  Icon: Video,
+                  enabled: modelCapabilities.videoInput
+                },
+                {
+                  key: "reasoningDisplay",
+                  label: "思维链",
+                  Icon: Brain,
+                  enabled: modelCapabilities.reasoningDisplay
+                }
+              ].map(({ key, label, Icon, enabled }) => (
+                <span
+                  key={key}
+                  title={`${label}${enabled ? "" : "（当前模型不支持）"}`}
+                  className={[
+                    "inline-flex h-6 w-6 items-center justify-center rounded-[4px] border transition-colors",
+                    enabled
+                      ? "border-border bg-accent/70 text-foreground"
+                      : "border-border/60 bg-card text-muted-foreground/55"
+                  ].join(" ")}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                </span>
+              ))}
+            </div>
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-2">
             <Button

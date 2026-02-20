@@ -4,6 +4,14 @@ export type MessageDensity = "compact" | "comfortable";
 export type ProviderType = "openai" | "anthropic" | "acp";
 export type AttachmentKind = "text" | "image" | "file";
 
+export type ModelCapabilities = {
+  textInput: boolean;
+  imageInput: boolean;
+  audioInput: boolean;
+  videoInput: boolean;
+  reasoningDisplay: boolean;
+};
+
 export type StoredProvider = {
   id: string;
   name: string;
@@ -11,6 +19,7 @@ export type StoredProvider = {
   apiKey: string;
   model: string;
   savedModels: string[];
+  modelCapabilities: Record<string, ModelCapabilities>;
   providerType: ProviderType;
   enabled: boolean;
   isPinned: boolean;
@@ -106,6 +115,7 @@ const DEFAULT_PROVIDER: StoredProvider = {
   apiKey: "",
   model: "",
   savedModels: [],
+  modelCapabilities: {},
   providerType: "openai",
   enabled: true,
   isPinned: false
@@ -153,6 +163,31 @@ const sanitizeProvider = (
   const dedupedSavedModels = Array.from(
     new Set(model ? [...savedModelsFromCandidate, model] : savedModelsFromCandidate)
   );
+  const rawCapabilities =
+    candidate?.modelCapabilities && typeof candidate.modelCapabilities === "object"
+      ? candidate.modelCapabilities
+      : {};
+  const normalizedCapabilities = Object.fromEntries(
+    Object.entries(rawCapabilities)
+      .map(([modelId, capabilities]) => {
+        const key = modelId.trim().toLowerCase();
+        if (!key || !capabilities || typeof capabilities !== "object") {
+          return null;
+        }
+        const typed = capabilities as Partial<ModelCapabilities>;
+        return [
+          key,
+          {
+            textInput: typed.textInput !== false,
+            imageInput: Boolean(typed.imageInput),
+            audioInput: Boolean(typed.audioInput),
+            videoInput: Boolean(typed.videoInput),
+            reasoningDisplay: Boolean(typed.reasoningDisplay)
+          } satisfies ModelCapabilities
+        ];
+      })
+      .filter((entry): entry is [string, ModelCapabilities] => Boolean(entry))
+  );
 
   return {
     id: candidate?.id?.trim() || `provider-${fallbackIndex + 1}`,
@@ -161,6 +196,7 @@ const sanitizeProvider = (
     apiKey: typeof candidate?.apiKey === "string" ? candidate.apiKey : "",
     model,
     savedModels: dedupedSavedModels,
+    modelCapabilities: normalizedCapabilities,
     providerType: normalizeProviderType(candidate?.providerType),
     enabled: candidate?.enabled !== false,
     isPinned: Boolean(candidate?.isPinned)
@@ -197,6 +233,7 @@ export const normalizeSettings = (saved: Partial<AppSettings>): AppSettings => {
       apiKey: merged.apiKey,
       model: merged.model,
       savedModels: merged.model.trim() ? [merged.model.trim()] : [],
+      modelCapabilities: {},
       providerType: normalizeProviderType(merged.providerType),
       enabled: true,
       isPinned: false

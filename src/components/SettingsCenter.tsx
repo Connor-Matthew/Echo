@@ -17,11 +17,16 @@ import {
   X
 } from "lucide-react";
 import { cn } from "../lib/utils";
+import {
+  resolveProviderModelCapabilities,
+  toModelCapabilityKey
+} from "../lib/model-capabilities";
 import type {
   AppSettings,
   ChatSession,
   ConnectionTestResult,
   FontScale,
+  ModelCapabilities,
   MessageDensity,
   ModelListResult,
   ProviderType,
@@ -188,6 +193,7 @@ const createProvider = (index: number): StoredProvider => ({
   apiKey: "",
   model: "",
   savedModels: [],
+  modelCapabilities: {},
   providerType: "openai",
   enabled: true,
   isPinned: false
@@ -202,6 +208,7 @@ const getActiveProvider = (settings: AppSettings): StoredProvider => {
       apiKey: settings.apiKey,
       model: settings.model,
       savedModels: settings.model.trim() ? [settings.model.trim()] : [],
+      modelCapabilities: {},
       providerType: settings.providerType,
       enabled: true,
       isPinned: false
@@ -250,6 +257,27 @@ const normalizeDraft = (settings: AppSettings): AppSettings => {
           .concat(model ? [model] : [])
       )
     );
+    const modelCapabilities = Object.fromEntries(
+      Object.entries(provider.modelCapabilities ?? {})
+        .map(([modelId, capabilities]) => {
+          const key = modelId.trim().toLowerCase();
+          if (!key || !capabilities || typeof capabilities !== "object") {
+            return null;
+          }
+          const typed = capabilities as Partial<ModelCapabilities>;
+          return [
+            key,
+            {
+              textInput: typed.textInput !== false,
+              imageInput: Boolean(typed.imageInput),
+              audioInput: Boolean(typed.audioInput),
+              videoInput: Boolean(typed.videoInput),
+              reasoningDisplay: Boolean(typed.reasoningDisplay)
+            } satisfies ModelCapabilities
+          ];
+        })
+        .filter((entry): entry is [string, ModelCapabilities] => Boolean(entry))
+    );
 
     return {
       ...provider,
@@ -259,6 +287,7 @@ const normalizeDraft = (settings: AppSettings): AppSettings => {
       apiKey: provider.apiKey.trim(),
       model,
       savedModels,
+      modelCapabilities,
       providerType:
         provider.providerType === "anthropic"
           ? "anthropic"
@@ -489,6 +518,14 @@ export const SettingsCenter = ({
       ),
     [activeProvider.savedModels]
   );
+  const activeModelCapabilities = useMemo(
+    () => resolveProviderModelCapabilities(activeProvider, activeProvider.model),
+    [activeProvider]
+  );
+  const hasActiveModelCapabilityOverride = useMemo(() => {
+    const key = toModelCapabilityKey(activeProvider.model);
+    return Boolean(key && activeProvider.modelCapabilities?.[key]);
+  }, [activeProvider]);
   const mergedModelOptions = useMemo(() => {
     const currentModel = activeProvider.model.trim();
     return Array.from(
@@ -657,10 +694,16 @@ export const SettingsCenter = ({
 
         const nextSavedModels = (provider.savedModels ?? []).filter((entry) => entry !== modelId);
         const nextModel = provider.model === modelId ? nextSavedModels[0] ?? "" : provider.model;
+        const key = toModelCapabilityKey(modelId);
+        const nextCapabilities = { ...(provider.modelCapabilities ?? {}) };
+        if (key) {
+          delete nextCapabilities[key];
+        }
         return {
           ...provider,
           model: nextModel,
-          savedModels: nextSavedModels
+          savedModels: nextSavedModels,
+          modelCapabilities: nextCapabilities
         };
       });
       return syncProviderState(previous, nextProviders, previous.activeProviderId);
@@ -668,6 +711,68 @@ export const SettingsCenter = ({
     setProviderMessage(`Removed model: ${modelId}`);
     setTestResult(null);
     setSaveError(null);
+  };
+
+  const updateActiveModelCapability = (
+    field: keyof Pick<
+      ModelCapabilities,
+      "imageInput" | "audioInput" | "videoInput" | "reasoningDisplay"
+    >,
+    value: boolean
+  ) => {
+    const modelId = activeProvider.model.trim();
+    const key = toModelCapabilityKey(modelId);
+    if (!key) {
+      setProviderMessage("Please choose a model first.");
+      return;
+    }
+
+    setDraft((previous) => {
+      const nextProviders = previous.providers.map((provider) => {
+        if (provider.id !== previous.activeProviderId) {
+          return provider;
+        }
+        const current = resolveProviderModelCapabilities(provider, modelId);
+        const nextCapabilities = {
+          ...(provider.modelCapabilities ?? {}),
+          [key]: {
+            ...current,
+            [field]: value
+          }
+        };
+        return {
+          ...provider,
+          modelCapabilities: nextCapabilities
+        };
+      });
+      return syncProviderState(previous, nextProviders, previous.activeProviderId);
+    });
+    setProviderMessage(`Updated model capability: ${field}`);
+    setSaveError(null);
+  };
+
+  const resetActiveModelCapabilities = () => {
+    const key = toModelCapabilityKey(activeProvider.model);
+    if (!key) {
+      setProviderMessage("Please choose a model first.");
+      return;
+    }
+
+    setDraft((previous) => {
+      const nextProviders = previous.providers.map((provider) => {
+        if (provider.id !== previous.activeProviderId) {
+          return provider;
+        }
+        const nextCapabilities = { ...(provider.modelCapabilities ?? {}) };
+        delete nextCapabilities[key];
+        return {
+          ...provider,
+          modelCapabilities: nextCapabilities
+        };
+      });
+      return syncProviderState(previous, nextProviders, previous.activeProviderId);
+    });
+    setProviderMessage("Model capabilities reset to auto-detected values.");
   };
 
   const switchActiveProvider = (providerId: string) => {
@@ -1197,6 +1302,86 @@ export const SettingsCenter = ({
                       value={activeProvider.model}
                       onChange={(event) => setActiveProviderModel(event.target.value, false)}
                     />
+                    <div className="space-y-1.5 rounded-md border border-border bg-secondary/45 p-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                          Model capabilities
+                        </p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={resetActiveModelCapabilities}
+                          disabled={!activeProvider.model.trim() || !hasActiveModelCapabilityOverride}
+                        >
+                          Auto detect
+                        </Button>
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <button
+                          type="button"
+                          className={cn(
+                            "rounded-[6px] border px-2.5 py-2 text-left text-xs transition-colors",
+                            activeModelCapabilities.imageInput
+                              ? "border-border bg-accent/65 text-foreground"
+                              : "border-border/70 bg-card text-muted-foreground hover:bg-secondary/65"
+                          )}
+                          onClick={() =>
+                            updateActiveModelCapability("imageInput", !activeModelCapabilities.imageInput)
+                          }
+                        >
+                          图片输入
+                        </button>
+                        <button
+                          type="button"
+                          className={cn(
+                            "rounded-[6px] border px-2.5 py-2 text-left text-xs transition-colors",
+                            activeModelCapabilities.audioInput
+                              ? "border-border bg-accent/65 text-foreground"
+                              : "border-border/70 bg-card text-muted-foreground hover:bg-secondary/65"
+                          )}
+                          onClick={() =>
+                            updateActiveModelCapability("audioInput", !activeModelCapabilities.audioInput)
+                          }
+                        >
+                          音频输入
+                        </button>
+                        <button
+                          type="button"
+                          className={cn(
+                            "rounded-[6px] border px-2.5 py-2 text-left text-xs transition-colors",
+                            activeModelCapabilities.videoInput
+                              ? "border-border bg-accent/65 text-foreground"
+                              : "border-border/70 bg-card text-muted-foreground hover:bg-secondary/65"
+                          )}
+                          onClick={() =>
+                            updateActiveModelCapability("videoInput", !activeModelCapabilities.videoInput)
+                          }
+                        >
+                          视频输入
+                        </button>
+                        <button
+                          type="button"
+                          className={cn(
+                            "rounded-[6px] border px-2.5 py-2 text-left text-xs transition-colors",
+                            activeModelCapabilities.reasoningDisplay
+                              ? "border-border bg-accent/65 text-foreground"
+                              : "border-border/70 bg-card text-muted-foreground hover:bg-secondary/65"
+                          )}
+                          onClick={() =>
+                            updateActiveModelCapability(
+                              "reasoningDisplay",
+                              !activeModelCapabilities.reasoningDisplay
+                            )
+                          }
+                        >
+                          思维链显示
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">
+                        默认按模型名自动推断；你可以手动覆盖。输入窗口会按这些能力限制附件并给出提示。
+                      </p>
+                    </div>
                     <div className="space-y-1.5">
                       <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
                         Saved models for this channel
