@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { PanelLeft } from "lucide-react";
 import { ChatView } from "./components/ChatView";
 import { Composer, type ComposerAttachment } from "./components/Composer";
 import { SettingsCenter } from "./components/SettingsCenter";
@@ -56,6 +57,10 @@ const nowIso = () => new Date().toISOString();
 const TEXT_ATTACHMENT_LIMIT = 60000;
 const TEXT_ATTACHMENT_EXTENSIONS = new Set([".md", ".txt"]);
 const COMPOSER_MODEL_DELIMITER = "::";
+const SIDEBAR_AUTO_HIDE_WIDTH = 1280;
+
+const getCurrentViewportWidth = () =>
+  typeof window === "undefined" ? SIDEBAR_AUTO_HIDE_WIDTH + 1 : window.innerWidth;
 
 const encodeComposerModelOption = (providerId: string, modelId: string) =>
   `${encodeURIComponent(providerId)}${COMPOSER_MODEL_DELIMITER}${encodeURIComponent(modelId)}`;
@@ -158,10 +163,17 @@ export const App = () => {
   const [isHydrated, setIsHydrated] = useState(false);
   const [removedSession, setRemovedSession] = useState<RemovedSession | null>(null);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
+  const [viewportWidth, setViewportWidth] = useState(getCurrentViewportWidth);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(
+    () => getCurrentViewportWidth() >= SIDEBAR_AUTO_HIDE_WIDTH
+  );
 
   const activeStreamRef = useRef<ActiveStream | null>(null);
   const removedTimeoutRef = useRef<number | null>(null);
   const draftAttachmentsRef = useRef<DraftAttachment[]>([]);
+  const wasCompactLayoutRef = useRef(getCurrentViewportWidth() < SIDEBAR_AUTO_HIDE_WIDTH);
+
+  const isCompactLayout = viewportWidth < SIDEBAR_AUTO_HIDE_WIDTH;
 
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId),
@@ -175,19 +187,29 @@ export const App = () => {
     [settings.activeProviderId, settings.providers]
   );
 
-  const isConfigured = Boolean(
-    (activeProvider?.enabled ?? true) &&
-      settings.baseUrl.trim() &&
-      settings.apiKey.trim() &&
-      settings.model.trim()
-  );
+  const isConfigured = useMemo(() => {
+    if (!activeProvider || activeProvider.enabled === false) {
+      return false;
+    }
+
+    const model = settings.model.trim();
+    if (!model) {
+      return false;
+    }
+
+    if (activeProvider.providerType === "acp") {
+      return true;
+    }
+
+    return Boolean(settings.baseUrl.trim() && settings.apiKey.trim());
+  }, [activeProvider, settings.apiKey, settings.baseUrl, settings.model]);
 
   const composerModelOptions = useMemo(() => {
     const seen = new Set<string>();
     return settings.providers.flatMap((provider) => {
       const selectedModels = Array.from(
         new Set(
-          (Array.isArray(provider.savedModels) ? provider.savedModels : [])
+          [provider.model, ...(Array.isArray(provider.savedModels) ? provider.savedModels : [])]
             .map((entry) => entry.trim())
             .filter(Boolean)
         )
@@ -306,6 +328,27 @@ export const App = () => {
   useEffect(() => {
     draftAttachmentsRef.current = draftAttachments;
   }, [draftAttachments]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setViewportWidth(window.innerWidth);
+    };
+
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  useEffect(() => {
+    const wasCompact = wasCompactLayoutRef.current;
+    if (!wasCompact && isCompactLayout) {
+      setIsSidebarOpen(false);
+    }
+    if (wasCompact && !isCompactLayout) {
+      setIsSidebarOpen(true);
+    }
+    wasCompactLayoutRef.current = isCompactLayout;
+  }, [isCompactLayout]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -461,26 +504,29 @@ export const App = () => {
       return;
     }
 
-    const nextSettings = normalizeSettings({
-      ...settings,
-      activeProviderId: providerId,
-      providers: settings.providers.map((provider) =>
-        provider.id === providerId
-          ? {
-              ...provider,
-              model: nextModel,
-              savedModels: Array.from(
+    setSettings((previous) => {
+      const nextSettings = normalizeSettings({
+        ...previous,
+        activeProviderId: providerId,
+        providers: previous.providers.map((provider) =>
+          provider.id === providerId
+            ? {
+                ...provider,
+                model: nextModel,
+                savedModels: Array.from(
                   new Set([...(provider.savedModels ?? []), nextModel].map((entry) => entry.trim()))
                 ).filter(Boolean)
-            }
-          : provider
-      ),
-      model: nextModel
-    });
+              }
+            : provider
+        ),
+        model: nextModel
+      });
 
-    setSettings(nextSettings);
-    void api.settings.save(nextSettings).catch((error) => {
-      setErrorBanner(error instanceof Error ? error.message : "Failed to save model selection.");
+      void api.settings.save(nextSettings).catch((error) => {
+        setErrorBanner(error instanceof Error ? error.message : "Failed to save model selection.");
+      });
+
+      return nextSettings;
     });
   };
 
@@ -795,59 +841,126 @@ export const App = () => {
     clearDraftAttachments();
   };
 
+  const closeSidebarIfCompact = () => {
+    if (isCompactLayout) {
+      setIsSidebarOpen(false);
+    }
+  };
+
+  const sidebarWidth = !isCompactLayout || isSidebarOpen ? 322 : 0;
+
+  const sidebarContent =
+    activeView === "chat" ? (
+      <Sidebar
+        mode="chat"
+        sessions={sessions}
+        activeSessionId={activeSessionId}
+        onSelectSession={(sessionId) => {
+          setActiveSessionId(sessionId);
+          closeSidebarIfCompact();
+        }}
+        onCreateSession={() => {
+          createNewThread();
+          closeSidebarIfCompact();
+        }}
+        onRenameSession={renameThread}
+        onDeleteSession={deleteThread}
+        onEnterSettings={() => {
+          setActiveSettingsSection("provider");
+          setActiveView("settings");
+          closeSidebarIfCompact();
+        }}
+      />
+    ) : (
+      <Sidebar
+        mode="settings"
+        settingsSection={activeSettingsSection}
+        onSelectSettingsSection={(section) => {
+          setActiveSettingsSection(section);
+          closeSidebarIfCompact();
+        }}
+        onExitSettings={() => {
+          setActiveView("chat");
+          closeSidebarIfCompact();
+        }}
+      />
+    );
+
   if (!isHydrated) {
     return (
       <div className="grid h-screen place-content-center bg-background text-muted-foreground">
-        Loading...
+        <div className="sketch-panel rounded-[8px] px-6 py-4 text-center">
+          <p className="sketch-title text-[26px] uppercase leading-none text-primary sm:text-[34px]">Echo</p>
+          <p className="mt-2 text-sm">Preparing your notebook...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="app-shell relative h-screen min-w-[1100px] overflow-hidden bg-background/95 p-4">
+    <div className="app-shell relative h-screen min-w-[680px] overflow-hidden bg-background px-2 py-2 sm:px-3 sm:py-3 md:px-4 md:py-4 lg:px-5 lg:py-5">
       <div className="app-window-drag-layer" aria-hidden />
-      <div className="pointer-events-none absolute -top-20 left-1/4 h-72 w-72 rounded-full bg-[#c8dcff]/50 blur-3xl dark:bg-[#1f3d65]/55" />
-      <div className="pointer-events-none absolute -bottom-24 right-12 h-80 w-80 rounded-full bg-[#c9ece9]/45 blur-3xl dark:bg-[#184a57]/40" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-[120px] bg-gradient-to-b from-white/75 to-transparent dark:from-[#1d2533]/45" />
+      <div className="pointer-events-none absolute -left-24 top-20 h-72 w-72 rounded-full bg-[#cfd8ea]/35 blur-3xl dark:bg-[#38506f]/25" />
+      <div className="pointer-events-none absolute -bottom-20 right-6 h-80 w-80 rounded-full bg-[#dbe2f0]/30 blur-3xl dark:bg-[#3b4b64]/25" />
 
-      <div className="relative grid h-full grid-cols-[290px_minmax(760px,1fr)] gap-4">
+      <div
+        className={`relative grid h-full transition-[grid-template-columns,gap] duration-300 ease-out ${
+          isCompactLayout && !isSidebarOpen ? "gap-0" : "gap-2 md:gap-4"
+        }`}
+        style={{ gridTemplateColumns: `${sidebarWidth}px minmax(0, 1fr)` }}
+      >
         <div
           data-no-drag="true"
-          className="overflow-hidden rounded-[28px] border border-white/60 bg-white/45 shadow-[0_14px_34px_rgba(15,23,42,0.08)] backdrop-blur-xl animate-rise-fade dark:border-white/10 dark:bg-[#0f1728]/70 dark:shadow-[0_14px_34px_rgba(2,8,23,0.55)]"
+          className={`sketch-panel overflow-hidden rounded-[8px] transition-[transform,opacity] duration-300 ease-out ${
+            isCompactLayout && !isSidebarOpen
+              ? "-translate-x-[110%] opacity-0 pointer-events-none"
+              : "translate-x-0 opacity-100"
+          }`}
         >
-          {activeView === "chat" ? (
-            <Sidebar
-              mode="chat"
-              sessions={sessions}
-              activeSessionId={activeSessionId}
-              onSelectSession={setActiveSessionId}
-              onCreateSession={createNewThread}
-              onRenameSession={renameThread}
-              onDeleteSession={deleteThread}
-              onEnterSettings={() => {
-                setActiveSettingsSection("provider");
-                setActiveView("settings");
-              }}
-            />
-          ) : (
-            <Sidebar
-              mode="settings"
-              settingsSection={activeSettingsSection}
-              onSelectSettingsSection={setActiveSettingsSection}
-              onExitSettings={() => setActiveView("chat")}
-            />
-          )}
+          {sidebarContent}
         </div>
 
         <main
           data-no-drag="true"
-          className="relative min-h-0 overflow-hidden rounded-[30px] border border-white/70 bg-white/58 shadow-[0_20px_46px_rgba(15,23,42,0.12)] backdrop-blur-xl animate-rise-fade-delayed dark:border-white/10 dark:bg-[#101b2d]/78 dark:shadow-[0_20px_46px_rgba(2,8,23,0.58)]"
+          className="sketch-panel relative flex min-h-0 flex-col overflow-hidden rounded-[8px]"
         >
           {activeView === "chat" ? (
             <>
+              <header className="border-b border-border/85 bg-white/80 px-3 py-2 sm:px-4 sm:py-2.5 md:px-5 md:py-3 dark:bg-[#222c3d]/55">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-start gap-2">
+                    {isCompactLayout ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-1 px-2"
+                        onClick={() => setIsSidebarOpen((previous) => !previous)}
+                      >
+                        <PanelLeft className="h-4 w-4" />
+                        Menu
+                      </Button>
+                    ) : null}
+                    <div>
+                      <p className="sketch-title text-[22px] uppercase leading-none text-primary sm:text-[28px] md:text-[34px]">
+                        Notebook Desk
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {activeSession?.title ?? "New thread"}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="rounded-[4px] border border-border/90 bg-card/70 px-2.5 py-1 text-xs text-muted-foreground">
+                    {activeSession?.messages.length ?? 0} notes
+                  </p>
+                </div>
+              </header>
+
               {removedSession || errorBanner ? (
-                <div className="mx-auto mt-3 grid w-[min(900px,calc(100%-64px))] gap-3">
+                <div className="mx-auto mt-3 grid w-[min(900px,calc(100%-48px))] gap-3">
                   {removedSession ? (
-                    <div className="flex items-center justify-between rounded-xl border border-[#dbe5f0] bg-[#f8fbff] px-3 py-2 text-[#2f4157] dark:border-[#2a3d59] dark:bg-[#132238] dark:text-[#c6d7ee]">
+                    <div className="flex items-center justify-between rounded-[6px] border border-border/90 bg-card px-3 py-2 text-foreground">
                       <span>Thread deleted.</span>
                       <Button
                         variant="ghost"
@@ -867,7 +980,7 @@ export const App = () => {
                 </div>
               ) : null}
 
-              <div className="h-full min-h-0 pb-[200px]">
+              <div className="sketch-grid-paper h-full min-h-0 bg-card/40 pb-[170px] sm:pb-[190px] md:pb-[220px]">
                 <ChatView
                   messages={activeSession?.messages ?? []}
                   isConfigured={isConfigured}
@@ -880,7 +993,7 @@ export const App = () => {
                 />
               </div>
 
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-[#edf3f9] via-[#edf3f9]/95 to-transparent px-8 pb-6 pt-12 dark:from-[#101b2d] dark:via-[#101b2d]/92">
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-[#f5f8fe] via-[#f5f8fe]/95 to-transparent px-2 pb-2 pt-8 dark:from-[#20293a] dark:via-[#20293a]/94 sm:px-3 sm:pb-3 sm:pt-10 md:px-8 md:pb-6 md:pt-12">
                 <div className="pointer-events-auto mx-auto w-full max-w-[980px]">
                   <Composer
                     value={draft}
@@ -906,17 +1019,41 @@ export const App = () => {
               </div>
             </>
           ) : (
-            <SettingsCenter
-              section={activeSettingsSection}
-              settings={settings}
-              onSave={saveSettings}
-              onTest={testConnection}
-              onListModels={listModels}
-              onExportSessions={exportSessions}
-              onImportSessions={importSessions}
-              onClearSessions={clearAllSessions}
-              onResetSettings={resetSettings}
-            />
+            <>
+              <header className="border-b border-border/85 bg-white/80 px-3 py-2 sm:px-4 sm:py-2.5 md:px-5 md:py-3 dark:bg-[#222c3d]/55">
+                <div className="flex items-start gap-2">
+                  {isCompactLayout ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-1 px-2"
+                      onClick={() => setIsSidebarOpen((previous) => !previous)}
+                    >
+                      <PanelLeft className="h-4 w-4" />
+                      Menu
+                    </Button>
+                  ) : null}
+                  <div>
+                    <p className="sketch-title text-[22px] uppercase leading-none text-primary sm:text-[28px] md:text-[34px]">
+                      Settings Ledger
+                    </p>
+                    <p className="text-xs text-muted-foreground">Tune providers and behavior controls</p>
+                  </div>
+                </div>
+              </header>
+              <SettingsCenter
+                section={activeSettingsSection}
+                settings={settings}
+                onSave={saveSettings}
+                onTest={testConnection}
+                onListModels={listModels}
+                onExportSessions={exportSessions}
+                onImportSessions={importSessions}
+                onClearSessions={clearAllSessions}
+                onResetSettings={resetSettings}
+              />
+            </>
           )}
         </main>
       </div>

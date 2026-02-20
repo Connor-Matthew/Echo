@@ -60,11 +60,11 @@ export const Sidebar = (props: SidebarProps) => {
     ];
 
     return (
-      <aside className="flex h-full flex-col overflow-hidden border-r border-border bg-[#edf1f5] px-3 pb-3 pt-5 dark:bg-[#121f33]">
+      <aside className="flex h-full flex-col overflow-hidden bg-card/50 px-3 pb-3 pt-4">
         <div className="space-y-1 pb-4">
           <Button
             variant="ghost"
-            className="h-9 w-full justify-start gap-2 px-2 text-sm font-semibold text-foreground/90"
+            className="h-9 w-full justify-start gap-2 px-2 text-sm font-semibold text-foreground"
             onClick={props.onExitSettings}
           >
             <ArrowLeft className="h-4 w-4" />
@@ -74,7 +74,7 @@ export const Sidebar = (props: SidebarProps) => {
 
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="mb-3 px-1">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Settings</p>
+            <p className="sketch-title text-[23px] uppercase leading-none text-primary">Sections</p>
           </div>
           <div className="space-y-1 pr-1">
             {settingsItems.map((item) => {
@@ -86,10 +86,10 @@ export const Sidebar = (props: SidebarProps) => {
                   type="button"
                   variant="ghost"
                   className={cn(
-                    "h-9 w-full justify-start gap-2 rounded-md border border-transparent px-2 text-sm",
+                    "h-9 w-full justify-start gap-2 rounded-[4px] border px-2 text-sm",
                     active
-                      ? "border-[#d5dfea] bg-[#f8fbff] text-[#22374d] dark:border-[#355073] dark:bg-[#1a2a44] dark:text-[#d8e7fa]"
-                      : "text-foreground/80 hover:bg-white/60 dark:hover:bg-[#192941]"
+                      ? "border-border bg-accent/70 text-foreground shadow-[2px_2px_0_hsl(var(--border))]"
+                      : "border-transparent text-foreground/80 hover:border-border/60 hover:bg-accent/50"
                   )}
                   onClick={() => props.onSelectSettingsSection(item.key)}
                 >
@@ -101,7 +101,7 @@ export const Sidebar = (props: SidebarProps) => {
           </div>
         </div>
 
-        <div className="mt-3 border-t border-border/80 pt-2">
+        <div className="mt-3 border-t border-border/90 pt-2">
           <div className="mt-1 flex items-center gap-2 px-2 text-xs text-muted-foreground">
             <Bot className="h-3.5 w-3.5" />
             Local mode
@@ -112,11 +112,11 @@ export const Sidebar = (props: SidebarProps) => {
   }
 
   return (
-    <aside className="flex h-full flex-col overflow-hidden border-r border-border bg-[#edf1f5] px-3 pb-3 pt-5 dark:bg-[#121f33]">
+    <aside className="flex h-full flex-col overflow-hidden bg-card/50 px-3 pb-3 pt-4">
       <div className="space-y-1 pb-4">
         <Button
           variant="ghost"
-          className="h-9 w-full justify-start gap-2 px-2 text-sm font-semibold text-foreground/90"
+          className="h-9 w-full justify-start gap-2 px-2 text-sm font-semibold text-foreground"
           onClick={props.onCreateSession}
         >
           <PenLine className="h-4 w-4" />
@@ -140,7 +140,7 @@ export const Sidebar = (props: SidebarProps) => {
 
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="mb-2 flex items-center justify-between px-1">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">Threads</p>
+          <p className="sketch-title text-[23px] uppercase leading-none text-primary">Threads</p>
           <Button
             variant="ghost"
             size="icon"
@@ -157,14 +157,16 @@ export const Sidebar = (props: SidebarProps) => {
               <article
                 key={session.id}
                 className={cn(
-                  "group relative rounded-md border border-transparent bg-transparent transition-colors",
-                  active && "border-[#d5dfea] bg-[#f8fbff] dark:border-[#355073] dark:bg-[#1a2a44]"
+                  "group relative rounded-[4px] border bg-card/50 transition-colors",
+                  active
+                    ? "border-border bg-accent/65 shadow-[2px_2px_0_hsl(var(--border))]"
+                    : "border-transparent hover:border-border/60 hover:bg-card/85"
                 )}
               >
                 <span
                   className={cn(
-                    "absolute left-0 top-1.5 h-6 w-0.5 rounded bg-transparent",
-                    active && "bg-primary"
+                    "absolute left-0.5 top-1.5 h-6 w-0.5 rounded bg-transparent",
+                    active && "bg-primary/90"
                   )}
                 />
                 <button
@@ -177,7 +179,7 @@ export const Sidebar = (props: SidebarProps) => {
                     {formatRelativeTime(session.updatedAt)}
                   </p>
                 </button>
-                <div className="absolute right-1 top-1 hidden items-center gap-1 rounded-md bg-card/95 p-0.5 group-hover:flex group-focus-within:flex">
+                <div className="absolute right-1 top-1 hidden items-center gap-1 rounded-[4px] bg-card p-0.5 group-hover:flex group-focus-within:flex">
                   <Button
                     variant="ghost"
                     size="icon"
@@ -203,7 +205,7 @@ export const Sidebar = (props: SidebarProps) => {
         </div>
       </div>
 
-      <div className="mt-3 border-t border-border/80 pt-2">
+      <div className="mt-3 border-t border-border/90 pt-2">
         <Button
           variant="ghost"
           className="h-9 w-full justify-start gap-2 px-2 text-sm text-foreground/80"

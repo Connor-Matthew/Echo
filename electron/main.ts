@@ -1089,8 +1089,8 @@ const createMainWindow = () => {
   const mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
-    minWidth: 1100,
-    minHeight: 700,
+    minWidth: 680,
+    minHeight: 450,
     backgroundColor: "#f3f5f8",
     titleBarStyle: "hiddenInset",
     webPreferences: {
