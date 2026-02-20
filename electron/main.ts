@@ -727,7 +727,7 @@ const streamCodexAcp = async (
   };
 
   const initializeId = createId();
-  const threadStartId = createId();
+  const chatStartId = createId();
   const turnStartId = createId();
 
   const writeRpc = (envelope: unknown) => {
@@ -835,7 +835,7 @@ const streamCodexAcp = async (
           writeRpc({ method: "initialized" });
           writeRpc({
             method: "thread/start",
-            id: threadStartId,
+            id: chatStartId,
             params: {
               model: payload.settings.model.trim() || null,
               modelProvider: null,
@@ -854,19 +854,19 @@ const streamCodexAcp = async (
           continue;
         }
 
-        if (parsed.id === threadStartId) {
-          const threadId = parsed.result?.thread && typeof parsed.result.thread === "object"
+        if (parsed.id === chatStartId) {
+          const chatId = parsed.result?.thread && typeof parsed.result.thread === "object"
             ? (parsed.result.thread as { id?: string }).id
             : null;
-          if (!threadId) {
-            settleReject(reject, new Error("ACP thread/start did not return a thread id."));
+          if (!chatId) {
+            settleReject(reject, new Error("ACP start did not return a chat id."));
             return;
           }
           writeRpc({
             method: "turn/start",
             id: turnStartId,
             params: {
-              threadId,
+              threadId: chatId,
               input: [{ type: "text", text: turnInput, text_elements: [] }],
               cwd: process.cwd(),
               approvalPolicy: null,

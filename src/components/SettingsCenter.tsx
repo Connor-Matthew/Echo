@@ -849,7 +849,7 @@ export const SettingsCenter = ({
         throw new Error("JSON format is invalid.");
       }
       onImportSessions(parsed);
-      setDataMessage(`Imported ${parsed.length} thread(s).`);
+      setDataMessage(`Imported ${parsed.length} Chat(s).`);
     } catch (error) {
       setDataMessage(error instanceof Error ? error.message : "Failed to import sessions.");
     } finally {
@@ -862,11 +862,11 @@ export const SettingsCenter = ({
   };
 
   const clearSessions = () => {
-    if (!window.confirm("Clear all threads? This action cannot be undone.")) {
+    if (!window.confirm("Clear all Chats? This action cannot be undone.")) {
       return;
     }
     onClearSessions();
-    setDataMessage("All threads were cleared.");
+    setDataMessage("All Chats were cleared.");
   };
 
   const resetSettings = async () => {

@@ -28,8 +28,6 @@ type ChatViewProps = {
   messages: ChatMessage[];
   isConfigured: boolean;
   isGenerating: boolean;
-  suggestionPrompts: string[];
-  onSelectSuggestion: (text: string) => void;
   onEditMessage: (
     message: ChatMessage,
     nextContent: string,
@@ -681,8 +679,6 @@ export const ChatView = ({
   messages,
   isConfigured,
   isGenerating,
-  suggestionPrompts,
-  onSelectSuggestion,
   onEditMessage,
   onDeleteMessage,
   onResendMessage
@@ -704,34 +700,10 @@ export const ChatView = ({
 
   if (!messages.length) {
     return (
-      <section className="mx-auto flex h-full w-full max-w-[980px] flex-col px-3 pb-3 pt-3 sm:px-5 sm:pb-4 sm:pt-5 md:px-7 md:pb-5 md:pt-7">
-        <div className="flex flex-1 flex-col items-center justify-center gap-2 pb-8 text-center sm:gap-3 sm:pb-10 md:pb-16">
-          <div className="mx-auto grid h-[58px] w-[58px] place-content-center rounded-[4px] border border-border bg-card font-mono text-sm text-foreground shadow-[3px_3px_0_hsl(var(--border))]">
-            {"{}"}
-          </div>
-          <h2 className="sketch-title text-[40px] font-semibold uppercase leading-none text-primary sm:text-[56px] md:text-[72px]">
-            Let&apos;s build
-          </h2>
-          <p className="sketch-title text-[28px] text-muted-foreground sm:text-[34px] md:text-[42px]">Echo</p>
-        </div>
-
-        <div className="mb-2 text-right text-[20px] text-muted-foreground sm:mb-3 sm:text-[28px] md:text-[34px]">Explore notes</div>
-        <div className="grid gap-3 md:grid-cols-3">
-          {suggestionPrompts.map((prompt, index) => (
-            <Button
-              key={prompt}
-              type="button"
-              variant="outline"
-              className="h-auto min-h-[88px] justify-start whitespace-normal rounded-[6px] border-border bg-card px-3 py-3 text-left text-sm font-normal text-foreground shadow-[3px_3px_0_hsl(var(--border))] hover:bg-secondary/70 sm:min-h-[98px] sm:px-4 sm:py-4 sm:text-base md:min-h-[114px]"
-              onClick={() => onSelectSuggestion(prompt)}
-            >
-              <span className="mr-2 inline-grid h-6 w-6 place-content-center rounded-[4px] border border-border bg-accent/50 text-xs text-muted-foreground">
-                {index === 0 ? "G" : index === 1 ? "P" : "L"}
-              </span>
-              <span>{prompt}</span>
-            </Button>
-          ))}
-        </div>
+      <section className="mx-auto flex h-full w-full max-w-[980px] items-center justify-center px-3 py-3 text-center sm:px-5 sm:py-5 md:px-7 md:py-7">
+        <h2 className="sketch-title text-[40px] font-semibold uppercase leading-none text-primary sm:text-[56px] md:text-[72px]">
+          CHAT
+        </h2>
       </section>
     );
   }

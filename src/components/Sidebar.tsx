@@ -120,7 +120,7 @@ export const Sidebar = (props: SidebarProps) => {
           onClick={props.onCreateSession}
         >
           <PenLine className="h-4 w-4" />
-          New thread
+          New Chat
         </Button>
         <Button
           variant="ghost"
@@ -140,7 +140,7 @@ export const Sidebar = (props: SidebarProps) => {
 
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="mb-2 flex items-center justify-between px-1">
-          <p className="sketch-title text-[23px] uppercase leading-none text-primary">Threads</p>
+          <p className="sketch-title text-[23px] uppercase leading-none text-primary">Chat</p>
           <Button
             variant="ghost"
             size="icon"
@@ -185,7 +185,7 @@ export const Sidebar = (props: SidebarProps) => {
                     size="icon"
                     className="h-6 w-6 rounded-md"
                     onClick={() => props.onRenameSession(session.id)}
-                    aria-label="Rename thread"
+                    aria-label="Rename Chat"
                   >
                     <PenLine className="h-3 w-3" />
                   </Button>
@@ -194,7 +194,7 @@ export const Sidebar = (props: SidebarProps) => {
                     size="icon"
                     className="h-6 w-6 rounded-md text-destructive hover:text-destructive"
                     onClick={() => props.onDeleteSession(session.id)}
-                    aria-label="Delete thread"
+                    aria-label="Delete Chat"
                   >
                     <Trash2 className="h-3 w-3" />
                   </Button>

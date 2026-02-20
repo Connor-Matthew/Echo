@@ -42,12 +42,6 @@ type AppView = "chat" | "settings";
 
 const api = getMuApi();
 
-const suggestionPrompts = [
-  "Build a classic Snake game in this repo.",
-  "Create a one-page PDF that summarizes this app.",
-  "Create a plan to improve onboarding in this project."
-];
-
 const createId = () =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
@@ -117,7 +111,7 @@ const revokeAttachmentPreview = (attachment: { previewUrl?: string }) => {
   }
 };
 
-const createSession = (title = "New thread"): ChatSession => {
+const createSession = (title = "New Chat"): ChatSession => {
   const now = nowIso();
   return {
     id: createId(),
@@ -159,7 +153,7 @@ const sessionToCompletionMessages = (messages: ChatMessage[]): ChatStreamRequest
 const finalizeTitleFromPrompt = (prompt: string) => {
   const trimmed = prompt.trim();
   if (!trimmed) {
-    return "New thread";
+    return "New Chat";
   }
   return trimmed.length > 34 ? `${trimmed.slice(0, 34)}...` : trimmed;
 };
@@ -417,7 +411,7 @@ export const App = () => {
     };
   }, [sessions, isHydrated]);
 
-  const createNewThread = () => {
+  const createNewChat = () => {
     const session = createSession();
     setSessions((previous) => [session, ...previous]);
     setActiveSessionId(session.id);
@@ -425,12 +419,12 @@ export const App = () => {
     clearDraftAttachments();
   };
 
-  const renameThread = (sessionId: string) => {
+  const renameChat = (sessionId: string) => {
     const target = sessions.find((session) => session.id === sessionId);
     if (!target) {
       return;
     }
-    const input = window.prompt("Rename thread", target.title);
+    const input = window.prompt("Rename Chat", target.title);
     if (!input) {
       return;
     }
@@ -441,7 +435,7 @@ export const App = () => {
     upsertSession(sessionId, (session) => ({ ...session, title, updatedAt: nowIso() }));
   };
 
-  const deleteThread = (sessionId: string) => {
+  const deleteChat = (sessionId: string) => {
     if (removedSession) {
       window.clearTimeout(removedSession.timeoutId);
       removedTimeoutRef.current = null;
@@ -728,7 +722,7 @@ export const App = () => {
 
     upsertSession(session.id, (current) => {
       const shouldRetitle =
-        allowRetitle && current.messages.length === 0 && current.title === "New thread";
+        allowRetitle && current.messages.length === 0 && current.title === "New Chat";
       return {
         ...current,
         title: shouldRetitle ? finalizeTitleFromPrompt(userMessage.content) : current.title,
@@ -877,11 +871,11 @@ export const App = () => {
           closeSidebarIfCompact();
         }}
         onCreateSession={() => {
-          createNewThread();
+          createNewChat();
           closeSidebarIfCompact();
         }}
-        onRenameSession={renameThread}
-        onDeleteSession={deleteThread}
+        onRenameSession={renameChat}
+        onDeleteSession={deleteChat}
         onEnterSettings={() => {
           setActiveSettingsSection("provider");
           setActiveView("settings");
@@ -964,7 +958,7 @@ export const App = () => {
                         Notebook Desk
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {activeSession?.title ?? "New thread"}
+                        {activeSession?.title ?? "New Chat"}
                       </p>
                     </div>
                   </div>
@@ -978,7 +972,7 @@ export const App = () => {
                 <div className="mx-auto mt-3 grid w-[min(900px,calc(100%-48px))] gap-3">
                   {removedSession ? (
                     <div className="flex items-center justify-between rounded-[6px] border border-border/90 bg-card px-3 py-2 text-foreground">
-                      <span>Thread deleted.</span>
+                      <span>Chat deleted.</span>
                       <Button
                         variant="ghost"
                         className="h-auto px-1 py-0.5 text-primary"
@@ -1002,8 +996,6 @@ export const App = () => {
                   messages={activeSession?.messages ?? []}
                   isConfigured={isConfigured}
                   isGenerating={isGenerating}
-                  suggestionPrompts={suggestionPrompts}
-                  onSelectSuggestion={setDraft}
                   onEditMessage={editMessage}
                   onDeleteMessage={deleteMessage}
                   onResendMessage={resendMessage}
