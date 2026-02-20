@@ -17,11 +17,17 @@ import {
   X
 } from "lucide-react";
 import { cn } from "../lib/utils";
+import {
+  resolveProviderModelCapabilities,
+  toModelCapabilityKey
+} from "../lib/model-capabilities";
 import type {
   AppSettings,
+  ChatContextWindow,
   ChatSession,
   ConnectionTestResult,
   FontScale,
+  ModelCapabilities,
   MessageDensity,
   ModelListResult,
   ProviderType,
@@ -70,6 +76,17 @@ const densityOptions: Array<{ value: MessageDensity; label: string; description:
   { value: "comfortable", label: "Comfortable", description: "More breathing room in chat." }
 ];
 
+const chatContextWindowOptions: Array<{
+  value: ChatContextWindow;
+  label: string;
+  description: string;
+}> = [
+  { value: 5, label: "5", description: "Use the latest 5 user turns." },
+  { value: 20, label: "20", description: "Use the latest 20 user turns." },
+  { value: 50, label: "50", description: "Use the latest 50 user turns." },
+  { value: "infinite", label: "Unlimited", description: "Use full session history." }
+];
+
 const providerPresets: ProviderPreset[] = [
   {
     id: "openai",
@@ -107,6 +124,13 @@ const providerPresets: ProviderPreset[] = [
     providerType: "anthropic"
   },
   {
+    id: "claude-agent",
+    label: "Claude Agent SDK",
+    baseUrl: "https://api.anthropic.com",
+    defaultModel: "claude-sonnet-4-5",
+    providerType: "claude-agent"
+  },
+  {
     id: "ollama",
     label: "Ollama (Local)",
     baseUrl: "http://127.0.0.1:11434/v1",
@@ -133,11 +157,11 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
 const normalizeBaseUrl = (raw: string) => raw.trim().replace(/\/+$/, "");
 const resolveAnthropicEndpoint = (baseUrl: string, resource: "models" | "messages") => {
   const normalized = normalizeBaseUrl(baseUrl);
-  return normalized.endsWith("/v1")
-    ? `${normalized}/${resource}`
-    : `${normalized}/v1/${resource}`;
+  const rooted = normalized
+    .replace(/\/v1\/(messages|models)$/i, "")
+    .replace(/\/(messages|models)$/i, "");
+  return rooted.endsWith("/v1") ? `${rooted}/${resource}` : `${rooted}/v1/${resource}`;
 };
-
 const resolveProviderEndpoints = (baseUrl: string, providerType: ProviderType) => {
   if (providerType === "acp") {
     return {
@@ -147,9 +171,19 @@ const resolveProviderEndpoints = (baseUrl: string, providerType: ProviderType) =
     };
   }
 
-  const normalized = normalizeBaseUrl(baseUrl);
+  const normalized = normalizeBaseUrl(
+    baseUrl || (providerType === "claude-agent" ? "https://api.anthropic.com" : "")
+  );
   if (!normalized) {
     return null;
+  }
+
+  if (providerType === "claude-agent") {
+    return {
+      normalized,
+      models: resolveAnthropicEndpoint(normalized, "models"),
+      chat: "Claude Agent SDK query()"
+    };
   }
 
   if (providerType === "anthropic") {
@@ -188,6 +222,7 @@ const createProvider = (index: number): StoredProvider => ({
   apiKey: "",
   model: "",
   savedModels: [],
+  modelCapabilities: {},
   providerType: "openai",
   enabled: true,
   isPinned: false
@@ -202,6 +237,7 @@ const getActiveProvider = (settings: AppSettings): StoredProvider => {
       apiKey: settings.apiKey,
       model: settings.model,
       savedModels: settings.model.trim() ? [settings.model.trim()] : [],
+      modelCapabilities: {},
       providerType: settings.providerType,
       enabled: true,
       isPinned: false
@@ -250,6 +286,27 @@ const normalizeDraft = (settings: AppSettings): AppSettings => {
           .concat(model ? [model] : [])
       )
     );
+    const modelCapabilities = Object.fromEntries(
+      Object.entries(provider.modelCapabilities ?? {})
+        .map(([modelId, capabilities]) => {
+          const key = modelId.trim().toLowerCase();
+          if (!key || !capabilities || typeof capabilities !== "object") {
+            return null;
+          }
+          const typed = capabilities as Partial<ModelCapabilities>;
+          return [
+            key,
+            {
+              textInput: typed.textInput !== false,
+              imageInput: Boolean(typed.imageInput),
+              audioInput: Boolean(typed.audioInput),
+              videoInput: Boolean(typed.videoInput),
+              reasoningDisplay: Boolean(typed.reasoningDisplay)
+            } satisfies ModelCapabilities
+          ];
+        })
+        .filter((entry): entry is [string, ModelCapabilities] => Boolean(entry))
+    );
 
     return {
       ...provider,
@@ -259,11 +316,14 @@ const normalizeDraft = (settings: AppSettings): AppSettings => {
       apiKey: provider.apiKey.trim(),
       model,
       savedModels,
+      modelCapabilities,
       providerType:
         provider.providerType === "anthropic"
           ? "anthropic"
           : provider.providerType === "acp"
             ? "acp"
+            : provider.providerType === "claude-agent"
+              ? "claude-agent"
             : "openai",
       enabled: provider.enabled !== false,
       isPinned: Boolean(provider.isPinned)
@@ -276,6 +336,9 @@ const normalizeDraft = (settings: AppSettings): AppSettings => {
 const resolvePresetByBaseUrl = (baseUrl: string, providerType: ProviderType) => {
   if (providerType === "acp") {
     return providerPresets.find((preset) => preset.id === "codex-acp") ?? null;
+  }
+  if (providerType === "claude-agent" && !normalizeBaseUrl(baseUrl)) {
+    return providerPresets.find((preset) => preset.id === "claude-agent") ?? null;
   }
 
   const normalized = normalizeBaseUrl(baseUrl);
@@ -291,14 +354,15 @@ const providerBadgeByPreset: Record<
   string,
   { token: string; bgClass: string; textClass: string }
 > = {
-  openai: { token: "OA", bgClass: "bg-[#d6f4e3]", textClass: "text-[#1c6b46]" },
-  openrouter: { token: "OR", bgClass: "bg-[#dde8ff]", textClass: "text-[#2e4f86]" },
-  groq: { token: "GQ", bgClass: "bg-[#ffe8d8]", textClass: "text-[#8a4a1f]" },
-  deepseek: { token: "DS", bgClass: "bg-[#dce7ff]", textClass: "text-[#2d4f95]" },
-  claude: { token: "CL", bgClass: "bg-[#ffe8d9]", textClass: "text-[#874f20]" },
-  ollama: { token: "OL", bgClass: "bg-[#dff7e9]", textClass: "text-[#226b48]" },
-  lmstudio: { token: "LM", bgClass: "bg-[#e9e4ff]", textClass: "text-[#4f3f8b]" },
-  "codex-acp": { token: "CP", bgClass: "bg-[#dbeefe]", textClass: "text-[#23557a]" }
+  openai: { token: "OA", bgClass: "bg-[#eef2f8]", textClass: "text-[#44536d]" },
+  openrouter: { token: "OR", bgClass: "bg-[#f1f3f8]", textClass: "text-[#4f596d]" },
+  groq: { token: "GQ", bgClass: "bg-[#f4f2ef]", textClass: "text-[#5b5350]" },
+  deepseek: { token: "DS", bgClass: "bg-[#edf1f7]", textClass: "text-[#495871]" },
+  claude: { token: "CL", bgClass: "bg-[#f4f1ee]", textClass: "text-[#5f5851]" },
+  "claude-agent": { token: "CA", bgClass: "bg-[#f3efe8]", textClass: "text-[#5b5449]" },
+  ollama: { token: "OL", bgClass: "bg-[#edf3f2]", textClass: "text-[#47605c]" },
+  lmstudio: { token: "LM", bgClass: "bg-[#f1eef6]", textClass: "text-[#5b5370]" },
+  "codex-acp": { token: "CP", bgClass: "bg-[#eef1f4]", textClass: "text-[#4a5866]" }
 };
 
 const inferProviderPresetId = (provider: StoredProvider) => {
@@ -321,6 +385,9 @@ const inferProviderPresetId = (provider: StoredProvider) => {
     return "deepseek";
   }
   if (probe.includes("anthropic") || probe.includes("claude")) {
+    if (provider.providerType === "claude-agent") {
+      return "claude-agent";
+    }
     return "claude";
   }
   if (probe.includes("ollama") || probe.includes("11434")) {
@@ -345,8 +412,8 @@ const getProviderBadgeVisual = (provider: StoredProvider) => {
   const trimmed = provider.name.trim();
   return {
     token: trimmed ? trimmed.slice(0, 1).toUpperCase() : "P",
-    bgClass: "bg-[#d9e9fb]",
-    textClass: "text-[#35577f]"
+    bgClass: "bg-[#eef1f6]",
+    textClass: "text-[#46556d]"
   };
 };
 
@@ -362,7 +429,11 @@ const validateSettingsForSection = (draft: AppSettings, section: SettingsSection
     if (activeProvider.providerType === "acp") {
       return null;
     }
-    if (!activeProvider.baseUrl.trim() || !isValidHttpUrl(activeProvider.baseUrl.trim())) {
+    if (activeProvider.providerType !== "claude-agent") {
+      if (!activeProvider.baseUrl.trim() || !isValidHttpUrl(activeProvider.baseUrl.trim())) {
+        return "Base URL is invalid.";
+      }
+    } else if (activeProvider.baseUrl.trim() && !isValidHttpUrl(activeProvider.baseUrl.trim())) {
       return "Base URL is invalid.";
     }
     if (!activeProvider.apiKey.trim()) {
@@ -380,6 +451,9 @@ const validateSettingsForSection = (draft: AppSettings, section: SettingsSection
     }
     if (!Number.isInteger(draft.maxTokens) || draft.maxTokens < 64 || draft.maxTokens > 8192) {
       return "Max tokens must be 64-8192.";
+    }
+    if (![5, 20, 50, "infinite"].includes(draft.chatContextWindow)) {
+      return "Context window must be 5, 20, 50, or Unlimited.";
     }
     return null;
   }
@@ -410,6 +484,7 @@ const areSettingsEqual = (left: AppSettings, right: AppSettings) =>
   left.systemPrompt === right.systemPrompt &&
   left.temperature === right.temperature &&
   left.maxTokens === right.maxTokens &&
+  left.chatContextWindow === right.chatContextWindow &&
   left.sendWithEnter === right.sendWithEnter &&
   left.fontScale === right.fontScale &&
   left.messageDensity === right.messageDensity &&
@@ -474,6 +549,7 @@ export const SettingsCenter = ({
   const isDirty = useMemo(() => !areSettingsEqual(draft, settings), [draft, settings]);
   const activeProvider = useMemo(() => getActiveProvider(draft), [draft]);
   const isAcpProvider = activeProvider.providerType === "acp";
+  const isClaudeAgentProvider = activeProvider.providerType === "claude-agent";
   const activeProviderPreset = useMemo(
     () => resolvePresetByBaseUrl(activeProvider.baseUrl, activeProvider.providerType)?.id ?? "custom",
     [activeProvider.baseUrl, activeProvider.providerType]
@@ -489,6 +565,14 @@ export const SettingsCenter = ({
       ),
     [activeProvider.savedModels]
   );
+  const activeModelCapabilities = useMemo(
+    () => resolveProviderModelCapabilities(activeProvider, activeProvider.model),
+    [activeProvider]
+  );
+  const hasActiveModelCapabilityOverride = useMemo(() => {
+    const key = toModelCapabilityKey(activeProvider.model);
+    return Boolean(key && activeProvider.modelCapabilities?.[key]);
+  }, [activeProvider]);
   const mergedModelOptions = useMemo(() => {
     const currentModel = activeProvider.model.trim();
     return Array.from(
@@ -552,6 +636,8 @@ export const SettingsCenter = ({
                         ? "anthropic"
                         : value === "acp"
                           ? "acp"
+                          : value === "claude-agent"
+                            ? "claude-agent"
                           : "openai"
                     ) as StoredProvider["providerType"])
                   : value
@@ -657,10 +743,16 @@ export const SettingsCenter = ({
 
         const nextSavedModels = (provider.savedModels ?? []).filter((entry) => entry !== modelId);
         const nextModel = provider.model === modelId ? nextSavedModels[0] ?? "" : provider.model;
+        const key = toModelCapabilityKey(modelId);
+        const nextCapabilities = { ...(provider.modelCapabilities ?? {}) };
+        if (key) {
+          delete nextCapabilities[key];
+        }
         return {
           ...provider,
           model: nextModel,
-          savedModels: nextSavedModels
+          savedModels: nextSavedModels,
+          modelCapabilities: nextCapabilities
         };
       });
       return syncProviderState(previous, nextProviders, previous.activeProviderId);
@@ -668,6 +760,68 @@ export const SettingsCenter = ({
     setProviderMessage(`Removed model: ${modelId}`);
     setTestResult(null);
     setSaveError(null);
+  };
+
+  const updateActiveModelCapability = (
+    field: keyof Pick<
+      ModelCapabilities,
+      "imageInput" | "audioInput" | "videoInput" | "reasoningDisplay"
+    >,
+    value: boolean
+  ) => {
+    const modelId = activeProvider.model.trim();
+    const key = toModelCapabilityKey(modelId);
+    if (!key) {
+      setProviderMessage("Please choose a model first.");
+      return;
+    }
+
+    setDraft((previous) => {
+      const nextProviders = previous.providers.map((provider) => {
+        if (provider.id !== previous.activeProviderId) {
+          return provider;
+        }
+        const current = resolveProviderModelCapabilities(provider, modelId);
+        const nextCapabilities = {
+          ...(provider.modelCapabilities ?? {}),
+          [key]: {
+            ...current,
+            [field]: value
+          }
+        };
+        return {
+          ...provider,
+          modelCapabilities: nextCapabilities
+        };
+      });
+      return syncProviderState(previous, nextProviders, previous.activeProviderId);
+    });
+    setProviderMessage(`Updated model capability: ${field}`);
+    setSaveError(null);
+  };
+
+  const resetActiveModelCapabilities = () => {
+    const key = toModelCapabilityKey(activeProvider.model);
+    if (!key) {
+      setProviderMessage("Please choose a model first.");
+      return;
+    }
+
+    setDraft((previous) => {
+      const nextProviders = previous.providers.map((provider) => {
+        if (provider.id !== previous.activeProviderId) {
+          return provider;
+        }
+        const nextCapabilities = { ...(provider.modelCapabilities ?? {}) };
+        delete nextCapabilities[key];
+        return {
+          ...provider,
+          modelCapabilities: nextCapabilities
+        };
+      });
+      return syncProviderState(previous, nextProviders, previous.activeProviderId);
+    });
+    setProviderMessage("Model capabilities reset to auto-detected values.");
   };
 
   const switchActiveProvider = (providerId: string) => {
@@ -849,7 +1003,7 @@ export const SettingsCenter = ({
         throw new Error("JSON format is invalid.");
       }
       onImportSessions(parsed);
-      setDataMessage(`Imported ${parsed.length} thread(s).`);
+      setDataMessage(`Imported ${parsed.length} Chat(s).`);
     } catch (error) {
       setDataMessage(error instanceof Error ? error.message : "Failed to import sessions.");
     } finally {
@@ -862,11 +1016,11 @@ export const SettingsCenter = ({
   };
 
   const clearSessions = () => {
-    if (!window.confirm("Clear all threads? This action cannot be undone.")) {
+    if (!window.confirm("Clear all Chats? This action cannot be undone.")) {
       return;
     }
     onClearSessions();
-    setDataMessage("All threads were cleared.");
+    setDataMessage("All Chats were cleared.");
   };
 
   const resetSettings = async () => {
@@ -887,14 +1041,14 @@ export const SettingsCenter = ({
   };
 
   return (
-    <section className="h-full overflow-auto px-8 py-8">
+    <section className="h-full overflow-auto px-4 py-6 md:px-8 md:py-8">
       <div className="mx-auto w-full max-w-[980px]">
         {section === "provider" ? (
-          <Card className="border-[#d6e0ea] bg-white/70 shadow-none">
+          <Card className="border-border bg-card/80">
             <CardHeader>
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="flex items-center gap-2 text-[#5f7082]">
+                  <div className="flex items-center gap-2 text-muted-foreground">
                     <Server className="h-4 w-4" />
                     <span className="text-xs font-medium uppercase tracking-[0.16em]">Provider</span>
                   </div>
@@ -916,7 +1070,7 @@ export const SettingsCenter = ({
                     </Button>
                   </div>
                   <div className="relative">
-                    <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-[#96a3b2]" />
+                    <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                     <Input
                       value={providerSearch}
                       onChange={(event) => setProviderSearch(event.target.value)}
@@ -933,10 +1087,10 @@ export const SettingsCenter = ({
                           <div
                             key={provider.id}
                             className={cn(
-                              "flex items-center justify-between rounded-xl border px-3 py-2 transition-colors",
+                              "flex items-center justify-between rounded-[6px] border px-3 py-2 transition-colors",
                               isActive
-                                ? "border-[#8fb0d8] bg-[#eef5ff]"
-                                : "border-[#d7e2ec] bg-white hover:bg-[#f6faff]"
+                                ? "border-border bg-accent/60"
+                                : "border-border/70 bg-card hover:bg-secondary/60"
                             )}
                           >
                             <button
@@ -946,7 +1100,7 @@ export const SettingsCenter = ({
                             >
                               <span
                                 className={cn(
-                                  "grid h-8 w-8 shrink-0 place-content-center rounded-full text-xs font-semibold",
+                                  "grid h-8 w-8 shrink-0 place-content-center rounded-[4px] text-xs font-semibold",
                                   badgeVisual.bgClass,
                                   badgeVisual.textClass
                                 )}
@@ -961,10 +1115,10 @@ export const SettingsCenter = ({
                               type="button"
                               variant="ghost"
                               className={cn(
-                                "h-7 rounded-full border px-2.5 text-xs",
+                                "h-7 rounded-[4px] border px-2.5 text-xs",
                                 provider.enabled
-                                  ? "border-[#99d480] bg-[#eefce8] text-[#3e7d27]"
-                                  : "border-[#d6d9dd] bg-[#f5f6f7] text-[#66707a]"
+                                  ? "border-border bg-[#edf6ef] text-[#3d6644]"
+                                  : "border-border/70 bg-muted text-muted-foreground"
                               )}
                               onClick={() => toggleProviderEnabled(provider.id)}
                             >
@@ -974,7 +1128,7 @@ export const SettingsCenter = ({
                         );
                       })
                     ) : (
-                      <p className="rounded-md border border-dashed border-[#d8e0ea] px-3 py-4 text-sm text-[#6e8094]">
+                      <p className="rounded-md border border-dashed border-border/60 px-3 py-4 text-sm text-muted-foreground">
                         No provider matched your search.
                       </p>
                     )}
@@ -1001,7 +1155,7 @@ export const SettingsCenter = ({
                   </div>
 
                   {!activeProvider.enabled ? (
-                    <p className="rounded-md border border-[#f0d8b1] bg-[#fff8ea] px-3 py-2 text-sm text-[#8b6532]">
+                    <p className="rounded-md border border-border bg-accent/45 px-3 py-2 text-sm text-[#6c5740]">
                       This provider is OFF. Chat input will stay disabled until you turn it ON.
                     </p>
                   ) : null}
@@ -1056,10 +1210,10 @@ export const SettingsCenter = ({
                           {isTesting ? "Testing..." : "Test"}
                         </Button>
                       </div>
-                      <p className="text-xs text-[#73859a]">Use commas to separate multiple API keys.</p>
+                      <p className="text-xs text-muted-foreground">Use commas to separate multiple API keys.</p>
                     </div>
                   ) : (
-                    <div className="rounded-md border border-[#d9e3ee] bg-[#f6faff] p-3 text-sm text-[#42566d]">
+                    <div className="rounded-md border border-border bg-secondary/55 p-3 text-sm text-muted-foreground">
                       <p>ACP uses your local Codex CLI login and config.</p>
                       <div className="mt-2">
                         <Button
@@ -1106,6 +1260,7 @@ export const SettingsCenter = ({
                       >
                         <option value="openai">OpenAI-compatible</option>
                         <option value="anthropic">Anthropic Messages API</option>
+                        <option value="claude-agent">Claude Agent SDK</option>
                         <option value="acp">Codex CLI ACP</option>
                       </select>
                     </div>
@@ -1114,19 +1269,23 @@ export const SettingsCenter = ({
                   {!isAcpProvider ? (
                     <div className="space-y-1.5">
                       <label htmlFor="baseUrl" className="text-sm text-muted-foreground">
-                        API URL
+                        {isClaudeAgentProvider ? "Anthropic Base URL (optional)" : "API URL"}
                       </label>
                       <Input
                         id="baseUrl"
-                        placeholder="https://api.openai.com/v1"
+                        placeholder={
+                          isClaudeAgentProvider
+                            ? "https://api.anthropic.com"
+                            : "https://api.openai.com/v1"
+                        }
                         value={activeProvider.baseUrl}
                         onChange={(event) => updateActiveProviderField("baseUrl", event.target.value)}
                       />
                       {activeProviderEndpoints ? (
-                        <div className="rounded-md border border-[#d9e3ee] bg-[#f6faff] p-2.5 text-xs text-[#42566d]">
+                        <div className="rounded-md border border-border bg-secondary/55 p-2.5 text-xs text-muted-foreground">
                           <p>
                             Preview endpoint:{" "}
-                            <span className="font-mono text-[#2b3f56]">
+                            <span className="font-mono text-foreground">
                               {activeProviderEndpoints.chat}
                             </span>
                           </p>
@@ -1136,10 +1295,10 @@ export const SettingsCenter = ({
                   ) : (
                     <div className="space-y-1.5">
                       <label className="text-sm text-muted-foreground">Runtime</label>
-                      <div className="rounded-md border border-[#d9e3ee] bg-[#f6faff] p-2.5 text-xs text-[#42566d]">
+                      <div className="rounded-md border border-border bg-secondary/55 p-2.5 text-xs text-muted-foreground">
                         <p>
                           Transport:{" "}
-                          <span className="font-mono text-[#2b3f56]">
+                          <span className="font-mono text-foreground">
                             {activeProviderEndpoints?.chat ?? "codex app-server --listen stdio://"}
                           </span>
                         </p>
@@ -1153,7 +1312,7 @@ export const SettingsCenter = ({
                         Models
                       </label>
                       <div className="flex items-center gap-2">
-                        <span className="rounded-full bg-[#eef2f6] px-2 py-0.5 text-xs text-[#5c6f84]">
+                        <span className="rounded-[4px] bg-secondary px-2 py-0.5 text-xs text-muted-foreground">
                           {filteredModelOptions.length}
                         </span>
                         <Button
@@ -1183,7 +1342,7 @@ export const SettingsCenter = ({
                       </div>
                     </div>
                     <div className="relative">
-                      <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-[#96a3b2]" />
+                      <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                       <Input
                         value={modelSearch}
                         onChange={(event) => setModelSearch(event.target.value)}
@@ -1197,20 +1356,100 @@ export const SettingsCenter = ({
                       value={activeProvider.model}
                       onChange={(event) => setActiveProviderModel(event.target.value, false)}
                     />
+                    <div className="space-y-1.5 rounded-md border border-border bg-secondary/45 p-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                          Model capabilities
+                        </p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={resetActiveModelCapabilities}
+                          disabled={!activeProvider.model.trim() || !hasActiveModelCapabilityOverride}
+                        >
+                          Auto detect
+                        </Button>
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <button
+                          type="button"
+                          className={cn(
+                            "rounded-[6px] border px-2.5 py-2 text-left text-xs transition-colors",
+                            activeModelCapabilities.imageInput
+                              ? "border-border bg-accent/65 text-foreground"
+                              : "border-border/70 bg-card text-muted-foreground hover:bg-secondary/65"
+                          )}
+                          onClick={() =>
+                            updateActiveModelCapability("imageInput", !activeModelCapabilities.imageInput)
+                          }
+                        >
+                          图片输入
+                        </button>
+                        <button
+                          type="button"
+                          className={cn(
+                            "rounded-[6px] border px-2.5 py-2 text-left text-xs transition-colors",
+                            activeModelCapabilities.audioInput
+                              ? "border-border bg-accent/65 text-foreground"
+                              : "border-border/70 bg-card text-muted-foreground hover:bg-secondary/65"
+                          )}
+                          onClick={() =>
+                            updateActiveModelCapability("audioInput", !activeModelCapabilities.audioInput)
+                          }
+                        >
+                          音频输入
+                        </button>
+                        <button
+                          type="button"
+                          className={cn(
+                            "rounded-[6px] border px-2.5 py-2 text-left text-xs transition-colors",
+                            activeModelCapabilities.videoInput
+                              ? "border-border bg-accent/65 text-foreground"
+                              : "border-border/70 bg-card text-muted-foreground hover:bg-secondary/65"
+                          )}
+                          onClick={() =>
+                            updateActiveModelCapability("videoInput", !activeModelCapabilities.videoInput)
+                          }
+                        >
+                          视频输入
+                        </button>
+                        <button
+                          type="button"
+                          className={cn(
+                            "rounded-[6px] border px-2.5 py-2 text-left text-xs transition-colors",
+                            activeModelCapabilities.reasoningDisplay
+                              ? "border-border bg-accent/65 text-foreground"
+                              : "border-border/70 bg-card text-muted-foreground hover:bg-secondary/65"
+                          )}
+                          onClick={() =>
+                            updateActiveModelCapability(
+                              "reasoningDisplay",
+                              !activeModelCapabilities.reasoningDisplay
+                            )
+                          }
+                        >
+                          思维链显示
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">
+                        默认按模型名自动推断；你可以手动覆盖。输入窗口会按这些能力限制附件并给出提示。
+                      </p>
+                    </div>
                     <div className="space-y-1.5">
-                      <p className="text-xs uppercase tracking-[0.12em] text-[#6f8195]">
+                      <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
                         Saved models for this channel
                       </p>
                       {activeSavedModels.length ? (
-                        <div className="flex flex-wrap gap-1.5 rounded-md border border-[#d9e3ee] bg-[#f8fbff] p-2">
+                        <div className="flex flex-wrap gap-1.5 rounded-md border border-border bg-secondary/45 p-2">
                           {activeSavedModels.map((modelId) => (
                             <span
                               key={modelId}
                               className={cn(
                                 "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs",
                                 activeSavedModels.includes(modelId)
-                                  ? "border-[#9cb9d7] bg-[#e8f2ff] text-[#224a73]"
-                                  : "border-[#d7e2ec] bg-white text-[#30455d]"
+                                  ? "border-border bg-accent/60 text-foreground"
+                                  : "border-border/80 bg-card text-foreground"
                               )}
                             >
                               <button
@@ -1223,7 +1462,7 @@ export const SettingsCenter = ({
                               </button>
                               <button
                                 type="button"
-                                className="rounded p-0.5 text-[#60778f] hover:bg-[#eaf1f8] hover:text-[#2f4965]"
+                                className="rounded p-0.5 text-muted-foreground hover:bg-accent/55 hover:text-foreground"
                                 onClick={() => removeSavedModel(modelId)}
                                 aria-label={`Remove saved model ${modelId}`}
                               >
@@ -1233,20 +1472,20 @@ export const SettingsCenter = ({
                           ))}
                         </div>
                       ) : (
-                        <p className="rounded-md border border-dashed border-[#d9e3ee] bg-[#fcfdff] px-2.5 py-2 text-xs text-[#6f8195]">
+                        <p className="rounded-md border border-dashed border-border/70 bg-card/70 px-2.5 py-2 text-xs text-muted-foreground">
                           No saved models yet. Pick one from the list below or type and click Save current.
                         </p>
                       )}
                     </div>
                     {groupedModelOptions.length ? (
-                      <div className="max-h-[300px] space-y-2 overflow-auto rounded-md border border-[#d9e3ee] bg-[#f8fbff] p-2">
+                      <div className="max-h-[300px] space-y-2 overflow-auto rounded-md border border-border bg-secondary/45 p-2">
                         {groupedModelOptions.map(([groupName, models]) => {
                           const isCollapsed = Boolean(collapsedModelGroups[groupName]);
                           return (
-                            <div key={groupName} className="rounded-md border border-[#d9e3ee] bg-white">
+                            <div key={groupName} className="rounded-md border border-border bg-card">
                               <button
                                 type="button"
-                                className="flex w-full items-center gap-2 px-2.5 py-2 text-left text-sm font-medium text-[#2f465f]"
+                                className="flex w-full items-center gap-2 px-2.5 py-2 text-left text-sm font-medium text-foreground"
                                 onClick={() => toggleModelGroup(groupName)}
                               >
                                 {isCollapsed ? (
@@ -1257,7 +1496,7 @@ export const SettingsCenter = ({
                                 <span>{groupName}</span>
                               </button>
                               {!isCollapsed ? (
-                                <div className="space-y-1 border-t border-[#e6edf4] px-2 py-2">
+                                <div className="space-y-1 border-t border-border/55 px-2 py-2">
                                   {models.map((modelId) => (
                                     <button
                                       key={modelId}
@@ -1266,8 +1505,8 @@ export const SettingsCenter = ({
                                       className={cn(
                                         "flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-sm",
                                         activeSavedModels.includes(modelId)
-                                          ? "bg-[#e8f2ff] text-[#224a73]"
-                                          : "hover:bg-[#f3f7fb]"
+                                          ? "bg-accent/60 text-foreground"
+                                          : "hover:bg-secondary/65"
                                       )}
                                       onClick={() => toggleSavedModelSelection(modelId)}
                                       aria-label={`Select model ${modelId}`}
@@ -1277,8 +1516,8 @@ export const SettingsCenter = ({
                                         className={cn(
                                           "inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border",
                                           activeSavedModels.includes(modelId)
-                                            ? "border-[#6f94bf] bg-[#dcecff] text-[#1f4976]"
-                                            : "border-[#b9cadb] bg-white text-transparent"
+                                            ? "border-border bg-accent/70 text-foreground"
+                                            : "border-border/70 bg-card text-transparent"
                                         )}
                                       >
                                         <Check className="h-3 w-3" />
@@ -1297,20 +1536,20 @@ export const SettingsCenter = ({
               </div>
 
               {testResult ? (
-                <p className={testResult.ok ? "text-sm text-[#1d6f42]" : "text-sm text-destructive"}>
+                <p className={testResult.ok ? "text-sm text-[#3f6b57]" : "text-sm text-destructive"}>
                   {testResult.message}
                 </p>
               ) : null}
-              {providerMessage ? <p className="text-sm text-[#32506d]">{providerMessage}</p> : null}
+              {providerMessage ? <p className="text-sm text-muted-foreground">{providerMessage}</p> : null}
               {saveError ? <p className="text-sm text-destructive">{saveError}</p> : null}
             </CardContent>
           </Card>
         ) : null}
 
         {section === "chat" ? (
-          <Card className="border-[#d6e0ea] bg-white/70 shadow-none">
+          <Card className="border-border bg-card/80">
             <CardHeader>
-              <div className="flex items-center gap-2 text-[#5f7082]">
+              <div className="flex items-center gap-2 text-muted-foreground">
                 <MessageSquare className="h-4 w-4" />
                 <span className="text-xs font-medium uppercase tracking-[0.16em]">Chat</span>
               </div>
@@ -1370,25 +1609,53 @@ export const SettingsCenter = ({
                 </div>
               </div>
 
+              <div className="space-y-1.5">
+                <label className="text-sm text-muted-foreground">Context Window</label>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {chatContextWindowOptions.map((option) => {
+                    const active = draft.chatContextWindow === option.value;
+                    return (
+                      <button
+                        key={String(option.value)}
+                        type="button"
+                        className={cn(
+                          "rounded-[6px] border px-4 py-3 text-left transition-colors",
+                          active
+                            ? "border-border bg-accent/60"
+                            : "border-border/70 bg-card hover:bg-secondary/65"
+                        )}
+                        onClick={() => updateField("chatContextWindow", option.value)}
+                      >
+                        <p className="text-sm font-semibold text-foreground">{option.label}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{option.description}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Applies to chat mode only. System prompt is always included.
+                </p>
+              </div>
+
               <button
                 type="button"
                 className={cn(
-                  "flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition-colors",
+                  "flex w-full items-center justify-between rounded-[6px] border px-4 py-3 text-left transition-colors",
                   draft.sendWithEnter
-                    ? "border-[#8fb0d8] bg-[#eef5ff]"
-                    : "border-[#d7e0ea] bg-white hover:bg-[#f8fbff]"
+                    ? "border-border bg-accent/60"
+                    : "border-border/70 bg-card hover:bg-secondary/65"
                 )}
                 onClick={() => updateField("sendWithEnter", !draft.sendWithEnter)}
               >
                 <div>
-                  <p className="text-sm font-semibold text-[#1e2d3e]">Enter sends message</p>
-                  <p className="mt-1 text-xs text-[#617286]">
+                  <p className="text-sm font-semibold text-foreground">Enter sends message</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
                     {draft.sendWithEnter
                       ? "Enabled: Enter sends, Shift+Enter adds a new line."
                       : "Disabled: Enter adds a new line. Use Cmd/Ctrl+Enter to send."}
                   </p>
                 </div>
-                <span className="text-xs font-medium text-[#4c647f]">
+                <span className="text-xs font-medium text-muted-foreground">
                   {draft.sendWithEnter ? "On" : "Off"}
                 </span>
               </button>
@@ -1404,9 +1671,9 @@ export const SettingsCenter = ({
         ) : null}
 
         {section === "theme" ? (
-          <Card className="border-[#d6e0ea] bg-white/70 shadow-none">
+          <Card className="border-border bg-card/80">
             <CardHeader>
-              <div className="flex items-center gap-2 text-[#5f7082]">
+              <div className="flex items-center gap-2 text-muted-foreground">
                 <Palette className="h-4 w-4" />
                 <span className="text-xs font-medium uppercase tracking-[0.16em]">Theme</span>
               </div>
@@ -1422,15 +1689,15 @@ export const SettingsCenter = ({
                       key={option.value}
                       type="button"
                       className={cn(
-                        "rounded-xl border px-4 py-3 text-left transition-colors",
+                        "rounded-[6px] border px-4 py-3 text-left transition-colors",
                         active
-                          ? "border-[#8fb0d8] bg-[#eef5ff]"
-                          : "border-[#d7e0ea] bg-white hover:bg-[#f8fbff]"
+                          ? "border-border bg-accent/60"
+                          : "border-border/70 bg-card hover:bg-secondary/65"
                       )}
                       onClick={() => updateField("theme", option.value)}
                     >
-                      <p className="text-sm font-semibold text-[#1e2d3e]">{option.label}</p>
-                      <p className="mt-1 text-xs text-[#617286]">{option.description}</p>
+                      <p className="text-sm font-semibold text-foreground">{option.label}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{option.description}</p>
                     </button>
                   );
                 })}
@@ -1446,15 +1713,15 @@ export const SettingsCenter = ({
                         key={option.value}
                         type="button"
                         className={cn(
-                          "rounded-xl border px-4 py-3 text-left transition-colors",
+                          "rounded-[6px] border px-4 py-3 text-left transition-colors",
                           active
-                            ? "border-[#8fb0d8] bg-[#eef5ff]"
-                            : "border-[#d7e0ea] bg-white hover:bg-[#f8fbff]"
+                            ? "border-border bg-accent/60"
+                            : "border-border/70 bg-card hover:bg-secondary/65"
                         )}
                         onClick={() => updateField("fontScale", option.value)}
                       >
-                        <p className="text-sm font-semibold text-[#1e2d3e]">{option.label}</p>
-                        <p className="mt-1 text-xs text-[#617286]">{option.description}</p>
+                        <p className="text-sm font-semibold text-foreground">{option.label}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{option.description}</p>
                       </button>
                     );
                   })}
@@ -1471,15 +1738,15 @@ export const SettingsCenter = ({
                         key={option.value}
                         type="button"
                         className={cn(
-                          "rounded-xl border px-4 py-3 text-left transition-colors",
+                          "rounded-[6px] border px-4 py-3 text-left transition-colors",
                           active
-                            ? "border-[#8fb0d8] bg-[#eef5ff]"
-                            : "border-[#d7e0ea] bg-white hover:bg-[#f8fbff]"
+                            ? "border-border bg-accent/60"
+                            : "border-border/70 bg-card hover:bg-secondary/65"
                         )}
                         onClick={() => updateField("messageDensity", option.value)}
                       >
-                        <p className="text-sm font-semibold text-[#1e2d3e]">{option.label}</p>
-                        <p className="mt-1 text-xs text-[#617286]">{option.description}</p>
+                        <p className="text-sm font-semibold text-foreground">{option.label}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{option.description}</p>
                       </button>
                     );
                   })}
@@ -1497,9 +1764,9 @@ export const SettingsCenter = ({
         ) : null}
 
         {section === "data" ? (
-          <Card className="border-[#d6e0ea] bg-white/70 shadow-none">
+          <Card className="border-border bg-card/80">
             <CardHeader>
-              <div className="flex items-center gap-2 text-[#5f7082]">
+              <div className="flex items-center gap-2 text-muted-foreground">
                 <Database className="h-4 w-4" />
                 <span className="text-xs font-medium uppercase tracking-[0.16em]">Data</span>
               </div>
@@ -1530,15 +1797,15 @@ export const SettingsCenter = ({
                   {isResetting ? "Resetting..." : "Reset settings"}
                 </Button>
               </div>
-              {dataMessage ? <p className="text-sm text-[#32506d]">{dataMessage}</p> : null}
+              {dataMessage ? <p className="text-sm text-muted-foreground">{dataMessage}</p> : null}
             </CardContent>
           </Card>
         ) : null}
 
         {section === "advanced" ? (
-          <Card className="border-[#d6e0ea] bg-white/70 shadow-none">
+          <Card className="border-border bg-card/80">
             <CardHeader>
-              <div className="flex items-center gap-2 text-[#5f7082]">
+              <div className="flex items-center gap-2 text-muted-foreground">
                 <SlidersHorizontal className="h-4 w-4" />
                 <span className="text-xs font-medium uppercase tracking-[0.16em]">Advanced</span>
               </div>
@@ -1591,20 +1858,20 @@ export const SettingsCenter = ({
               <button
                 type="button"
                 className={cn(
-                  "flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition-colors",
+                  "flex w-full items-center justify-between rounded-[6px] border px-4 py-3 text-left transition-colors",
                   draft.sseDebug
-                    ? "border-[#8fb0d8] bg-[#eef5ff]"
-                    : "border-[#d7e0ea] bg-white hover:bg-[#f8fbff]"
+                    ? "border-border bg-accent/60"
+                    : "border-border/70 bg-card hover:bg-secondary/65"
                 )}
                 onClick={() => updateField("sseDebug", !draft.sseDebug)}
               >
                 <div>
-                  <p className="text-sm font-semibold text-[#1e2d3e]">SSE debug log</p>
-                  <p className="mt-1 text-xs text-[#617286]">
+                  <p className="text-sm font-semibold text-foreground">SSE debug log</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
                     Prints stream events in DevTools console for troubleshooting.
                   </p>
                 </div>
-                <span className="text-xs font-medium text-[#4c647f]">
+                <span className="text-xs font-medium text-muted-foreground">
                   {draft.sseDebug ? "On" : "Off"}
                 </span>
               </button>

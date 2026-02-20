@@ -1,5 +1,13 @@
-import { isValidElement, useEffect, useRef, useState, type ReactNode } from "react";
 import {
+  isValidElement,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode
+} from "react";
+import {
+  ChevronDown,
+  ChevronRight,
   Check,
   Copy,
   FileText,
@@ -28,8 +36,6 @@ type ChatViewProps = {
   messages: ChatMessage[];
   isConfigured: boolean;
   isGenerating: boolean;
-  suggestionPrompts: string[];
-  onSelectSuggestion: (text: string) => void;
   onEditMessage: (
     message: ChatMessage,
     nextContent: string,
@@ -52,7 +58,23 @@ type MessageBubbleProps = {
 };
 
 const TEXT_ATTACHMENT_LIMIT = 60000;
-const TEXT_ATTACHMENT_EXTENSIONS = new Set([".md", ".txt"]);
+const IMAGE_ATTACHMENT_LIMIT = 5 * 1024 * 1024;
+const TEXT_ATTACHMENT_EXTENSIONS = new Set([
+  ".md",
+  ".txt",
+  ".json",
+  ".csv",
+  ".xml",
+  ".yaml",
+  ".yml",
+  ".log"
+]);
+const TEXT_ATTACHMENT_MIME_TYPES = new Set([
+  "application/json",
+  "application/xml",
+  "application/x-yaml",
+  "text/csv"
+]);
 
 const formatBytes = (size: number) => {
   if (size < 1024) {
@@ -70,11 +92,28 @@ const getExtension = (name: string) => {
 };
 
 const isTextAttachment = (file: File) => {
-  if (file.type === "text/plain" || file.type === "text/markdown") {
+  if (file.type.startsWith("text/") || TEXT_ATTACHMENT_MIME_TYPES.has(file.type)) {
     return true;
   }
   return TEXT_ATTACHMENT_EXTENSIONS.has(getExtension(file.name));
 };
+
+const readFileAsDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result === "string") {
+        resolve(result);
+        return;
+      }
+      reject(new Error("Failed to read file as data URL."));
+    };
+    reader.onerror = () => {
+      reject(reader.error ?? new Error("Failed to read file."));
+    };
+    reader.readAsDataURL(file);
+  });
 
 const toMessageAttachment = (attachment: EditAttachment): ChatAttachment => ({
   id: attachment.id,
@@ -82,7 +121,8 @@ const toMessageAttachment = (attachment: EditAttachment): ChatAttachment => ({
   mimeType: attachment.mimeType,
   size: attachment.size,
   kind: attachment.kind,
-  textContent: attachment.kind === "text" ? attachment.textContent : undefined
+  textContent: attachment.kind === "text" ? attachment.textContent : undefined,
+  imageDataUrl: attachment.kind === "image" ? attachment.imageDataUrl : undefined
 });
 
 const revokeAttachmentPreview = (attachment: EditAttachment) => {
@@ -166,16 +206,16 @@ const CodeBlock = ({ code, language }: { code: string; language?: string }) => {
   };
 
   return (
-    <div className="mb-2 overflow-hidden rounded-lg border border-[#d6e1ec] bg-[#f6f9fd] last:mb-0 dark:border-[#355073] dark:bg-[#172844]">
-      <div className="flex items-center justify-between border-b border-[#dfe7f1] bg-[#eef4fb] px-2.5 py-1.5 dark:border-[#304867] dark:bg-[#1c3151]">
-        <span className="text-[11px] font-medium uppercase tracking-wide text-[#5a7289] dark:text-[#a9c0da]">
+    <div className="mb-2 overflow-hidden rounded-[4px] border border-border bg-card/90 shadow-[2px_2px_0_hsl(var(--border))] last:mb-0">
+      <div className="flex items-center justify-between border-b border-border/80 bg-accent/50 px-2.5 py-1.5">
+        <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
           {language || "code"}
         </span>
         <Button
           type="button"
           variant="ghost"
           size="sm"
-          className="h-6 px-2 text-[11px] text-[#4f6478] dark:text-[#adc3dc]"
+          className="h-6 px-2 text-[11px] text-muted-foreground"
           onClick={() => {
             void copyCode();
           }}
@@ -184,7 +224,7 @@ const CodeBlock = ({ code, language }: { code: string; language?: string }) => {
         </Button>
       </div>
       <pre className="overflow-x-auto p-3">
-        <code className="font-mono text-[13px] leading-6 text-[#203347] dark:text-[#d6e5f8]">{code}</code>
+        <code className="font-mono text-[13px] leading-6 text-foreground">{code}</code>
       </pre>
     </div>
   );
@@ -203,17 +243,13 @@ const markdownComponents: Components = {
   ul: ({ children }) => <ul className="mb-2 list-disc pl-5 last:mb-0">{children}</ul>,
   ol: ({ children }) => <ol className="mb-2 list-decimal pl-5 last:mb-0">{children}</ol>,
   li: ({ children }) => <li className="mb-0.5">{children}</li>,
-  blockquote: ({ children }) => (
-    <blockquote className="mb-2 border-l-2 border-[#b8cce1] pl-3 text-[#324a63] dark:border-[#416185] dark:text-[#bfd1e7]">
-      {children}
-    </blockquote>
-  ),
+  blockquote: ({ children }) => <blockquote className="mb-2 border-l-2 border-border pl-3 text-muted-foreground">{children}</blockquote>,
   a: ({ children, href }) => (
     <a
       href={href}
       target="_blank"
       rel="noreferrer"
-      className="text-[#346b9c] underline decoration-[#8fb4d2] underline-offset-2 dark:text-[#79b4ed] dark:decoration-[#4f80ae]"
+      className="text-primary underline decoration-border underline-offset-2"
     >
       {children}
     </a>
@@ -225,10 +261,10 @@ const markdownComponents: Components = {
   code: ({ children, className }) => {
     const isBlock = Boolean(className && className.includes("language-"));
     if (isBlock) {
-      return <code className="font-mono text-[13px] leading-6 text-[#203347] dark:text-[#d6e5f8]">{children}</code>;
+      return <code className="font-mono text-[13px] leading-6 text-foreground">{children}</code>;
     }
     return (
-      <code className="rounded bg-[#e4edf7] px-1 py-[1px] font-mono text-[13px] text-[#2e4a66] dark:bg-[#243957] dark:text-[#d1e2f7]">
+      <code className="rounded-[3px] bg-accent/70 px-1 py-[1px] font-mono text-[13px] text-foreground">
         {children}
       </code>
     );
@@ -238,20 +274,20 @@ const markdownComponents: Components = {
       <table className="w-full border-collapse text-left text-[13px]">{children}</table>
     </div>
   ),
-  thead: ({ children }) => <thead className="bg-[#e9f1f8] dark:bg-[#1f3352]">{children}</thead>,
+  thead: ({ children }) => <thead className="bg-accent/55">{children}</thead>,
   tbody: ({ children }) => <tbody>{children}</tbody>,
   th: ({ children }) => (
-    <th className="border border-[#d2deea] px-2 py-1.5 font-semibold text-[#304960] dark:border-[#355073] dark:text-[#caddf4]">{children}</th>
+    <th className="border border-border px-2 py-1.5 font-semibold text-foreground">{children}</th>
   ),
-  td: ({ children }) => <td className="border border-[#d2deea] px-2 py-1.5 dark:border-[#355073]">{children}</td>,
-  hr: () => <hr className="my-3 border-[#d4e0ec] dark:border-[#355073]" />
+  td: ({ children }) => <td className="border border-border px-2 py-1.5">{children}</td>,
+  hr: () => <hr className="my-3 border-border" />
 };
 
 const MarkdownContent = ({ content, isUser }: { content: string; isUser: boolean }) => (
   <div
     className={[
       "text-[15px] leading-[1.65] break-words",
-      isUser ? "text-[#18222c] dark:text-[#dbe8f8]" : "text-[#18222c] dark:text-[#d3e2f4]"
+      isUser ? "text-foreground" : "text-foreground"
     ].join(" ")}
   >
     <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={markdownComponents}>
@@ -275,6 +311,7 @@ const MessageBubble = ({
     cloneMessageAttachments(message.attachments)
   );
   const [isDragOverEdit, setIsDragOverEdit] = useState(false);
+  const [isReasoningExpanded, setIsReasoningExpanded] = useState(false);
   const [displayedContent, setDisplayedContent] = useState(message.content);
   const displayedContentRef = useRef(message.content);
   const targetContentRef = useRef(message.content);
@@ -365,15 +402,21 @@ const MessageBubble = ({
 
   const saveEdit = () => {
     const next = editDraft.trim();
-    const hasTextAttachmentPayload = editAttachments.some(
-      (attachment) => attachment.kind === "text" && Boolean(attachment.textContent?.trim())
-    );
+    const hasAnyAttachmentPayload = editAttachments.some((attachment) => {
+      if (attachment.kind === "text") {
+        return Boolean(attachment.textContent?.trim());
+      }
+      if (attachment.kind === "image") {
+        return Boolean(attachment.imageDataUrl?.trim());
+      }
+      return true;
+    });
     const currentAttachments = message.attachments ?? [];
     const nextMessageAttachments = editAttachments.map(toMessageAttachment);
     const attachmentsChanged =
       JSON.stringify(nextMessageAttachments) !== JSON.stringify(currentAttachments);
 
-    if (!next && !hasTextAttachmentPayload) {
+    if (!next && !hasAnyAttachmentPayload) {
       setIsEditing(false);
       resetEditState();
       return;
@@ -391,6 +434,7 @@ const MessageBubble = ({
   };
 
   const attachments = message.attachments ?? [];
+  const hasReasoning = !isUser && Boolean(message.reasoningContent?.trim());
 
   const addEditFiles = (files: FileList | null) => {
     if (!files?.length) {
@@ -408,12 +452,32 @@ const MessageBubble = ({
           };
 
           if (file.type.startsWith("image/")) {
-            return {
-              ...base,
-              kind: "image",
-              previewUrl: URL.createObjectURL(file),
-              error: "图片当前仅预览和存档，不会发送给模型。"
-            };
+            const previewUrl = URL.createObjectURL(file);
+            if (file.size > IMAGE_ATTACHMENT_LIMIT) {
+              return {
+                ...base,
+                kind: "image",
+                previewUrl,
+                error: `图片超过 ${(IMAGE_ATTACHMENT_LIMIT / (1024 * 1024)).toFixed(0)}MB，无法发送给模型。`
+              };
+            }
+
+            try {
+              const imageDataUrl = await readFileAsDataUrl(file);
+              return {
+                ...base,
+                kind: "image",
+                previewUrl,
+                imageDataUrl
+              };
+            } catch {
+              return {
+                ...base,
+                kind: "image",
+                previewUrl,
+                error: "图片读取失败，无法发送给模型。"
+              };
+            }
           }
 
           if (isTextAttachment(file)) {
@@ -435,10 +499,7 @@ const MessageBubble = ({
             }
           }
 
-          return {
-            ...base,
-            error: "当前先支持 md/txt 解析；该文件不会发送给模型。"
-          };
+          return base;
         })
       );
       setEditAttachments((previous) => [...previous, ...next]);
@@ -458,7 +519,7 @@ const MessageBubble = ({
   return (
     <div className={`group flex items-start gap-3 ${isUser ? "justify-end" : "justify-start"}`}>
       {!isUser ? (
-        <div className="grid h-8 w-8 place-content-center rounded-xl border border-[#d8e4f1] bg-[#ebf1f8] text-[10px] font-semibold tracking-wide text-[#3e536a] dark:border-[#355073] dark:bg-[#1a2d49] dark:text-[#b6cde6]">
+        <div className="grid h-8 w-8 place-content-center rounded-[4px] border border-border bg-accent/50 text-[10px] font-semibold tracking-wide text-foreground shadow-[2px_2px_0_hsl(var(--border))]">
           AI
         </div>
       ) : null}
@@ -466,10 +527,10 @@ const MessageBubble = ({
         {isUser && isEditing ? (
           <div
             className={[
-              "rounded-[14px] border bg-[#eef3f8] px-3 py-2.5 transition-colors dark:border-[#355073] dark:bg-[#1a2d49]",
+              "rounded-[6px] border bg-card px-3 py-2.5 shadow-[2px_2px_0_hsl(var(--border))] transition-colors",
               isDragOverEdit
-                ? "border-[#8bb0d4] bg-[#e7f0f9] dark:border-[#5b88b8] dark:bg-[#223a5e]"
-                : "border-[#dce8f5] dark:border-[#355073]"
+                ? "border-primary bg-accent/65"
+                : "border-border"
             ].join(" ")}
             onDragOver={(event) => {
               event.preventDefault();
@@ -479,6 +540,7 @@ const MessageBubble = ({
             onDragLeave={() => setIsDragOverEdit(false)}
             onDrop={(event) => {
               event.preventDefault();
+              event.stopPropagation();
               setIsDragOverEdit(false);
               addEditFiles(event.dataTransfer.files);
             }}
@@ -488,7 +550,7 @@ const MessageBubble = ({
               type="file"
               multiple
               className="hidden"
-              accept=".md,.txt,text/markdown,text/plain,image/*,.pdf,.doc,.docx"
+              accept="*/*"
               onChange={(event) => {
                 addEditFiles(event.target.files);
                 event.target.value = "";
@@ -497,26 +559,26 @@ const MessageBubble = ({
             <textarea
               value={editDraft}
               onChange={(event) => setEditDraft(event.target.value)}
-              className="min-h-[80px] w-full resize-y rounded-md border border-[#c8d7e7] bg-white p-2 text-[14px] leading-6 text-[#243447] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:border-[#355073] dark:bg-[#122038] dark:text-[#d5e3f6]"
+              className="min-h-[80px] w-full resize-y rounded-[4px] border border-input bg-card p-2 text-[14px] leading-6 text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
             {editAttachments.length ? (
               <div className="mt-2 grid gap-2 sm:grid-cols-2">
                 {editAttachments.map((attachment) => (
                   <div
                     key={attachment.id}
-                    className="rounded-xl border border-[#d8e1ea] bg-white px-2.5 py-2 dark:border-[#314969] dark:bg-[#162742]"
+                    className="rounded-[4px] border border-border bg-card/80 px-2.5 py-2"
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5">
                           {attachment.kind === "image" ? (
-                            <ImageIcon className="h-3.5 w-3.5 text-[#5d6e81] dark:text-[#9fb3cd]" />
+                            <ImageIcon className="h-3.5 w-3.5 text-muted-foreground" />
                           ) : (
-                            <FileText className="h-3.5 w-3.5 text-[#5d6e81] dark:text-[#9fb3cd]" />
+                            <FileText className="h-3.5 w-3.5 text-muted-foreground" />
                           )}
-                          <p className="truncate text-xs font-medium text-[#31465d] dark:text-[#d5e3f6]">{attachment.name}</p>
+                          <p className="truncate text-xs font-medium text-foreground">{attachment.name}</p>
                         </div>
-                        <p className="mt-0.5 text-[11px] text-[#6d7f93] dark:text-[#9ab0c8]">
+                        <p className="mt-0.5 text-[11px] text-muted-foreground">
                           {formatBytes(attachment.size)}
                         </p>
                       </div>
@@ -539,13 +601,13 @@ const MessageBubble = ({
                       />
                     ) : null}
                     {attachment.error ? (
-                      <p className="mt-1 text-[11px] text-[#8a5a32] dark:text-[#f2b982]">{attachment.error}</p>
+                      <p className="mt-1 text-[11px] text-destructive/80">{attachment.error}</p>
                     ) : null}
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="mt-2 text-[11px] text-[#6d7f93] dark:text-[#9ab0c8]">
+              <p className="mt-2 text-[11px] text-muted-foreground">
                 {isDragOverEdit ? "松开鼠标即可添加附件" : "支持拖拽文件到这里上传。"}
               </p>
             )}
@@ -590,10 +652,33 @@ const MessageBubble = ({
             className={[
               "inline-block w-fit max-w-full break-words transition-opacity duration-150",
               isUser
-                ? "rounded-[14px] border border-[#dce8f5] bg-[#eef3f8] px-3.5 py-2.5 dark:border-[#355073] dark:bg-[#1a2d49]"
+                ? "rounded-[6px] border border-border bg-secondary/65 px-3.5 py-2.5 shadow-[2px_2px_0_hsl(var(--border))]"
                 : "pt-1"
             ].join(" ")}
           >
+            {hasReasoning ? (
+              <div className="mb-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 gap-1 px-2 text-[11px] text-muted-foreground"
+                  onClick={() => setIsReasoningExpanded((previous) => !previous)}
+                >
+                  {isReasoningExpanded ? (
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  ) : (
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  )}
+                  思维链
+                </Button>
+                {isReasoningExpanded ? (
+                  <div className="mt-1.5 rounded-[6px] border border-border bg-accent/45 px-3 py-2">
+                    <MarkdownContent content={message.reasoningContent ?? ""} isUser={false} />
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             {(isUser ? message.content : displayedContent) ? (
               <MarkdownContent content={isUser ? message.content : displayedContent} isUser={isUser} />
             ) : (
@@ -607,7 +692,7 @@ const MessageBubble = ({
             {attachments.map((attachment) => (
               <span
                 key={attachment.id}
-                className="inline-flex items-center rounded-md border border-[#d8e4f1] bg-[#f4f8fc] px-2 py-0.5 text-[11px] text-[#425a72] dark:border-[#355073] dark:bg-[#1b2f4d] dark:text-[#c2d6ed]"
+                className="inline-flex items-center rounded-[4px] border border-border bg-card px-2 py-0.5 text-[11px] text-muted-foreground"
               >
                 {attachment.name}
               </span>
@@ -625,7 +710,7 @@ const MessageBubble = ({
             type="button"
             variant="ghost"
             size="sm"
-            className="h-7 gap-1 px-2 text-xs text-[#5b6b7d] dark:text-[#9db2cb]"
+            className="h-7 gap-1 px-2 text-xs text-muted-foreground"
             onClick={() => {
               void copyMessage();
             }}
@@ -639,7 +724,7 @@ const MessageBubble = ({
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="h-7 gap-1 px-2 text-xs text-[#5b6b7d] dark:text-[#9db2cb]"
+                className="h-7 gap-1 px-2 text-xs text-muted-foreground"
                 onClick={() => setIsEditing(true)}
                 disabled={isGenerating}
               >
@@ -650,7 +735,7 @@ const MessageBubble = ({
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="h-7 gap-1 px-2 text-xs text-[#5b6b7d] dark:text-[#9db2cb]"
+                className="h-7 gap-1 px-2 text-xs text-muted-foreground"
                 onClick={() => onResendMessage(message)}
                 disabled={isGenerating}
               >
@@ -663,7 +748,7 @@ const MessageBubble = ({
             type="button"
             variant="ghost"
             size="sm"
-            className="h-7 gap-1 px-2 text-xs text-[#8a4a4a]"
+            className="h-7 gap-1 px-2 text-xs text-destructive"
             onClick={() => onDeleteMessage(message)}
             disabled={isGenerating}
           >
@@ -673,7 +758,7 @@ const MessageBubble = ({
         </div>
       </div>
       {isUser ? (
-        <div className="grid h-8 w-8 place-content-center rounded-xl border border-[#d8e4f1] bg-[#ebf1f8] text-[10px] font-semibold tracking-wide text-[#3e536a] dark:border-[#355073] dark:bg-[#1a2d49] dark:text-[#b6cde6]">
+        <div className="grid h-8 w-8 place-content-center rounded-[4px] border border-border bg-accent/50 text-[10px] font-semibold tracking-wide text-foreground shadow-[2px_2px_0_hsl(var(--border))]">
           U
         </div>
       ) : null}
@@ -685,20 +770,42 @@ export const ChatView = ({
   messages,
   isConfigured,
   isGenerating,
-  suggestionPrompts,
-  onSelectSuggestion,
   onEditMessage,
   onDeleteMessage,
   onResendMessage
 }: ChatViewProps) => {
+  const scrollContainerRef = useRef<HTMLElement | null>(null);
+  const latestMessage = messages[messages.length - 1];
+
+  useEffect(() => {
+    if (!messages.length) {
+      return;
+    }
+
+    const container = scrollContainerRef.current;
+    if (!container) {
+      return;
+    }
+
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior: "auto"
+    });
+  }, [
+    messages.length,
+    latestMessage?.id,
+    latestMessage?.content,
+    latestMessage?.reasoningContent
+  ]);
+
   if (!isConfigured) {
     return (
-      <section className="mx-auto flex h-full w-full max-w-[980px] items-center justify-center px-7 py-7">
-        <div className="text-center">
-          <h2 className="text-6xl font-semibold leading-none tracking-tight text-foreground">
+      <section className="mx-auto flex h-full w-full max-w-[980px] items-center justify-center px-3 py-3 sm:px-5 sm:py-5 md:px-7 md:py-7">
+        <div className="rounded-[8px] border border-border bg-card/70 px-4 py-4 text-center shadow-[4px_4px_0_hsl(var(--border))] sm:px-6 sm:py-6 md:px-8 md:py-7">
+          <h2 className="sketch-title text-[34px] font-semibold uppercase leading-none text-primary sm:text-[48px] md:text-[68px]">
             Hello, 用户名
           </h2>
-          <p className="mt-4 text-lg text-muted-foreground">
+          <p className="mt-3 text-sm text-muted-foreground sm:text-base">
             请在左下角 Settings 完成渠道配置
           </p>
         </div>
@@ -708,41 +815,20 @@ export const ChatView = ({
 
   if (!messages.length) {
     return (
-      <section className="mx-auto flex h-full w-full max-w-[980px] flex-col px-7 pb-5 pt-7">
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 pb-16 text-center">
-          <div className="mx-auto grid h-[54px] w-[54px] place-content-center rounded-[20px] border border-[#dce4ed] bg-[#f8fbff] font-mono text-sm text-[#3c4f64] dark:border-[#355073] dark:bg-[#1b2f4d] dark:text-[#c4d8ee]">
-            {"{}"}
-          </div>
-          <h2 className="text-6xl font-semibold leading-none tracking-tight text-foreground">
-            Let&apos;s build
-          </h2>
-          <p className="text-4xl text-muted-foreground">Mu</p>
-        </div>
-
-        <div className="mb-3 text-right text-[34px] text-[#7e8792] dark:text-[#91a6be]">Explore more</div>
-        <div className="grid gap-3 md:grid-cols-3">
-          {suggestionPrompts.map((prompt, index) => (
-            <Button
-              key={prompt}
-              type="button"
-              variant="outline"
-              className="h-auto min-h-[114px] justify-start whitespace-normal rounded-[22px] border-[#dfe5ec] bg-[#f8fafc] px-4 py-4 text-left text-base font-normal text-[#2b3949] hover:bg-[#f3f7fb] dark:border-[#355073] dark:bg-[#162742] dark:text-[#d6e4f6] dark:hover:bg-[#1b3150]"
-              onClick={() => onSelectSuggestion(prompt)}
-            >
-              <span className="mr-2 inline-grid h-6 w-6 place-content-center rounded-md border border-[#d5dde6] bg-white text-xs text-[#5d6a79] dark:border-[#355073] dark:bg-[#1f3352] dark:text-[#b4c9e0]">
-                {index === 0 ? "G" : index === 1 ? "P" : "L"}
-              </span>
-              <span>{prompt}</span>
-            </Button>
-          ))}
-        </div>
+      <section className="mx-auto flex h-full w-full max-w-[980px] items-center justify-center px-3 py-3 text-center sm:px-5 sm:py-5 md:px-7 md:py-7">
+        <h2 className="sketch-title text-[40px] font-semibold uppercase leading-none text-primary sm:text-[56px] md:text-[72px]">
+          LET&apos;S CHAT
+        </h2>
       </section>
     );
   }
 
   return (
-    <section className="mx-auto h-full w-full max-w-[980px] overflow-auto px-7 py-7">
-      <div className="grid gap-4">
+    <section
+      ref={scrollContainerRef}
+      className="mx-auto h-full w-full max-w-[980px] overflow-auto px-3 py-3 sm:px-5 sm:py-5 md:px-7 md:py-7"
+    >
+      <div className="grid gap-3 sm:gap-4">
         {messages.map((message) => (
           <MessageBubble
             key={message.id}

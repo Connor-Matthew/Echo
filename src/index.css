@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Alegreya+Sans:wght@400;500;700&family=Handjet:wght@500;700&family=IBM+Plex+Mono:wght@400;500&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -6,44 +6,44 @@
 
 @layer base {
   :root {
-    --background: 216 43% 97%;
-    --foreground: 218 25% 11%;
+    --background: 220 23% 97%;
+    --foreground: 220 18% 18%;
     --card: 0 0% 100%;
-    --card-foreground: 218 25% 11%;
-    --primary: 209 28% 43%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 36% 97%;
-    --secondary-foreground: 217 22% 24%;
-    --muted: 210 36% 97%;
-    --muted-foreground: 215 12% 52%;
-    --accent: 208 38% 95%;
-    --accent-foreground: 217 22% 24%;
-    --destructive: 6 61% 46%;
+    --card-foreground: 220 16% 20%;
+    --primary: 220 18% 30%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 22% 95%;
+    --secondary-foreground: 220 15% 24%;
+    --muted: 220 20% 95%;
+    --muted-foreground: 220 10% 45%;
+    --accent: 220 28% 92%;
+    --accent-foreground: 220 16% 22%;
+    --destructive: 5 53% 44%;
     --destructive-foreground: 0 0% 98%;
-    --border: 216 27% 90%;
-    --input: 216 27% 90%;
-    --ring: 209 28% 43%;
-    --radius: 12px;
+    --border: 220 15% 82%;
+    --input: 220 14% 80%;
+    --ring: 220 18% 42%;
+    --radius: 6px;
   }
 
   .dark {
-    --background: 218 43% 9%;
-    --foreground: 210 33% 96%;
-    --card: 220 34% 13%;
-    --card-foreground: 210 33% 96%;
-    --primary: 208 85% 68%;
-    --primary-foreground: 221 45% 10%;
-    --secondary: 219 30% 18%;
-    --secondary-foreground: 210 24% 86%;
-    --muted: 220 30% 16%;
-    --muted-foreground: 214 17% 70%;
-    --accent: 214 44% 20%;
-    --accent-foreground: 210 28% 92%;
-    --destructive: 5 76% 58%;
+    --background: 220 22% 10%;
+    --foreground: 220 20% 89%;
+    --card: 220 18% 13%;
+    --card-foreground: 220 20% 89%;
+    --primary: 220 34% 75%;
+    --primary-foreground: 220 18% 15%;
+    --secondary: 220 18% 18%;
+    --secondary-foreground: 220 17% 82%;
+    --muted: 220 16% 16%;
+    --muted-foreground: 220 10% 64%;
+    --accent: 220 18% 25%;
+    --accent-foreground: 220 20% 90%;
+    --destructive: 5 64% 60%;
     --destructive-foreground: 0 0% 98%;
-    --border: 216 25% 24%;
-    --input: 216 25% 24%;
-    --ring: 208 85% 68%;
+    --border: 220 16% 31%;
+    --input: 220 16% 39%;
+    --ring: 220 28% 72%;
   }
 
   * {
@@ -58,23 +58,89 @@
 
   body {
     @apply m-0 bg-background font-sans text-foreground antialiased;
-    background-image: radial-gradient(circle at top left, #f8fbff, hsl(var(--background)));
+    background-image:
+      radial-gradient(circle at 16% 12%, rgba(245, 248, 255, 0.86), transparent 34%),
+      radial-gradient(circle at 84% 86%, rgba(234, 239, 248, 0.55), transparent 30%),
+      linear-gradient(180deg, #f9fbff 0%, hsl(var(--background)) 100%);
+  }
+
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.1;
+    background-image:
+      repeating-linear-gradient(
+        0deg,
+        transparent 0,
+        transparent 34px,
+        rgba(102, 116, 145, 0.08) 34px,
+        rgba(102, 116, 145, 0.08) 35px
+      ),
+      radial-gradient(circle at 2px 2px, rgba(84, 95, 120, 0.16) 1px, transparent 0);
+    background-size:
+      100% 35px,
+      6px 6px;
   }
 
   .dark body {
-    background-image: radial-gradient(circle at top left, #13233a, hsl(var(--background)));
+    background-image:
+      radial-gradient(circle at 14% 12%, rgba(82, 106, 151, 0.2), transparent 34%),
+      radial-gradient(circle at 86% 88%, rgba(74, 84, 106, 0.22), transparent 30%),
+      linear-gradient(180deg, #151b27 0%, hsl(var(--background)) 100%);
+  }
+
+  .dark body::before {
+    opacity: 0.13;
+    background-image:
+      repeating-linear-gradient(0deg, transparent 0, transparent 34px, rgba(176, 191, 226, 0.08) 34px, rgba(176, 191, 226, 0.08) 35px),
+      radial-gradient(circle at 2px 2px, rgba(179, 193, 229, 0.22) 1px, transparent 0);
   }
 }
 
 @layer components {
   .app-window-drag-layer {
     position: absolute;
-    left: 320px;
+    left: 346px;
     right: 0;
     top: 0;
-    height: 25%;
+    height: 84px;
     z-index: 30;
     -webkit-app-region: drag;
+  }
+
+  .sketch-panel {
+    border: 1.5px solid hsl(var(--border));
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(245, 248, 253, 0.95));
+    box-shadow:
+      4px 4px 0 rgba(112, 126, 152, 0.28),
+      inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  }
+
+  .dark .sketch-panel {
+    background: linear-gradient(180deg, rgba(30, 38, 52, 0.92), rgba(24, 31, 44, 0.92));
+    box-shadow:
+      4px 4px 0 rgba(8, 12, 18, 0.55),
+      inset 0 1px 0 rgba(183, 204, 237, 0.12);
+  }
+
+  .sketch-title {
+    font-family: "Handjet", sans-serif;
+    letter-spacing: 0.02em;
+  }
+
+  .sketch-grid-paper {
+    background-image:
+      linear-gradient(to right, rgba(127, 144, 176, 0.08) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(127, 144, 176, 0.08) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  .dark .sketch-grid-paper {
+    background-image:
+      linear-gradient(to right, rgba(158, 178, 217, 0.08) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(158, 178, 217, 0.08) 1px, transparent 1px);
   }
 
   .app-shell button,
@@ -87,5 +153,12 @@
     position: relative;
     z-index: 40;
     -webkit-app-region: no-drag;
+  }
+
+  @media (max-width: 1279px) {
+    .app-window-drag-layer {
+      left: 0;
+      height: 60px;
+    }
   }
 }

@@ -42,8 +42,9 @@ const config: Config = {
         sm: "calc(var(--radius) - 4px)"
       },
       fontFamily: {
-        sans: ["IBM Plex Sans", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"],
-        mono: ["JetBrains Mono", "SF Mono", "Menlo", "monospace"]
+        sans: ["Alegreya Sans", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"],
+        mono: ["IBM Plex Mono", "SF Mono", "Menlo", "monospace"],
+        display: ["Handjet", "Alegreya Sans", "sans-serif"]
       }
     }
   },

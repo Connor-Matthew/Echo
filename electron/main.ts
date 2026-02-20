@@ -2,13 +2,16 @@ import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { registerAgentIpcHandlers } from "./agent/agent-ipc";
 import {
   DEFAULT_SETTINGS,
   normalizeSettings,
   type AppSettings,
+  type ChatAttachment,
   type ChatSession,
   type ChatStreamEvent,
   type ChatStreamRequest,
+  type CompletionMessage,
   type ConnectionTestResult,
   type ModelListResult,
   type StreamEnvelope
@@ -64,11 +67,11 @@ const parseApiKeys = (raw: string) =>
   );
 const resolveAnthropicEndpoint = (baseUrl: string, resource: "models" | "messages") => {
   const normalized = normalizeBaseUrl(baseUrl);
-  return normalized.endsWith("/v1")
-    ? `${normalized}/${resource}`
-    : `${normalized}/v1/${resource}`;
+  const rooted = normalized
+    .replace(/\/v1\/(messages|models)$/i, "")
+    .replace(/\/(messages|models)$/i, "");
+  return rooted.endsWith("/v1") ? `${rooted}/${resource}` : `${rooted}/v1/${resource}`;
 };
-
 const extractModelIds = (payload: unknown): string[] => {
   if (!payload || typeof payload !== "object") {
     return [];
@@ -110,12 +113,18 @@ const isSettingsConfigured = (settings: AppSettings) => {
   if (settings.providerType === "acp") {
     return true;
   }
+  if (settings.providerType === "claude-agent") {
+    return Boolean(parseApiKeys(settings.apiKey).length && settings.model.trim());
+  }
   return Boolean(settings.baseUrl.trim() && parseApiKeys(settings.apiKey).length && settings.model.trim());
 };
 
 const isConnectionConfigured = (settings: AppSettings) => {
   if (settings.providerType === "acp") {
     return true;
+  }
+  if (settings.providerType === "claude-agent") {
+    return Boolean(parseApiKeys(settings.apiKey).length);
   }
   return Boolean(settings.baseUrl.trim() && parseApiKeys(settings.apiKey).length);
 };
@@ -184,6 +193,88 @@ const createSseDebugLogger =
     }
     console.info(`[sse:${streamId}]`, ...parts);
   };
+
+const readString = (value: unknown) => (typeof value === "string" ? value : "");
+
+const extractTextFromUnknown = (value: unknown): string => {
+  if (!value) {
+    return "";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => {
+        if (typeof entry === "string") {
+          return entry;
+        }
+        if (entry && typeof entry === "object") {
+          const block = entry as { text?: unknown; content?: unknown };
+          return readString(block.text) || readString(block.content);
+        }
+        return "";
+      })
+      .join("");
+  }
+  if (typeof value === "object") {
+    const block = value as { text?: unknown; content?: unknown };
+    return readString(block.text) || readString(block.content);
+  }
+  return "";
+};
+
+const extractOpenAiLikeDeltas = (delta: unknown): { content: string; reasoning: string } => {
+  if (!delta || typeof delta !== "object") {
+    return { content: "", reasoning: "" };
+  }
+
+  const source = delta as {
+    content?: unknown;
+    reasoning_content?: unknown;
+    reasoning?: unknown;
+    reasoningContent?: unknown;
+    thinking?: unknown;
+  };
+
+  return {
+    content: extractTextFromUnknown(source.content),
+    reasoning:
+      extractTextFromUnknown(source.reasoning_content) ||
+      extractTextFromUnknown(source.reasoningContent) ||
+      extractTextFromUnknown(source.reasoning) ||
+      extractTextFromUnknown(source.thinking)
+  };
+};
+
+const extractAnthropicDeltas = (payload: unknown): { content: string; reasoning: string } => {
+  if (!payload || typeof payload !== "object") {
+    return { content: "", reasoning: "" };
+  }
+
+  const source = payload as {
+    delta?: {
+      type?: unknown;
+      text?: unknown;
+      thinking?: unknown;
+    };
+  };
+
+  const delta = source.delta;
+  if (!delta || typeof delta !== "object") {
+    return { content: "", reasoning: "" };
+  }
+
+  const deltaType = readString((delta as { type?: unknown }).type);
+  const text = readString((delta as { text?: unknown }).text);
+  const thinking = readString((delta as { thinking?: unknown }).thinking);
+
+  if (deltaType === "thinking_delta") {
+    return { content: "", reasoning: thinking };
+  }
+
+  return { content: text, reasoning: thinking };
+};
 
 const runCodexCommand = async (
   args: string[],
@@ -370,11 +461,141 @@ const listCodexAcpModels = async (timeoutMs = CODEX_RUNTIME_CHECK_TIMEOUT_MS): P
     });
   });
 
+const toAttachmentMetaText = (attachment: ChatAttachment) =>
+  `[Attachment: ${attachment.name} | ${attachment.mimeType || "unknown"} | ${attachment.size} bytes]`;
+
+const toTextAttachmentBlock = (attachment: ChatAttachment) =>
+  `${toAttachmentMetaText(attachment)}\n${attachment.textContent?.trim() ?? ""}`;
+
+const parseDataUrl = (dataUrl: string) => {
+  const match = /^data:([^;,]+);base64,(.+)$/i.exec(dataUrl.trim());
+  if (!match) {
+    return null;
+  }
+  return { mediaType: match[1], data: match[2] };
+};
+
+const buildOpenAiMessageContent = (message: CompletionMessage) => {
+  const parts: Array<
+    { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }
+  > = [];
+
+  const prompt = message.content.trim();
+  if (prompt) {
+    parts.push({ type: "text", text: prompt });
+  }
+
+  for (const attachment of message.attachments ?? []) {
+    if (attachment.kind === "text" && attachment.textContent?.trim()) {
+      parts.push({ type: "text", text: toTextAttachmentBlock(attachment) });
+      continue;
+    }
+
+    if (attachment.kind === "image" && attachment.imageDataUrl?.trim()) {
+      parts.push({
+        type: "image_url",
+        image_url: { url: attachment.imageDataUrl.trim() }
+      });
+      continue;
+    }
+
+    parts.push({ type: "text", text: toAttachmentMetaText(attachment) });
+  }
+
+  if (!parts.length) {
+    return null;
+  }
+  if (parts.length === 1 && parts[0].type === "text") {
+    return parts[0].text;
+  }
+  return parts;
+};
+
+const toOpenAiStreamMessages = (messages: CompletionMessage[]) =>
+  messages
+    .map((message) => {
+      const content = buildOpenAiMessageContent(message);
+      if (!content) {
+        return null;
+      }
+      return {
+        role: message.role,
+        content
+      };
+    })
+    .filter(
+      (
+        message
+      ): message is {
+        role: CompletionMessage["role"];
+        content:
+          | string
+          | Array<
+              { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }
+            >;
+      } => Boolean(message)
+    );
+
+const toAnthropicContentBlocks = (message: CompletionMessage) => {
+  const blocks: Array<
+    | { type: "text"; text: string }
+    | { type: "image"; source: { type: "base64"; media_type: string; data: string } }
+  > = [];
+
+  const prompt = message.content.trim();
+  if (prompt) {
+    blocks.push({ type: "text", text: prompt });
+  }
+
+  for (const attachment of message.attachments ?? []) {
+    if (attachment.kind === "text" && attachment.textContent?.trim()) {
+      blocks.push({ type: "text", text: toTextAttachmentBlock(attachment) });
+      continue;
+    }
+
+    if (attachment.kind === "image" && attachment.imageDataUrl?.trim()) {
+      const source = parseDataUrl(attachment.imageDataUrl);
+      if (source) {
+        blocks.push({
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: source.mediaType,
+            data: source.data
+          }
+        });
+        continue;
+      }
+    }
+
+    blocks.push({ type: "text", text: toAttachmentMetaText(attachment) });
+  }
+
+  return blocks;
+};
+
+const formatMessageForAcpTurn = (message: CompletionMessage) => {
+  const blocks: string[] = [];
+  if (message.content.trim()) {
+    blocks.push(message.content.trim());
+  }
+
+  for (const attachment of message.attachments ?? []) {
+    if (attachment.kind === "text" && attachment.textContent?.trim()) {
+      blocks.push(toTextAttachmentBlock(attachment));
+      continue;
+    }
+    blocks.push(toAttachmentMetaText(attachment));
+  }
+
+  return blocks.join("\n\n").trim();
+};
+
 const formatMessagesForAcpTurn = (payload: ChatStreamRequest) =>
   payload.messages
     .map((message) => ({
       role: message.role.toUpperCase(),
-      content: message.content.trim()
+      content: formatMessageForAcpTurn(message)
     }))
     .filter((message) => Boolean(message.content))
     .map((message) => `[${message.role}]\n${message.content}`)
@@ -400,13 +621,17 @@ const fetchModelIds = async (settings: AppSettings): Promise<ModelListResult> =>
     }
   }
 
-  const baseUrl = normalizeBaseUrl(settings.baseUrl);
+  const baseUrl = normalizeBaseUrl(
+    settings.baseUrl || (settings.providerType === "claude-agent" ? "https://api.anthropic.com" : "")
+  );
   const apiKeys = parseApiKeys(settings.apiKey);
   if (!baseUrl || !apiKeys.length) {
-    return { ok: false, message: "Please fill Base URL and API key.", models: [] };
+    return settings.providerType === "claude-agent"
+      ? { ok: false, message: "Please fill API key.", models: [] }
+      : { ok: false, message: "Please fill Base URL and API key.", models: [] };
   }
 
-  const isAnthropic = settings.providerType === "anthropic";
+  const isAnthropic = settings.providerType === "anthropic" || settings.providerType === "claude-agent";
   const attempts: Array<{ endpoint: string; headers: Record<string, string> }> = isAnthropic
     ? apiKeys.flatMap((apiKey) => [
         {
@@ -496,10 +721,7 @@ const streamOpenAICompatible = async (
     body: JSON.stringify({
       model: payload.settings.model.trim(),
       stream: true,
-      messages: payload.messages.map((message) => ({
-        role: message.role,
-        content: message.content
-      }))
+      messages: toOpenAiStreamMessages(payload.messages)
     }),
     signal
   });
@@ -548,7 +770,7 @@ const streamOpenAICompatible = async (
 
       try {
         const parsed = JSON.parse(data) as {
-          choices?: Array<{ delta?: { content?: string }; finish_reason?: string }>;
+          choices?: Array<{ delta?: unknown; finish_reason?: string }>;
           error?: { message?: string };
         };
 
@@ -561,10 +783,14 @@ const streamOpenAICompatible = async (
           return;
         }
 
-        const delta = parsed.choices?.[0]?.delta?.content;
-        if (delta) {
+        const { content, reasoning } = extractOpenAiLikeDeltas(parsed.choices?.[0]?.delta);
+        if (content) {
           onDelta?.();
-          sendStreamEvent(sender, streamId, { type: "delta", delta });
+          sendStreamEvent(sender, streamId, { type: "delta", delta: content });
+        }
+        if (reasoning) {
+          onDelta?.();
+          sendStreamEvent(sender, streamId, { type: "reasoning", delta: reasoning });
         }
 
         if (parsed.choices?.[0]?.finish_reason) {
@@ -593,11 +819,12 @@ const streamAnthropic = async (
     .filter(Boolean)
     .join("\n\n");
   const anthropicMessages = payload.messages
-    .filter((message) => message.role !== "system" && Boolean(message.content.trim()))
+    .filter((message) => message.role !== "system")
     .map((message) => ({
       role: message.role as "user" | "assistant",
-      content: [{ type: "text", text: message.content }]
+      content: toAnthropicContentBlocks(message)
     }));
+  const normalizedAnthropicMessages = anthropicMessages.filter((message) => message.content.length);
 
   const response = await fetch(endpoint, {
     method: "POST",
@@ -612,7 +839,7 @@ const streamAnthropic = async (
       max_tokens: payload.settings.maxTokens,
       temperature: payload.settings.temperature,
       system: systemPrompt || undefined,
-      messages: anthropicMessages
+      messages: normalizedAnthropicMessages
     }),
     signal
   });
@@ -662,7 +889,11 @@ const streamAnthropic = async (
       try {
         const parsed = JSON.parse(data) as {
           type?: string;
-          delta?: { text?: string };
+          delta?: {
+            type?: string;
+            text?: string;
+            thinking?: string;
+          };
           error?: { message?: string };
         };
 
@@ -675,10 +906,14 @@ const streamAnthropic = async (
           return;
         }
 
-        const delta = parsed.delta?.text;
-        if (delta) {
+        const { content, reasoning } = extractAnthropicDeltas(parsed);
+        if (content) {
           onDelta?.();
-          sendStreamEvent(sender, streamId, { type: "delta", delta });
+          sendStreamEvent(sender, streamId, { type: "delta", delta: content });
+        }
+        if (reasoning) {
+          onDelta?.();
+          sendStreamEvent(sender, streamId, { type: "reasoning", delta: reasoning });
         }
 
         if (parsed.type === "message_stop") {
@@ -727,7 +962,7 @@ const streamCodexAcp = async (
   };
 
   const initializeId = createId();
-  const threadStartId = createId();
+  const chatStartId = createId();
   const turnStartId = createId();
 
   const writeRpc = (envelope: unknown) => {
@@ -835,7 +1070,7 @@ const streamCodexAcp = async (
           writeRpc({ method: "initialized" });
           writeRpc({
             method: "thread/start",
-            id: threadStartId,
+            id: chatStartId,
             params: {
               model: payload.settings.model.trim() || null,
               modelProvider: null,
@@ -854,19 +1089,19 @@ const streamCodexAcp = async (
           continue;
         }
 
-        if (parsed.id === threadStartId) {
-          const threadId = parsed.result?.thread && typeof parsed.result.thread === "object"
+        if (parsed.id === chatStartId) {
+          const chatId = parsed.result?.thread && typeof parsed.result.thread === "object"
             ? (parsed.result.thread as { id?: string }).id
             : null;
-          if (!threadId) {
-            settleReject(reject, new Error("ACP thread/start did not return a thread id."));
+          if (!chatId) {
+            settleReject(reject, new Error("ACP start did not return a chat id."));
             return;
           }
           writeRpc({
             method: "turn/start",
             id: turnStartId,
             params: {
-              threadId,
+              threadId: chatId,
               input: [{ type: "text", text: turnInput, text_elements: [] }],
               cwd: process.cwd(),
               approvalPolicy: null,
@@ -892,6 +1127,20 @@ const streamCodexAcp = async (
             emittedAnyDelta = true;
             onDelta?.();
             sendStreamEvent(sender, streamId, { type: "delta", delta });
+          }
+          continue;
+        }
+
+        if (
+          typeof parsed.method === "string" &&
+          parsed.method.endsWith("/delta") &&
+          (parsed.method.includes("reason") || parsed.method.includes("thinking"))
+        ) {
+          const delta = parsed.params?.delta;
+          if (typeof delta === "string" && delta) {
+            emittedAnyDelta = true;
+            onDelta?.();
+            sendStreamEvent(sender, streamId, { type: "reasoning", delta });
           }
           continue;
         }
@@ -981,7 +1230,9 @@ const registerIpcHandlers = () => {
       }
 
       if (!isConnectionConfigured(settings)) {
-        return { ok: false, message: "Please fill Base URL and API key." };
+        return settings.providerType === "claude-agent"
+          ? { ok: false, message: "Please fill API key for Claude Agent provider." }
+          : { ok: false, message: "Please fill Base URL and API key." };
       }
       const result = await fetchModelIds(settings);
       if (!result.ok) {
@@ -1004,6 +1255,9 @@ const registerIpcHandlers = () => {
   ipcMain.handle(
     "chat:startStream",
     async (event, payload: ChatStreamRequest): Promise<{ streamId: string }> => {
+      if (payload.settings.providerType === "claude-agent") {
+        throw new Error("Claude Agent provider is only available in Agent mode.");
+      }
       if (!isSettingsConfigured(payload.settings)) {
         throw new Error("Provider settings are incomplete.");
       }
@@ -1089,8 +1343,8 @@ const createMainWindow = () => {
   const mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
-    minWidth: 1100,
-    minHeight: 700,
+    minWidth: 680,
+    minHeight: 450,
     backgroundColor: "#f3f5f8",
     titleBarStyle: "hiddenInset",
     webPreferences: {
@@ -1112,6 +1366,7 @@ const createMainWindow = () => {
 
 app.whenReady().then(() => {
   registerIpcHandlers();
+  registerAgentIpcHandlers();
   createMainWindow();
 
   app.on("activate", () => {

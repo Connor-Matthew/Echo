@@ -5,6 +5,7 @@
 ## 功能特性
 
 - 多 Provider 管理（OpenAI / OpenRouter / Groq / DeepSeek / Anthropic / Ollama / LM Studio 预设）
+- Agent 模式（Claude Agent SDK provider，独立会话与流事件）
 - 流式输出（SSE）与中断生成
 - 多会话线程管理（新建 / 重命名 / 删除 / 撤销删除）
 - 消息编辑后重生成、消息重发、消息复制
