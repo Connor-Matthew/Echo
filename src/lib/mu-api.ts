@@ -168,6 +168,88 @@ const createSseDebugLogger =
     console.info(`[sse:${streamId}]`, ...parts);
   };
 
+const readString = (value: unknown) => (typeof value === "string" ? value : "");
+
+const extractTextFromUnknown = (value: unknown): string => {
+  if (!value) {
+    return "";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => {
+        if (typeof entry === "string") {
+          return entry;
+        }
+        if (entry && typeof entry === "object") {
+          const block = entry as { text?: unknown; content?: unknown };
+          return readString(block.text) || readString(block.content);
+        }
+        return "";
+      })
+      .join("");
+  }
+  if (typeof value === "object") {
+    const block = value as { text?: unknown; content?: unknown };
+    return readString(block.text) || readString(block.content);
+  }
+  return "";
+};
+
+const extractOpenAiLikeDeltas = (delta: unknown): { content: string; reasoning: string } => {
+  if (!delta || typeof delta !== "object") {
+    return { content: "", reasoning: "" };
+  }
+
+  const source = delta as {
+    content?: unknown;
+    reasoning_content?: unknown;
+    reasoning?: unknown;
+    reasoningContent?: unknown;
+    thinking?: unknown;
+  };
+
+  return {
+    content: extractTextFromUnknown(source.content),
+    reasoning:
+      extractTextFromUnknown(source.reasoning_content) ||
+      extractTextFromUnknown(source.reasoningContent) ||
+      extractTextFromUnknown(source.reasoning) ||
+      extractTextFromUnknown(source.thinking)
+  };
+};
+
+const extractAnthropicDeltas = (payload: unknown): { content: string; reasoning: string } => {
+  if (!payload || typeof payload !== "object") {
+    return { content: "", reasoning: "" };
+  }
+
+  const source = payload as {
+    delta?: {
+      type?: unknown;
+      text?: unknown;
+      thinking?: unknown;
+    };
+  };
+
+  const delta = source.delta;
+  if (!delta || typeof delta !== "object") {
+    return { content: "", reasoning: "" };
+  }
+
+  const deltaType = readString((delta as { type?: unknown }).type);
+  const text = readString((delta as { text?: unknown }).text);
+  const thinking = readString((delta as { thinking?: unknown }).thinking);
+
+  if (deltaType === "thinking_delta") {
+    return { content: "", reasoning: thinking };
+  }
+
+  return { content: text, reasoning: thinking };
+};
+
 const toAttachmentMetaText = (attachment: ChatAttachment) =>
   `[Attachment: ${attachment.name} | ${attachment.mimeType || "unknown"} | ${attachment.size} bytes]`;
 
@@ -565,9 +647,13 @@ const createBrowserFallbackApi = (): MuApi => {
 
                     try {
                       const parsed = JSON.parse(data) as {
-                        choices?: Array<{ delta?: { content?: string }; finish_reason?: string }>;
+                        choices?: Array<{ delta?: unknown; finish_reason?: string }>;
                         type?: string;
-                        delta?: { text?: string };
+                        delta?: {
+                          type?: string;
+                          text?: string;
+                          thinking?: string;
+                        };
                         error?: { message?: string };
                       };
 
@@ -586,12 +672,16 @@ const createBrowserFallbackApi = (): MuApi => {
                         return;
                       }
 
-                      const delta = isAnthropic
-                        ? parsed.delta?.text
-                        : parsed.choices?.[0]?.delta?.content;
-                      if (delta) {
+                      const deltas = isAnthropic
+                        ? extractAnthropicDeltas(parsed)
+                        : extractOpenAiLikeDeltas(parsed.choices?.[0]?.delta);
+                      if (deltas.content) {
                         emittedDelta = true;
-                        emit(streamId, { type: "delta", delta });
+                        emit(streamId, { type: "delta", delta: deltas.content });
+                      }
+                      if (deltas.reasoning) {
+                        emittedDelta = true;
+                        emit(streamId, { type: "reasoning", delta: deltas.reasoning });
                       }
 
                       if (

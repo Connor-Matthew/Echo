@@ -6,6 +6,8 @@ import {
   type ReactNode
 } from "react";
 import {
+  ChevronDown,
+  ChevronRight,
   Check,
   Copy,
   FileText,
@@ -309,6 +311,7 @@ const MessageBubble = ({
     cloneMessageAttachments(message.attachments)
   );
   const [isDragOverEdit, setIsDragOverEdit] = useState(false);
+  const [isReasoningExpanded, setIsReasoningExpanded] = useState(false);
   const [displayedContent, setDisplayedContent] = useState(message.content);
   const displayedContentRef = useRef(message.content);
   const targetContentRef = useRef(message.content);
@@ -431,6 +434,7 @@ const MessageBubble = ({
   };
 
   const attachments = message.attachments ?? [];
+  const hasReasoning = !isUser && Boolean(message.reasoningContent?.trim());
 
   const addEditFiles = (files: FileList | null) => {
     if (!files?.length) {
@@ -652,6 +656,29 @@ const MessageBubble = ({
                 : "pt-1"
             ].join(" ")}
           >
+            {hasReasoning ? (
+              <div className="mb-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 gap-1 px-2 text-[11px] text-muted-foreground"
+                  onClick={() => setIsReasoningExpanded((previous) => !previous)}
+                >
+                  {isReasoningExpanded ? (
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  ) : (
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  )}
+                  思维链
+                </Button>
+                {isReasoningExpanded ? (
+                  <div className="mt-1.5 rounded-[6px] border border-border bg-accent/45 px-3 py-2">
+                    <MarkdownContent content={message.reasoningContent ?? ""} isUser={false} />
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
             {(isUser ? message.content : displayedContent) ? (
               <MarkdownContent content={isUser ? message.content : displayedContent} isUser={isUser} />
             ) : (

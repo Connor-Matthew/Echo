@@ -187,6 +187,88 @@ const createSseDebugLogger =
     console.info(`[sse:${streamId}]`, ...parts);
   };
 
+const readString = (value: unknown) => (typeof value === "string" ? value : "");
+
+const extractTextFromUnknown = (value: unknown): string => {
+  if (!value) {
+    return "";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => {
+        if (typeof entry === "string") {
+          return entry;
+        }
+        if (entry && typeof entry === "object") {
+          const block = entry as { text?: unknown; content?: unknown };
+          return readString(block.text) || readString(block.content);
+        }
+        return "";
+      })
+      .join("");
+  }
+  if (typeof value === "object") {
+    const block = value as { text?: unknown; content?: unknown };
+    return readString(block.text) || readString(block.content);
+  }
+  return "";
+};
+
+const extractOpenAiLikeDeltas = (delta: unknown): { content: string; reasoning: string } => {
+  if (!delta || typeof delta !== "object") {
+    return { content: "", reasoning: "" };
+  }
+
+  const source = delta as {
+    content?: unknown;
+    reasoning_content?: unknown;
+    reasoning?: unknown;
+    reasoningContent?: unknown;
+    thinking?: unknown;
+  };
+
+  return {
+    content: extractTextFromUnknown(source.content),
+    reasoning:
+      extractTextFromUnknown(source.reasoning_content) ||
+      extractTextFromUnknown(source.reasoningContent) ||
+      extractTextFromUnknown(source.reasoning) ||
+      extractTextFromUnknown(source.thinking)
+  };
+};
+
+const extractAnthropicDeltas = (payload: unknown): { content: string; reasoning: string } => {
+  if (!payload || typeof payload !== "object") {
+    return { content: "", reasoning: "" };
+  }
+
+  const source = payload as {
+    delta?: {
+      type?: unknown;
+      text?: unknown;
+      thinking?: unknown;
+    };
+  };
+
+  const delta = source.delta;
+  if (!delta || typeof delta !== "object") {
+    return { content: "", reasoning: "" };
+  }
+
+  const deltaType = readString((delta as { type?: unknown }).type);
+  const text = readString((delta as { text?: unknown }).text);
+  const thinking = readString((delta as { thinking?: unknown }).thinking);
+
+  if (deltaType === "thinking_delta") {
+    return { content: "", reasoning: thinking };
+  }
+
+  return { content: text, reasoning: thinking };
+};
+
 const runCodexCommand = async (
   args: string[],
   timeoutMs = CODEX_RUNTIME_CHECK_TIMEOUT_MS
@@ -677,7 +759,7 @@ const streamOpenAICompatible = async (
 
       try {
         const parsed = JSON.parse(data) as {
-          choices?: Array<{ delta?: { content?: string }; finish_reason?: string }>;
+          choices?: Array<{ delta?: unknown; finish_reason?: string }>;
           error?: { message?: string };
         };
 
@@ -690,10 +772,14 @@ const streamOpenAICompatible = async (
           return;
         }
 
-        const delta = parsed.choices?.[0]?.delta?.content;
-        if (delta) {
+        const { content, reasoning } = extractOpenAiLikeDeltas(parsed.choices?.[0]?.delta);
+        if (content) {
           onDelta?.();
-          sendStreamEvent(sender, streamId, { type: "delta", delta });
+          sendStreamEvent(sender, streamId, { type: "delta", delta: content });
+        }
+        if (reasoning) {
+          onDelta?.();
+          sendStreamEvent(sender, streamId, { type: "reasoning", delta: reasoning });
         }
 
         if (parsed.choices?.[0]?.finish_reason) {
@@ -792,7 +878,11 @@ const streamAnthropic = async (
       try {
         const parsed = JSON.parse(data) as {
           type?: string;
-          delta?: { text?: string };
+          delta?: {
+            type?: string;
+            text?: string;
+            thinking?: string;
+          };
           error?: { message?: string };
         };
 
@@ -805,10 +895,14 @@ const streamAnthropic = async (
           return;
         }
 
-        const delta = parsed.delta?.text;
-        if (delta) {
+        const { content, reasoning } = extractAnthropicDeltas(parsed);
+        if (content) {
           onDelta?.();
-          sendStreamEvent(sender, streamId, { type: "delta", delta });
+          sendStreamEvent(sender, streamId, { type: "delta", delta: content });
+        }
+        if (reasoning) {
+          onDelta?.();
+          sendStreamEvent(sender, streamId, { type: "reasoning", delta: reasoning });
         }
 
         if (parsed.type === "message_stop") {
@@ -1022,6 +1116,20 @@ const streamCodexAcp = async (
             emittedAnyDelta = true;
             onDelta?.();
             sendStreamEvent(sender, streamId, { type: "delta", delta });
+          }
+          continue;
+        }
+
+        if (
+          typeof parsed.method === "string" &&
+          parsed.method.endsWith("/delta") &&
+          (parsed.method.includes("reason") || parsed.method.includes("thinking"))
+        ) {
+          const delta = parsed.params?.delta;
+          if (typeof delta === "string" && delta) {
+            emittedAnyDelta = true;
+            onDelta?.();
+            sendStreamEvent(sender, streamId, { type: "reasoning", delta });
           }
           continue;
         }

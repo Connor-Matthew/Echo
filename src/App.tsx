@@ -28,6 +28,7 @@ type ActiveStream = {
   sessionId: string;
   assistantMessageId: string;
   pendingDelta: string;
+  pendingReasoningDelta: string;
   flushTimeoutId: number | null;
   flushPending: () => void;
   unsubscribe: () => void;
@@ -299,7 +300,12 @@ export const App = () => {
   const removeAssistantPlaceholderIfEmpty = (sessionId: string, messageId: string) => {
     upsertSession(sessionId, (session) => {
       const target = session.messages.find((message) => message.id === messageId);
-      if (!target || target.role !== "assistant" || target.content.trim()) {
+      if (
+        !target ||
+        target.role !== "assistant" ||
+        target.content.trim() ||
+        target.reasoningContent?.trim()
+      ) {
         return session;
       }
       return {
@@ -763,6 +769,7 @@ export const App = () => {
       id: createId(),
       role: "assistant",
       content: "",
+      reasoningContent: "",
       createdAt: nowIso()
     };
     const nextMessages = [...baseMessages, userMessage, assistantMessage];
@@ -797,23 +804,30 @@ export const App = () => {
         sessionId: session.id,
         assistantMessageId: assistantMessage.id,
         pendingDelta: "",
+        pendingReasoningDelta: "",
         flushTimeoutId: null,
         flushPending: () => {},
         unsubscribe: () => {}
       };
 
       const flushPendingDelta = () => {
-        if (!streamState.pendingDelta) {
+        if (!streamState.pendingDelta && !streamState.pendingReasoningDelta) {
           return;
         }
         const chunk = streamState.pendingDelta;
+        const reasoningChunk = streamState.pendingReasoningDelta;
         streamState.pendingDelta = "";
+        streamState.pendingReasoningDelta = "";
         upsertSession(streamState.sessionId, (session) => ({
           ...session,
           updatedAt: nowIso(),
           messages: session.messages.map((message) =>
             message.id === streamState.assistantMessageId
-              ? { ...message, content: `${message.content}${chunk}` }
+              ? {
+                  ...message,
+                  content: `${message.content}${chunk}`,
+                  reasoningContent: `${message.reasoningContent ?? ""}${reasoningChunk}`
+                }
               : message
           )
         }));
@@ -823,6 +837,16 @@ export const App = () => {
       const unsubscribe = api.chat.onStreamEvent(streamId, (event) => {
         if (event.type === "delta") {
           streamState.pendingDelta += event.delta;
+          if (streamState.flushTimeoutId === null) {
+            streamState.flushTimeoutId = window.setTimeout(() => {
+              streamState.flushTimeoutId = null;
+              flushPendingDelta();
+            }, 24);
+          }
+          return;
+        }
+        if (event.type === "reasoning") {
+          streamState.pendingReasoningDelta += event.delta;
           if (streamState.flushTimeoutId === null) {
             streamState.flushTimeoutId = window.setTimeout(() => {
               streamState.flushTimeoutId = null;

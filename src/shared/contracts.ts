@@ -22,6 +22,7 @@ export type ChatMessage = {
   id: string;
   role: MessageRole;
   content: string;
+  reasoningContent?: string;
   createdAt: string;
   attachments?: ChatAttachment[];
 };
@@ -89,6 +90,7 @@ export type ChatStreamRequest = {
 
 export type ChatStreamEvent =
   | { type: "delta"; delta: string }
+  | { type: "reasoning"; delta: string }
   | { type: "done" }
   | { type: "error"; message: string };
 
