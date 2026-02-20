@@ -8,7 +8,6 @@ import {
   ImageIcon,
   Mic,
   Plus,
-  Video,
   X
 } from "lucide-react";
 import type { ModelCapabilities } from "../shared/contracts";
@@ -236,14 +235,6 @@ export const Composer = ({
               </select>
               <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             </div>
-            <Button
-              type="button"
-              variant="ghost"
-              className="h-8 gap-1 rounded-[4px] px-2 text-sm font-medium text-muted-foreground hover:bg-accent/60 hover:text-foreground sm:gap-1.5 sm:px-2.5"
-            >
-              <span>High</span>
-              <ChevronDown className="h-4 w-4" />
-            </Button>
             <div className="ml-0.5 flex items-center gap-1">
               {[
                 {
@@ -251,18 +242,6 @@ export const Composer = ({
                   label: "图片输入",
                   Icon: ImageIcon,
                   enabled: modelCapabilities.imageInput
-                },
-                {
-                  key: "audioInput",
-                  label: "音频输入",
-                  Icon: Mic,
-                  enabled: modelCapabilities.audioInput
-                },
-                {
-                  key: "videoInput",
-                  label: "视频输入",
-                  Icon: Video,
-                  enabled: modelCapabilities.videoInput
                 },
                 {
                   key: "reasoningDisplay",
@@ -291,30 +270,30 @@ export const Composer = ({
               type="button"
               variant="ghost"
               size="icon"
-              className="h-8 w-8 rounded-[4px] text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+              className="h-7 w-7 rounded-[4px] text-muted-foreground hover:bg-accent/60 hover:text-foreground"
               aria-label="Voice input"
             >
-              <Mic className="h-4.5 w-4.5" />
+              <Mic className="h-4 w-4" />
             </Button>
             {isGenerating ? (
               <Button
                 type="button"
                 variant="outline"
-                className="h-10 w-10 rounded-[4px] border-destructive/60 bg-destructive/10 p-0 text-destructive hover:bg-destructive/15"
+                className="h-9 w-9 rounded-[4px] border-destructive/60 bg-destructive/10 p-0 text-destructive hover:bg-destructive/15"
                 onClick={onStop}
                 aria-label="Stop generating"
               >
-                <CircleStop className="h-4.5 w-4.5" />
+                <CircleStop className="h-4 w-4" />
               </Button>
             ) : (
               <Button
                 type="button"
                 onClick={submit}
                 disabled={disabled || !canSubmit}
-                className="h-10 w-10 rounded-[4px] border border-border bg-primary p-0 text-primary-foreground hover:bg-primary/90 disabled:border-border/40 disabled:bg-secondary disabled:text-muted-foreground"
+                className="h-9 w-9 rounded-[4px] border border-border bg-primary p-0 text-primary-foreground hover:bg-primary/90 disabled:border-border/40 disabled:bg-secondary disabled:text-muted-foreground"
                 aria-label="Send message"
               >
-                <ArrowUp className="h-5 w-5" />
+                <ArrowUp className="h-4.5 w-4.5" />
               </Button>
             )}
           </div>

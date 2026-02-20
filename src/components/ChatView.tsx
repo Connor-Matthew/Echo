@@ -774,6 +774,30 @@ export const ChatView = ({
   onDeleteMessage,
   onResendMessage
 }: ChatViewProps) => {
+  const scrollContainerRef = useRef<HTMLElement | null>(null);
+  const latestMessage = messages[messages.length - 1];
+
+  useEffect(() => {
+    if (!messages.length) {
+      return;
+    }
+
+    const container = scrollContainerRef.current;
+    if (!container) {
+      return;
+    }
+
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior: "auto"
+    });
+  }, [
+    messages.length,
+    latestMessage?.id,
+    latestMessage?.content,
+    latestMessage?.reasoningContent
+  ]);
+
   if (!isConfigured) {
     return (
       <section className="mx-auto flex h-full w-full max-w-[980px] items-center justify-center px-3 py-3 sm:px-5 sm:py-5 md:px-7 md:py-7">
@@ -800,7 +824,10 @@ export const ChatView = ({
   }
 
   return (
-    <section className="mx-auto h-full w-full max-w-[980px] overflow-auto px-3 py-3 sm:px-5 sm:py-5 md:px-7 md:py-7">
+    <section
+      ref={scrollContainerRef}
+      className="mx-auto h-full w-full max-w-[980px] overflow-auto px-3 py-3 sm:px-5 sm:py-5 md:px-7 md:py-7"
+    >
       <div className="grid gap-3 sm:gap-4">
         {messages.map((message) => (
           <MessageBubble

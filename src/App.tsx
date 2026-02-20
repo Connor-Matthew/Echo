@@ -1171,7 +1171,7 @@ export const App = () => {
                 </div>
               ) : null}
 
-              <div className="sketch-grid-paper h-full min-h-0 bg-card/40 pb-[136px] sm:pb-[152px] md:pb-[176px]">
+              <div className="sketch-grid-paper h-full min-h-0 bg-card/40 pb-[112px] sm:pb-[128px] md:pb-[148px]">
                 <ChatView
                   messages={activeSession?.messages ?? []}
                   isConfigured={isConfigured}
@@ -1182,7 +1182,7 @@ export const App = () => {
                 />
               </div>
 
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-[#f5f8fe] via-[#f5f8fe]/95 to-transparent px-2 pb-2 pt-6 dark:from-[#20293a] dark:via-[#20293a]/94 sm:px-3 sm:pb-3 sm:pt-8 md:px-6 md:pb-4 md:pt-10">
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-[#f5f8fe] via-[#f5f8fe]/95 to-transparent px-2 pb-2 pt-4 dark:from-[#20293a] dark:via-[#20293a]/94 sm:px-3 sm:pb-3 sm:pt-6 md:px-6 md:pb-4 md:pt-7">
                 <div className="pointer-events-auto mx-auto w-full min-w-0 max-w-[980px]">
                   <Composer
                     value={draft}
