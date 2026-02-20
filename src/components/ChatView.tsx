@@ -1,4 +1,10 @@
-import { isValidElement, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  isValidElement,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode
+} from "react";
 import {
   Check,
   Copy,
@@ -50,7 +56,23 @@ type MessageBubbleProps = {
 };
 
 const TEXT_ATTACHMENT_LIMIT = 60000;
-const TEXT_ATTACHMENT_EXTENSIONS = new Set([".md", ".txt"]);
+const IMAGE_ATTACHMENT_LIMIT = 5 * 1024 * 1024;
+const TEXT_ATTACHMENT_EXTENSIONS = new Set([
+  ".md",
+  ".txt",
+  ".json",
+  ".csv",
+  ".xml",
+  ".yaml",
+  ".yml",
+  ".log"
+]);
+const TEXT_ATTACHMENT_MIME_TYPES = new Set([
+  "application/json",
+  "application/xml",
+  "application/x-yaml",
+  "text/csv"
+]);
 
 const formatBytes = (size: number) => {
   if (size < 1024) {
@@ -68,11 +90,28 @@ const getExtension = (name: string) => {
 };
 
 const isTextAttachment = (file: File) => {
-  if (file.type === "text/plain" || file.type === "text/markdown") {
+  if (file.type.startsWith("text/") || TEXT_ATTACHMENT_MIME_TYPES.has(file.type)) {
     return true;
   }
   return TEXT_ATTACHMENT_EXTENSIONS.has(getExtension(file.name));
 };
+
+const readFileAsDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result === "string") {
+        resolve(result);
+        return;
+      }
+      reject(new Error("Failed to read file as data URL."));
+    };
+    reader.onerror = () => {
+      reject(reader.error ?? new Error("Failed to read file."));
+    };
+    reader.readAsDataURL(file);
+  });
 
 const toMessageAttachment = (attachment: EditAttachment): ChatAttachment => ({
   id: attachment.id,
@@ -80,7 +119,8 @@ const toMessageAttachment = (attachment: EditAttachment): ChatAttachment => ({
   mimeType: attachment.mimeType,
   size: attachment.size,
   kind: attachment.kind,
-  textContent: attachment.kind === "text" ? attachment.textContent : undefined
+  textContent: attachment.kind === "text" ? attachment.textContent : undefined,
+  imageDataUrl: attachment.kind === "image" ? attachment.imageDataUrl : undefined
 });
 
 const revokeAttachmentPreview = (attachment: EditAttachment) => {
@@ -359,15 +399,21 @@ const MessageBubble = ({
 
   const saveEdit = () => {
     const next = editDraft.trim();
-    const hasTextAttachmentPayload = editAttachments.some(
-      (attachment) => attachment.kind === "text" && Boolean(attachment.textContent?.trim())
-    );
+    const hasAnyAttachmentPayload = editAttachments.some((attachment) => {
+      if (attachment.kind === "text") {
+        return Boolean(attachment.textContent?.trim());
+      }
+      if (attachment.kind === "image") {
+        return Boolean(attachment.imageDataUrl?.trim());
+      }
+      return true;
+    });
     const currentAttachments = message.attachments ?? [];
     const nextMessageAttachments = editAttachments.map(toMessageAttachment);
     const attachmentsChanged =
       JSON.stringify(nextMessageAttachments) !== JSON.stringify(currentAttachments);
 
-    if (!next && !hasTextAttachmentPayload) {
+    if (!next && !hasAnyAttachmentPayload) {
       setIsEditing(false);
       resetEditState();
       return;
@@ -402,12 +448,32 @@ const MessageBubble = ({
           };
 
           if (file.type.startsWith("image/")) {
-            return {
-              ...base,
-              kind: "image",
-              previewUrl: URL.createObjectURL(file),
-              error: "图片当前仅预览和存档，不会发送给模型。"
-            };
+            const previewUrl = URL.createObjectURL(file);
+            if (file.size > IMAGE_ATTACHMENT_LIMIT) {
+              return {
+                ...base,
+                kind: "image",
+                previewUrl,
+                error: `图片超过 ${(IMAGE_ATTACHMENT_LIMIT / (1024 * 1024)).toFixed(0)}MB，无法发送给模型。`
+              };
+            }
+
+            try {
+              const imageDataUrl = await readFileAsDataUrl(file);
+              return {
+                ...base,
+                kind: "image",
+                previewUrl,
+                imageDataUrl
+              };
+            } catch {
+              return {
+                ...base,
+                kind: "image",
+                previewUrl,
+                error: "图片读取失败，无法发送给模型。"
+              };
+            }
           }
 
           if (isTextAttachment(file)) {
@@ -429,10 +495,7 @@ const MessageBubble = ({
             }
           }
 
-          return {
-            ...base,
-            error: "当前先支持 md/txt 解析；该文件不会发送给模型。"
-          };
+          return base;
         })
       );
       setEditAttachments((previous) => [...previous, ...next]);
@@ -473,6 +536,7 @@ const MessageBubble = ({
             onDragLeave={() => setIsDragOverEdit(false)}
             onDrop={(event) => {
               event.preventDefault();
+              event.stopPropagation();
               setIsDragOverEdit(false);
               addEditFiles(event.dataTransfer.files);
             }}
@@ -482,7 +546,7 @@ const MessageBubble = ({
               type="file"
               multiple
               className="hidden"
-              accept=".md,.txt,text/markdown,text/plain,image/*,.pdf,.doc,.docx"
+              accept="*/*"
               onChange={(event) => {
                 addEditFiles(event.target.files);
                 event.target.value = "";
@@ -702,7 +766,7 @@ export const ChatView = ({
     return (
       <section className="mx-auto flex h-full w-full max-w-[980px] items-center justify-center px-3 py-3 text-center sm:px-5 sm:py-5 md:px-7 md:py-7">
         <h2 className="sketch-title text-[40px] font-semibold uppercase leading-none text-primary sm:text-[56px] md:text-[72px]">
-          CHAT
+          LET&apos;S CHAT
         </h2>
       </section>
     );

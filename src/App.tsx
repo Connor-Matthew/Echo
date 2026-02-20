@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEventHandler } from "react";
 import { PanelLeft } from "lucide-react";
 import { ChatView } from "./components/ChatView";
 import { Composer, type ComposerAttachment } from "./components/Composer";
@@ -36,6 +36,7 @@ type ActiveStream = {
 type DraftAttachment = ComposerAttachment & {
   mimeType: string;
   textContent?: string;
+  imageDataUrl?: string;
 };
 
 type AppView = "chat" | "settings";
@@ -49,7 +50,23 @@ const createId = () =>
 
 const nowIso = () => new Date().toISOString();
 const TEXT_ATTACHMENT_LIMIT = 60000;
-const TEXT_ATTACHMENT_EXTENSIONS = new Set([".md", ".txt"]);
+const IMAGE_ATTACHMENT_LIMIT = 5 * 1024 * 1024;
+const TEXT_ATTACHMENT_EXTENSIONS = new Set([
+  ".md",
+  ".txt",
+  ".json",
+  ".csv",
+  ".xml",
+  ".yaml",
+  ".yml",
+  ".log"
+]);
+const TEXT_ATTACHMENT_MIME_TYPES = new Set([
+  "application/json",
+  "application/xml",
+  "application/x-yaml",
+  "text/csv"
+]);
 const COMPOSER_MODEL_DELIMITER = "::";
 const SIDEBAR_AUTO_HIDE_WIDTH = 800;
 const SIDEBAR_MIN_WIDTH = 228;
@@ -99,10 +116,37 @@ const getExtension = (name: string) => {
 };
 
 const isTextAttachment = (file: File) => {
-  if (file.type === "text/plain" || file.type === "text/markdown") {
+  if (file.type.startsWith("text/") || TEXT_ATTACHMENT_MIME_TYPES.has(file.type)) {
     return true;
   }
   return TEXT_ATTACHMENT_EXTENSIONS.has(getExtension(file.name));
+};
+
+const readFileAsDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result === "string") {
+        resolve(result);
+        return;
+      }
+      reject(new Error("Failed to read file as data URL."));
+    };
+    reader.onerror = () => {
+      reject(reader.error ?? new Error("Failed to read file."));
+    };
+    reader.readAsDataURL(file);
+  });
+
+const hasAttachmentPayload = (attachment: ChatAttachment) => {
+  if (attachment.kind === "text") {
+    return Boolean(attachment.textContent?.trim());
+  }
+  if (attachment.kind === "image") {
+    return Boolean(attachment.imageDataUrl?.trim());
+  }
+  return true;
 };
 
 const revokeAttachmentPreview = (attachment: { previewUrl?: string }) => {
@@ -125,30 +169,14 @@ const createSession = (title = "New Chat"): ChatSession => {
 const sessionToCompletionMessages = (messages: ChatMessage[]): ChatStreamRequest["messages"] =>
   messages
     .map((message) => {
-      if (message.role !== "user") {
-        return { role: message.role, content: message.content };
-      }
-
-      const textAttachments = (message.attachments ?? []).filter(
-        (attachment) => attachment.kind === "text" && Boolean(attachment.textContent?.trim())
-      );
-      if (!textAttachments.length) {
-        return { role: message.role, content: message.content };
-      }
-
-      const attachmentBlocks = textAttachments
-        .map(
-          (attachment) =>
-            `[Attachment: ${attachment.name}]\n${attachment.textContent?.trim() ?? ""}`
-        )
-        .join("\n\n");
-      const mergedContent = message.content.trim()
-        ? `${message.content}\n\n${attachmentBlocks}`
-        : attachmentBlocks;
-
-      return { role: message.role, content: mergedContent };
+      const attachments = (message.attachments ?? []).filter(hasAttachmentPayload);
+      return {
+        role: message.role,
+        content: message.content,
+        attachments: attachments.length ? attachments : undefined
+      };
     })
-    .filter((message) => Boolean(message.content.trim()));
+    .filter((message) => Boolean(message.content.trim()) || Boolean(message.attachments?.length));
 
 const finalizeTitleFromPrompt = (prompt: string) => {
   const trimmed = prompt.trim();
@@ -182,8 +210,17 @@ export const App = () => {
   const removedTimeoutRef = useRef<number | null>(null);
   const draftAttachmentsRef = useRef<DraftAttachment[]>([]);
   const wasCompactLayoutRef = useRef(getCurrentViewportWidth() < SIDEBAR_AUTO_HIDE_WIDTH);
+  const chatDropDepthRef = useRef(0);
+  const [isChatDragOver, setIsChatDragOver] = useState(false);
 
   const isCompactLayout = viewportWidth < SIDEBAR_AUTO_HIDE_WIDTH;
+
+  useEffect(() => {
+    if (activeView !== "chat") {
+      chatDropDepthRef.current = 0;
+      setIsChatDragOver(false);
+    }
+  }, [activeView]);
 
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId),
@@ -601,12 +638,32 @@ export const App = () => {
           };
 
           if (file.type.startsWith("image/")) {
-            return {
-              ...base,
-              kind: "image",
-              previewUrl: URL.createObjectURL(file),
-              error: "图片当前仅预览和存档，不会发送给模型。"
-            };
+            const previewUrl = URL.createObjectURL(file);
+            if (file.size > IMAGE_ATTACHMENT_LIMIT) {
+              return {
+                ...base,
+                kind: "image",
+                previewUrl,
+                error: `图片超过 ${(IMAGE_ATTACHMENT_LIMIT / (1024 * 1024)).toFixed(0)}MB，无法发送给模型。`
+              };
+            }
+
+            try {
+              const imageDataUrl = await readFileAsDataUrl(file);
+              return {
+                ...base,
+                kind: "image",
+                previewUrl,
+                imageDataUrl
+              };
+            } catch {
+              return {
+                ...base,
+                kind: "image",
+                previewUrl,
+                error: "图片读取失败，无法发送给模型。"
+              };
+            }
           }
 
           if (isTextAttachment(file)) {
@@ -630,10 +687,7 @@ export const App = () => {
             }
           }
 
-          return {
-            ...base,
-            error: "当前先支持 md/txt 解析；该文件不会发送给模型。"
-          };
+          return base;
         })
       );
 
@@ -678,10 +732,8 @@ export const App = () => {
     }
 
     const trimmedContent = nextContent.trim();
-    const hasTextPayload = nextAttachments.some(
-      (attachment) => attachment.kind === "text" && Boolean(attachment.textContent?.trim())
-    );
-    if (!trimmedContent && !hasTextPayload) {
+    const hasAnyAttachmentPayload = nextAttachments.some(hasAttachmentPayload);
+    if (!trimmedContent && !hasAnyAttachmentPayload) {
       return;
     }
 
@@ -829,13 +881,12 @@ export const App = () => {
       mimeType: attachment.mimeType,
       size: attachment.size,
       kind: attachment.kind,
-      textContent: attachment.kind === "text" ? attachment.textContent : undefined
+      textContent: attachment.kind === "text" ? attachment.textContent : undefined,
+      imageDataUrl: attachment.kind === "image" ? attachment.imageDataUrl : undefined
     }));
-    const hasTextPayload = messageAttachments.some(
-      (attachment) => attachment.kind === "text" && Boolean(attachment.textContent?.trim())
-    );
+    const hasAnyAttachmentPayload = messageAttachments.some(hasAttachmentPayload);
 
-    if (!prompt && !hasTextPayload) {
+    if (!prompt && !hasAnyAttachmentPayload) {
       return;
     }
 
@@ -859,6 +910,50 @@ export const App = () => {
 
   const sidebarWidth =
     !isCompactLayout || isSidebarOpen ? getResponsiveSidebarWidth(viewportWidth) : 0;
+
+  const hasFileTransfer = (dataTransfer: DataTransfer | null) =>
+    Boolean(dataTransfer && Array.from(dataTransfer.types).includes("Files"));
+
+  const handleChatDragEnter: DragEventHandler<HTMLElement> = (event) => {
+    if (activeView !== "chat" || !hasFileTransfer(event.dataTransfer)) {
+      return;
+    }
+    event.preventDefault();
+    chatDropDepthRef.current += 1;
+    setIsChatDragOver(true);
+  };
+
+  const handleChatDragOver: DragEventHandler<HTMLElement> = (event) => {
+    if (activeView !== "chat" || !hasFileTransfer(event.dataTransfer)) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    if (!isChatDragOver) {
+      setIsChatDragOver(true);
+    }
+  };
+
+  const handleChatDragLeave: DragEventHandler<HTMLElement> = (event) => {
+    if (activeView !== "chat" || !hasFileTransfer(event.dataTransfer)) {
+      return;
+    }
+    event.preventDefault();
+    chatDropDepthRef.current = Math.max(0, chatDropDepthRef.current - 1);
+    if (chatDropDepthRef.current === 0) {
+      setIsChatDragOver(false);
+    }
+  };
+
+  const handleChatDrop: DragEventHandler<HTMLElement> = (event) => {
+    if (activeView !== "chat" || !hasFileTransfer(event.dataTransfer)) {
+      return;
+    }
+    event.preventDefault();
+    chatDropDepthRef.current = 0;
+    setIsChatDragOver(false);
+    addFiles(event.dataTransfer.files);
+  };
 
   const sidebarContent =
     activeView === "chat" ? (
@@ -934,8 +1029,24 @@ export const App = () => {
 
         <main
           data-no-drag="true"
-          className="sketch-panel relative flex min-h-0 flex-col overflow-hidden rounded-[8px]"
+          className={[
+            "sketch-panel relative flex min-h-0 flex-col overflow-hidden rounded-[8px] border-2 transition-colors",
+            activeView === "chat" && isChatDragOver
+              ? "border-primary bg-accent/30"
+              : "border-transparent"
+          ].join(" ")}
+          onDragEnter={handleChatDragEnter}
+          onDragOver={handleChatDragOver}
+          onDragLeave={handleChatDragLeave}
+          onDrop={handleChatDrop}
         >
+          {activeView === "chat" && isChatDragOver ? (
+            <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-background/40 backdrop-blur-[6px]">
+              <div className="rounded-[10px] border border-primary/55 bg-card/78 px-6 py-3 text-sm font-medium text-primary shadow-[4px_4px_0_hsl(var(--border))]">
+                松开鼠标即可添加附件
+              </div>
+            </div>
+          ) : null}
           {activeView === "chat" ? (
             <>
               <header className="border-b border-border/85 bg-white/80 px-3 py-2 sm:px-4 sm:py-2.5 md:px-5 md:py-3 dark:bg-[#222c3d]/55">

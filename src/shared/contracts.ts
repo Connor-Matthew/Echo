@@ -34,6 +34,8 @@ export type ChatAttachment = {
   kind: AttachmentKind;
   // Text payload used to build model context for md/txt attachments.
   textContent?: string;
+  // Image payload used for multimodal inference.
+  imageDataUrl?: string;
 };
 
 export type ChatSession = {
@@ -77,6 +79,7 @@ export type ModelListResult = {
 export type CompletionMessage = {
   role: MessageRole;
   content: string;
+  attachments?: ChatAttachment[];
 };
 
 export type ChatStreamRequest = {

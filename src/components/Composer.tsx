@@ -127,7 +127,7 @@ export const Composer = ({
           type="file"
           multiple
           className="hidden"
-          accept=".md,.txt,text/markdown,text/plain,image/*,.pdf,.doc,.docx"
+          accept="*/*"
           onChange={(event) => {
             onAddFiles(event.target.files);
             event.target.value = "";

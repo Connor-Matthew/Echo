@@ -6,9 +6,11 @@ import {
   DEFAULT_SETTINGS,
   normalizeSettings,
   type AppSettings,
+  type ChatAttachment,
   type ChatSession,
   type ChatStreamEvent,
   type ChatStreamRequest,
+  type CompletionMessage,
   type ConnectionTestResult,
   type ModelListResult,
   type StreamEnvelope
@@ -370,11 +372,141 @@ const listCodexAcpModels = async (timeoutMs = CODEX_RUNTIME_CHECK_TIMEOUT_MS): P
     });
   });
 
+const toAttachmentMetaText = (attachment: ChatAttachment) =>
+  `[Attachment: ${attachment.name} | ${attachment.mimeType || "unknown"} | ${attachment.size} bytes]`;
+
+const toTextAttachmentBlock = (attachment: ChatAttachment) =>
+  `${toAttachmentMetaText(attachment)}\n${attachment.textContent?.trim() ?? ""}`;
+
+const parseDataUrl = (dataUrl: string) => {
+  const match = /^data:([^;,]+);base64,(.+)$/i.exec(dataUrl.trim());
+  if (!match) {
+    return null;
+  }
+  return { mediaType: match[1], data: match[2] };
+};
+
+const buildOpenAiMessageContent = (message: CompletionMessage) => {
+  const parts: Array<
+    { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }
+  > = [];
+
+  const prompt = message.content.trim();
+  if (prompt) {
+    parts.push({ type: "text", text: prompt });
+  }
+
+  for (const attachment of message.attachments ?? []) {
+    if (attachment.kind === "text" && attachment.textContent?.trim()) {
+      parts.push({ type: "text", text: toTextAttachmentBlock(attachment) });
+      continue;
+    }
+
+    if (attachment.kind === "image" && attachment.imageDataUrl?.trim()) {
+      parts.push({
+        type: "image_url",
+        image_url: { url: attachment.imageDataUrl.trim() }
+      });
+      continue;
+    }
+
+    parts.push({ type: "text", text: toAttachmentMetaText(attachment) });
+  }
+
+  if (!parts.length) {
+    return null;
+  }
+  if (parts.length === 1 && parts[0].type === "text") {
+    return parts[0].text;
+  }
+  return parts;
+};
+
+const toOpenAiStreamMessages = (messages: CompletionMessage[]) =>
+  messages
+    .map((message) => {
+      const content = buildOpenAiMessageContent(message);
+      if (!content) {
+        return null;
+      }
+      return {
+        role: message.role,
+        content
+      };
+    })
+    .filter(
+      (
+        message
+      ): message is {
+        role: CompletionMessage["role"];
+        content:
+          | string
+          | Array<
+              { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }
+            >;
+      } => Boolean(message)
+    );
+
+const toAnthropicContentBlocks = (message: CompletionMessage) => {
+  const blocks: Array<
+    | { type: "text"; text: string }
+    | { type: "image"; source: { type: "base64"; media_type: string; data: string } }
+  > = [];
+
+  const prompt = message.content.trim();
+  if (prompt) {
+    blocks.push({ type: "text", text: prompt });
+  }
+
+  for (const attachment of message.attachments ?? []) {
+    if (attachment.kind === "text" && attachment.textContent?.trim()) {
+      blocks.push({ type: "text", text: toTextAttachmentBlock(attachment) });
+      continue;
+    }
+
+    if (attachment.kind === "image" && attachment.imageDataUrl?.trim()) {
+      const source = parseDataUrl(attachment.imageDataUrl);
+      if (source) {
+        blocks.push({
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: source.mediaType,
+            data: source.data
+          }
+        });
+        continue;
+      }
+    }
+
+    blocks.push({ type: "text", text: toAttachmentMetaText(attachment) });
+  }
+
+  return blocks;
+};
+
+const formatMessageForAcpTurn = (message: CompletionMessage) => {
+  const blocks: string[] = [];
+  if (message.content.trim()) {
+    blocks.push(message.content.trim());
+  }
+
+  for (const attachment of message.attachments ?? []) {
+    if (attachment.kind === "text" && attachment.textContent?.trim()) {
+      blocks.push(toTextAttachmentBlock(attachment));
+      continue;
+    }
+    blocks.push(toAttachmentMetaText(attachment));
+  }
+
+  return blocks.join("\n\n").trim();
+};
+
 const formatMessagesForAcpTurn = (payload: ChatStreamRequest) =>
   payload.messages
     .map((message) => ({
       role: message.role.toUpperCase(),
-      content: message.content.trim()
+      content: formatMessageForAcpTurn(message)
     }))
     .filter((message) => Boolean(message.content))
     .map((message) => `[${message.role}]\n${message.content}`)
@@ -496,10 +628,7 @@ const streamOpenAICompatible = async (
     body: JSON.stringify({
       model: payload.settings.model.trim(),
       stream: true,
-      messages: payload.messages.map((message) => ({
-        role: message.role,
-        content: message.content
-      }))
+      messages: toOpenAiStreamMessages(payload.messages)
     }),
     signal
   });
@@ -593,11 +722,12 @@ const streamAnthropic = async (
     .filter(Boolean)
     .join("\n\n");
   const anthropicMessages = payload.messages
-    .filter((message) => message.role !== "system" && Boolean(message.content.trim()))
+    .filter((message) => message.role !== "system")
     .map((message) => ({
       role: message.role as "user" | "assistant",
-      content: [{ type: "text", text: message.content }]
+      content: toAnthropicContentBlocks(message)
     }));
+  const normalizedAnthropicMessages = anthropicMessages.filter((message) => message.content.length);
 
   const response = await fetch(endpoint, {
     method: "POST",
@@ -612,7 +742,7 @@ const streamAnthropic = async (
       max_tokens: payload.settings.maxTokens,
       temperature: payload.settings.temperature,
       system: systemPrompt || undefined,
-      messages: anthropicMessages
+      messages: normalizedAnthropicMessages
     }),
     signal
   });
