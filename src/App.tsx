@@ -1,12 +1,20 @@
 import { useEffect, useMemo, useRef, useState, type DragEventHandler } from "react";
 import { PanelLeft } from "lucide-react";
+import { AgentView } from "./components/AgentView";
 import { ChatView } from "./components/ChatView";
 import { Composer, type ComposerAttachment } from "./components/Composer";
 import { SettingsCenter } from "./components/SettingsCenter";
 import { Sidebar, type SettingsSection } from "./components/Sidebar";
 import { Button } from "./components/ui/button";
+import { Textarea } from "./components/ui/textarea";
 import { getMuApi } from "./lib/mu-api";
 import { resolveProviderModelCapabilities } from "./lib/model-capabilities";
+import {
+  buildAgentRunSettingsSnapshot,
+  type AgentMessage,
+  type AgentSessionMeta,
+  type AgentStreamEnvelope
+} from "./shared/agent-contracts";
 import {
   DEFAULT_SETTINGS,
   normalizeSettings,
@@ -41,7 +49,14 @@ type DraftAttachment = ComposerAttachment & {
   imageDataUrl?: string;
 };
 
-type AppView = "chat" | "settings";
+type AppView = "chat" | "agent" | "settings";
+
+type ActiveAgentRun = {
+  runId: string;
+  sessionId: string;
+  assistantMessageId: string;
+  unsubscribe: () => void;
+};
 
 const api = getMuApi();
 
@@ -208,6 +223,14 @@ export const App = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [draft, setDraft] = useState("");
   const [draftAttachments, setDraftAttachments] = useState<DraftAttachment[]>([]);
+  const [agentSessions, setAgentSessions] = useState<AgentSessionMeta[]>([]);
+  const [activeAgentSessionId, setActiveAgentSessionId] = useState("");
+  const [agentMessagesBySession, setAgentMessagesBySession] = useState<Record<string, AgentMessage[]>>(
+    {}
+  );
+  const [agentDraft, setAgentDraft] = useState("");
+  const [isAgentRunning, setIsAgentRunning] = useState(false);
+  const [agentErrorBanner, setAgentErrorBanner] = useState<string | null>(null);
   const [isHydrated, setIsHydrated] = useState(false);
   const [removedSession, setRemovedSession] = useState<RemovedSession | null>(null);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
@@ -219,6 +242,7 @@ export const App = () => {
   const activeStreamRef = useRef<ActiveStream | null>(null);
   const removedTimeoutRef = useRef<number | null>(null);
   const draftAttachmentsRef = useRef<DraftAttachment[]>([]);
+  const activeAgentRunRef = useRef<ActiveAgentRun | null>(null);
   const wasCompactLayoutRef = useRef(getCurrentViewportWidth() < SIDEBAR_AUTO_HIDE_WIDTH);
   const chatDropDepthRef = useRef(0);
   const [isChatDragOver, setIsChatDragOver] = useState(false);
@@ -235,6 +259,14 @@ export const App = () => {
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId),
     [sessions, activeSessionId]
+  );
+  const activeAgentSession = useMemo(
+    () => agentSessions.find((session) => session.id === activeAgentSessionId),
+    [agentSessions, activeAgentSessionId]
+  );
+  const activeAgentMessages = useMemo(
+    () => agentMessagesBySession[activeAgentSessionId] ?? [],
+    [agentMessagesBySession, activeAgentSessionId]
   );
 
   const activeProvider = useMemo(
@@ -257,6 +289,9 @@ export const App = () => {
     if (activeProvider.providerType === "acp") {
       return true;
     }
+    if (activeProvider.providerType === "claude-agent") {
+      return false;
+    }
 
     return Boolean(settings.baseUrl.trim() && settings.apiKey.trim());
   }, [activeProvider, settings.apiKey, settings.baseUrl, settings.model]);
@@ -264,6 +299,9 @@ export const App = () => {
   const composerModelOptions = useMemo(() => {
     const seen = new Set<string>();
     return settings.providers.flatMap((provider) => {
+      if (provider.providerType === "claude-agent") {
+        return [];
+      }
       const selectedModels = Array.from(
         new Set(
           [provider.model, ...(Array.isArray(provider.savedModels) ? provider.savedModels : [])]
@@ -291,7 +329,7 @@ export const App = () => {
 
   const activeComposerModelValue = useMemo(() => {
     const modelId = settings.model.trim();
-    if (!activeProvider?.id || !modelId) {
+    if (!activeProvider?.id || !modelId || activeProvider.providerType === "claude-agent") {
       return "";
     }
     return encodeComposerModelOption(activeProvider.id, modelId);
@@ -299,6 +337,11 @@ export const App = () => {
   const activeModelCapabilities = useMemo(
     () => resolveProviderModelCapabilities(activeProvider, settings.model),
     [activeProvider, settings.model]
+  );
+  const agentSettingsSnapshot = useMemo(() => buildAgentRunSettingsSnapshot(settings), [settings]);
+  const isAgentConfigured = useMemo(
+    () => Boolean(agentSettingsSnapshot?.apiKey.trim() && agentSettingsSnapshot.model.trim()),
+    [agentSettingsSnapshot]
   );
 
   const upsertSession = (
@@ -351,31 +394,75 @@ export const App = () => {
     setIsGenerating(false);
   };
 
+  const upsertAgentMessages = (
+    sessionId: string,
+    mutate: (messages: AgentMessage[]) => AgentMessage[]
+  ) => {
+    setAgentMessagesBySession((previous) => ({
+      ...previous,
+      [sessionId]: mutate(previous[sessionId] ?? [])
+    }));
+  };
+
+  const finishAgentRun = () => {
+    const activeRun = activeAgentRunRef.current;
+    if (!activeRun) {
+      return;
+    }
+    activeRun.unsubscribe();
+    activeAgentRunRef.current = null;
+    setIsAgentRunning(false);
+  };
+
+  const loadAgentMessages = async (sessionId: string) => {
+    const messages = await api.agent.getMessages(sessionId);
+    setAgentMessagesBySession((previous) => ({
+      ...previous,
+      [sessionId]: messages
+    }));
+  };
+
   useEffect(() => {
     let cancelled = false;
 
     const hydrate = async () => {
       try {
-        const [savedSettings, savedSessions] = await Promise.all([
+        const [savedSettings, savedSessions, savedAgentSessions] = await Promise.all([
           api.settings.get(),
-          api.sessions.get()
+          api.sessions.get(),
+          api.agent.listSessions()
         ]);
         if (cancelled) {
           return;
         }
 
+        const initialAgentSession =
+          savedAgentSessions[0] ?? (await api.agent.createSession("New Agent Session"));
         const nextSessions = savedSessions.length ? savedSessions : [createSession()];
+        const initialAgentMessages = await api.agent.getMessages(initialAgentSession.id);
         setSettings(savedSettings);
         setSessions(nextSessions);
         setActiveSessionId(nextSessions[0].id);
+        setAgentSessions(savedAgentSessions.length ? savedAgentSessions : [initialAgentSession]);
+        setActiveAgentSessionId(initialAgentSession.id);
+        setAgentMessagesBySession({ [initialAgentSession.id]: initialAgentMessages });
       } catch (error) {
         if (!cancelled) {
           setErrorBanner(
             error instanceof Error ? error.message : "Failed to initialize application."
           );
           const fallback = createSession();
+          const fallbackAgentSession: AgentSessionMeta = {
+            id: createId(),
+            title: "New Agent Session",
+            createdAt: nowIso(),
+            updatedAt: nowIso()
+          };
           setSessions([fallback]);
           setActiveSessionId(fallback.id);
+          setAgentSessions([fallbackAgentSession]);
+          setActiveAgentSessionId(fallbackAgentSession.id);
+          setAgentMessagesBySession({ [fallbackAgentSession.id]: [] });
         }
       } finally {
         if (!cancelled) {
@@ -394,6 +481,17 @@ export const App = () => {
   useEffect(() => {
     draftAttachmentsRef.current = draftAttachments;
   }, [draftAttachments]);
+
+  useEffect(() => {
+    if (!isHydrated || !activeAgentSessionId || agentMessagesBySession[activeAgentSessionId]) {
+      return;
+    }
+    void loadAgentMessages(activeAgentSessionId).catch((error) => {
+      setAgentErrorBanner(
+        error instanceof Error ? error.message : "Failed to load agent session messages."
+      );
+    });
+  }, [activeAgentSessionId, agentMessagesBySession, isHydrated]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -444,6 +542,11 @@ export const App = () => {
   useEffect(() => {
     return () => {
       finishActiveStream();
+      const activeRun = activeAgentRunRef.current;
+      if (activeRun) {
+        void api.agent.stop({ runId: activeRun.runId });
+      }
+      finishAgentRun();
       if (removedTimeoutRef.current !== null) {
         window.clearTimeout(removedTimeoutRef.current);
       }
@@ -634,6 +737,66 @@ export const App = () => {
     setErrorBanner(null);
     setDraft("");
     clearDraftAttachments();
+  };
+
+  const createNewAgentSession = async () => {
+    const session = await api.agent.createSession();
+    setAgentSessions((previous) => [session, ...previous]);
+    setActiveAgentSessionId(session.id);
+    setAgentMessagesBySession((previous) => ({ ...previous, [session.id]: [] }));
+    setAgentDraft("");
+    setAgentErrorBanner(null);
+  };
+
+  const renameAgentSession = async (sessionId: string) => {
+    const target = agentSessions.find((session) => session.id === sessionId);
+    if (!target) {
+      return;
+    }
+    const input = window.prompt("Rename Agent Session", target.title);
+    if (!input) {
+      return;
+    }
+    const title = input.trim();
+    if (!title) {
+      return;
+    }
+    const updated = await api.agent.updateSessionTitle({ sessionId, title });
+    setAgentSessions((previous) => {
+      const rest = previous.filter((session) => session.id !== updated.id);
+      return [updated, ...rest];
+    });
+  };
+
+  const deleteAgentSession = async (sessionId: string) => {
+    await api.agent.deleteSession(sessionId);
+    setAgentMessagesBySession((previous) => {
+      const next = { ...previous };
+      delete next[sessionId];
+      return next;
+    });
+    const remaining = agentSessions.filter((session) => session.id !== sessionId);
+    if (!remaining.length) {
+      const nextSession = await api.agent.createSession();
+      setAgentSessions([nextSession]);
+      setActiveAgentSessionId(nextSession.id);
+      setAgentMessagesBySession((previous) => ({ ...previous, [nextSession.id]: [] }));
+      return;
+    }
+    setAgentSessions(remaining);
+    if (activeAgentSessionId === sessionId) {
+      setActiveAgentSessionId(remaining[0].id);
+    }
+  };
+
+  const stopAgentRun = async () => {
+    const activeRun = activeAgentRunRef.current;
+    if (!activeRun) {
+      return;
+    }
+    await api.agent.stop({ runId: activeRun.runId });
+    finishAgentRun();
+    void loadAgentMessages(activeRun.sessionId).catch(() => {});
   };
 
   const resetSettings = async () => {
@@ -971,6 +1134,144 @@ export const App = () => {
     clearDraftAttachments();
   };
 
+  const appendAgentSystemEvent = (sessionId: string, text: string) => {
+    upsertAgentMessages(sessionId, (messages) => [
+      ...messages,
+      {
+        id: createId(),
+        sessionId,
+        role: "system",
+        content: text,
+        createdAt: nowIso()
+      }
+    ]);
+  };
+
+  const sendAgentMessage = async () => {
+    if (!activeAgentSession || isAgentRunning) {
+      return;
+    }
+
+    const input = agentDraft.trim();
+    if (!input) {
+      return;
+    }
+
+    const runSettings = agentSettingsSnapshot;
+    if (!runSettings) {
+      setAgentErrorBanner("请先在 Settings 选择 Claude Agent SDK provider。");
+      return;
+    }
+
+    setAgentErrorBanner(null);
+
+    const sessionId = activeAgentSession.id;
+    const userMessage: AgentMessage = {
+      id: createId(),
+      sessionId,
+      role: "user",
+      content: input,
+      createdAt: nowIso()
+    };
+    const assistantMessage: AgentMessage = {
+      id: createId(),
+      sessionId,
+      role: "assistant",
+      content: "",
+      createdAt: nowIso()
+    };
+
+    upsertAgentMessages(sessionId, (messages) => [...messages, userMessage, assistantMessage]);
+    if (activeAgentSession.title === "New Agent Session") {
+      const nextTitle = input.length > 40 ? `${input.slice(0, 40)}...` : input;
+      setAgentSessions((previous) =>
+        previous.map((session) =>
+          session.id === sessionId
+            ? {
+                ...session,
+                title: nextTitle,
+                updatedAt: nowIso()
+              }
+            : session
+        )
+      );
+    }
+    setAgentDraft("");
+    setIsAgentRunning(true);
+
+    try {
+      const { runId } = await api.agent.sendMessage({
+        sessionId,
+        input,
+        settings: runSettings
+      });
+
+      const handleEnvelope = (payload: AgentStreamEnvelope) => {
+        const streamEvent = payload.event;
+        if (streamEvent.type === "text_delta") {
+          upsertAgentMessages(sessionId, (messages) =>
+            messages.map((message) =>
+              message.id === assistantMessage.id
+                ? { ...message, content: `${message.content}${streamEvent.text}` }
+                : message
+            )
+          );
+          return;
+        }
+
+        if (streamEvent.type === "text_complete") {
+          upsertAgentMessages(sessionId, (messages) =>
+            messages.map((message) =>
+              message.id === assistantMessage.id
+                ? message.content.endsWith(streamEvent.text)
+                  ? message
+                  : { ...message, content: `${message.content}${streamEvent.text}` }
+                : message
+            )
+          );
+          return;
+        }
+
+        if (streamEvent.type === "task_progress") {
+          appendAgentSystemEvent(sessionId, `Progress: ${streamEvent.message}`);
+          return;
+        }
+
+        if (streamEvent.type === "tool_start") {
+          appendAgentSystemEvent(sessionId, `Tool start: ${streamEvent.toolName}`);
+          return;
+        }
+
+        if (streamEvent.type === "tool_result") {
+          appendAgentSystemEvent(sessionId, `Tool result: ${streamEvent.toolName}`);
+          return;
+        }
+
+        if (streamEvent.type === "error") {
+          setAgentErrorBanner(streamEvent.message);
+          finishAgentRun();
+          void loadAgentMessages(sessionId).catch(() => {});
+          return;
+        }
+
+        finishAgentRun();
+        void loadAgentMessages(sessionId).catch(() => {});
+      };
+
+      const unsubscribe = api.agent.onStreamEvent(runId, handleEnvelope);
+      activeAgentRunRef.current = {
+        runId,
+        sessionId,
+        assistantMessageId: assistantMessage.id,
+        unsubscribe
+      };
+    } catch (error) {
+      setIsAgentRunning(false);
+      setAgentErrorBanner(error instanceof Error ? error.message : "Failed to start agent run.");
+      void loadAgentMessages(sessionId).catch(() => {});
+    }
+  };
+
   const closeSidebarIfCompact = () => {
     if (isCompactLayout) {
       setIsSidebarOpen(false);
@@ -1040,6 +1341,39 @@ export const App = () => {
         }}
         onRenameSession={renameChat}
         onDeleteSession={deleteChat}
+        onEnterAgent={() => {
+          setActiveView("agent");
+          closeSidebarIfCompact();
+        }}
+        onEnterSettings={() => {
+          setActiveSettingsSection("provider");
+          setActiveView("settings");
+          closeSidebarIfCompact();
+        }}
+      />
+    ) : activeView === "agent" ? (
+      <Sidebar
+        mode="agent"
+        sessions={agentSessions}
+        activeSessionId={activeAgentSessionId}
+        onSelectSession={(sessionId) => {
+          setActiveAgentSessionId(sessionId);
+          closeSidebarIfCompact();
+        }}
+        onCreateSession={() => {
+          void createNewAgentSession();
+          closeSidebarIfCompact();
+        }}
+        onRenameSession={(sessionId) => {
+          void renameAgentSession(sessionId);
+        }}
+        onDeleteSession={(sessionId) => {
+          void deleteAgentSession(sessionId);
+        }}
+        onEnterChat={() => {
+          setActiveView("chat");
+          closeSidebarIfCompact();
+        }}
         onEnterSettings={() => {
           setActiveSettingsSection("provider");
           setActiveView("settings");
@@ -1171,7 +1505,7 @@ export const App = () => {
                 </div>
               ) : null}
 
-              <div className="sketch-grid-paper h-full min-h-0 bg-card/40 pb-[112px] sm:pb-[128px] md:pb-[148px]">
+              <div className="h-full min-h-0 bg-card/40 pb-[112px] sm:pb-[128px] md:pb-[148px]">
                 <ChatView
                   messages={activeSession?.messages ?? []}
                   isConfigured={isConfigured}
@@ -1204,6 +1538,107 @@ export const App = () => {
                     }}
                     disabled={!isConfigured}
                     isGenerating={isGenerating}
+                  />
+                </div>
+              </div>
+            </>
+          ) : activeView === "agent" ? (
+            <>
+              <header className="border-b border-border/85 bg-white/80 px-3 py-2 sm:px-4 sm:py-2.5 md:px-5 md:py-3 dark:bg-[#222c3d]/55">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-start gap-2">
+                    {isCompactLayout ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-1 px-2"
+                        onClick={() => setIsSidebarOpen((previous) => !previous)}
+                      >
+                        <PanelLeft className="h-4 w-4" />
+                        Menu
+                      </Button>
+                    ) : null}
+                    <div>
+                      <p className="sketch-title text-[22px] uppercase leading-none text-primary sm:text-[28px] md:text-[34px]">
+                        Agent Desk
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {activeAgentSession?.title ?? "New Agent Session"}
+                      </p>
+                    </div>
+                  </div>
+                  <p className="rounded-[4px] border border-border/90 bg-card/70 px-2.5 py-1 text-xs text-muted-foreground">
+                    {activeAgentMessages.length} events
+                  </p>
+                </div>
+              </header>
+
+              {agentErrorBanner ? (
+                <div className="mx-auto mt-3 w-[min(900px,calc(100%-48px))]">
+                  <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    {agentErrorBanner}
+                  </div>
+                </div>
+              ) : null}
+
+              {!isAgentConfigured ? (
+                <div className="mx-auto mt-3 w-[min(900px,calc(100%-48px))]">
+                  <div className="rounded-[6px] border border-border/90 bg-card px-3 py-2 text-sm text-muted-foreground">
+                    请在 Settings 选择 `Claude Agent SDK` provider 并配置 API Key / Model。
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="h-full min-h-0 bg-card/40 pb-[168px]">
+                <AgentView messages={activeAgentMessages} isRunning={isAgentRunning} />
+              </div>
+
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-[#f5f8fe] via-[#f5f8fe]/95 to-transparent px-2 pb-2 pt-4 dark:from-[#20293a] dark:via-[#20293a]/94 sm:px-3 sm:pb-3 sm:pt-6 md:px-6 md:pb-4 md:pt-7">
+                <div className="pointer-events-auto mx-auto w-full min-w-0 max-w-[980px] rounded-[8px] border border-border/85 bg-card/90 p-3 shadow-[3px_3px_0_hsl(var(--border))]">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                      {agentSettingsSnapshot?.model || "Agent model"}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          void stopAgentRun();
+                        }}
+                        disabled={!isAgentRunning}
+                      >
+                        Stop
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => {
+                          void sendAgentMessage();
+                        }}
+                        disabled={!isAgentConfigured || isAgentRunning || !agentDraft.trim()}
+                      >
+                        Send
+                      </Button>
+                    </div>
+                  </div>
+                  <Textarea
+                    value={agentDraft}
+                    onChange={(event) => setAgentDraft(event.target.value)}
+                    placeholder="给 Agent 下达任务，例如：重构设置页并补充测试。"
+                    disabled={!isAgentConfigured || isAgentRunning}
+                    className="min-h-[96px] resize-none"
+                    onKeyDown={(event) => {
+                      if (!settings.sendWithEnter) {
+                        return;
+                      }
+                      if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault();
+                        void sendAgentMessage();
+                      }
+                    }}
                   />
                 </div>
               </div>

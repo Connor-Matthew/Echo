@@ -61,7 +61,8 @@ export const inferModelCapabilities = (
 
   const imageInput =
     hasAnyHint(probe, IMAGE_HINTS) ||
-    (providerType === "anthropic" && probe.includes("claude-3")) ||
+    ((providerType === "anthropic" || providerType === "claude-agent") &&
+      probe.includes("claude-3")) ||
     probe.includes("gpt-5");
   const audioInput = hasAnyHint(probe, AUDIO_HINTS);
   const videoInput = hasAnyHint(probe, VIDEO_HINTS);

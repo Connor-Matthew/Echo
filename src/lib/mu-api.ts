@@ -10,6 +10,13 @@ import {
   type ConnectionTestResult,
   type ModelListResult
 } from "../shared/contracts";
+import type {
+  AgentMessage,
+  AgentSendMessageRequest,
+  AgentSendMessageResult,
+  AgentSessionMeta,
+  AgentStreamEnvelope
+} from "../shared/agent-contracts";
 
 export type MuApi = {
   settings: {
@@ -30,10 +37,25 @@ export type MuApi = {
       listener: (event: ChatStreamEvent) => void
     ) => () => void;
   };
+  agent: {
+    listSessions: () => Promise<AgentSessionMeta[]>;
+    createSession: (title?: string) => Promise<AgentSessionMeta>;
+    deleteSession: (sessionId: string) => Promise<void>;
+    updateSessionTitle: (payload: { sessionId: string; title: string }) => Promise<AgentSessionMeta>;
+    getMessages: (sessionId: string) => Promise<AgentMessage[]>;
+    sendMessage: (payload: AgentSendMessageRequest) => Promise<AgentSendMessageResult>;
+    stop: (payload: { runId?: string; sessionId?: string }) => Promise<void>;
+    onStreamEvent: (
+      runId: string,
+      listener: (payload: AgentStreamEnvelope) => void
+    ) => () => void;
+  };
 };
 
 const SETTINGS_KEY = "mu.settings.v1";
 const SESSIONS_KEY = "mu.sessions.v1";
+const AGENT_SESSIONS_KEY = "mu.agent.sessions.v1";
+const AGENT_MESSAGES_KEY = "mu.agent.messages.v1";
 const MIN_REQUEST_TIMEOUT_MS = 5000;
 const MAX_REQUEST_TIMEOUT_MS = 180000;
 const MIN_RETRY_COUNT = 0;
@@ -68,11 +90,11 @@ const parseApiKeys = (raw: string) =>
   );
 const resolveAnthropicEndpoint = (baseUrl: string, resource: "models" | "messages") => {
   const normalized = normalizeBaseUrl(baseUrl);
-  return normalized.endsWith("/v1")
-    ? `${normalized}/${resource}`
-    : `${normalized}/v1/${resource}`;
+  const rooted = normalized
+    .replace(/\/v1\/(messages|models)$/i, "")
+    .replace(/\/(messages|models)$/i, "");
+  return rooted.endsWith("/v1") ? `${rooted}/${resource}` : `${rooted}/v1/${resource}`;
 };
-
 const extractModelIds = (payload: unknown): string[] => {
   if (!payload || typeof payload !== "object") {
     return [];
@@ -167,6 +189,26 @@ const createSseDebugLogger =
     }
     console.info(`[sse:${streamId}]`, ...parts);
   };
+
+const nowIso = () => new Date().toISOString();
+
+const createId = () =>
+  typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+const readAgentSessions = () => readLocalStorage<AgentSessionMeta[]>(AGENT_SESSIONS_KEY, []);
+
+const writeAgentSessions = (sessions: AgentSessionMeta[]) => {
+  writeLocalStorage(AGENT_SESSIONS_KEY, sessions);
+};
+
+const readAgentMessagesMap = () =>
+  readLocalStorage<Record<string, AgentMessage[]>>(AGENT_MESSAGES_KEY, {});
+
+const writeAgentMessagesMap = (messagesMap: Record<string, AgentMessage[]>) => {
+  writeLocalStorage(AGENT_MESSAGES_KEY, messagesMap);
+};
 
 const readString = (value: unknown) => (typeof value === "string" ? value : "");
 
@@ -366,6 +408,8 @@ const toAnthropicContentBlocks = (message: CompletionMessage) => {
 const createBrowserFallbackApi = (): MuApi => {
   const listeners = new Map<string, Set<(event: ChatStreamEvent) => void>>();
   const controllers = new Map<string, AbortController>();
+  const agentListeners = new Map<string, Set<(payload: AgentStreamEnvelope) => void>>();
+  const agentRunTimers = new Map<string, number>();
 
   const emit = (streamId: string, event: ChatStreamEvent) => {
     const streamListeners = listeners.get(streamId);
@@ -373,6 +417,14 @@ const createBrowserFallbackApi = (): MuApi => {
       return;
     }
     streamListeners.forEach((listener) => listener(event));
+  };
+
+  const emitAgent = (payload: AgentStreamEnvelope) => {
+    const runListeners = agentListeners.get(payload.runId);
+    if (!runListeners) {
+      return;
+    }
+    runListeners.forEach((listener) => listener(payload));
   };
 
   return {
@@ -389,13 +441,18 @@ const createBrowserFallbackApi = (): MuApi => {
             message: "ACP is only available in the Electron desktop runtime."
           };
         }
-        const baseUrl = normalizeBaseUrl(settings.baseUrl);
+        const baseUrl = normalizeBaseUrl(
+          settings.baseUrl || (settings.providerType === "claude-agent" ? "https://api.anthropic.com" : "")
+        );
         const apiKeys = parseApiKeys(settings.apiKey);
         if (!baseUrl || !apiKeys.length) {
-          return { ok: false, message: "Missing Base URL or API key." };
+          return settings.providerType === "claude-agent"
+            ? { ok: false, message: "Missing API key." }
+            : { ok: false, message: "Missing Base URL or API key." };
         }
         try {
-          const isAnthropic = settings.providerType === "anthropic";
+          const isAnthropic =
+            settings.providerType === "anthropic" || settings.providerType === "claude-agent";
           const attempts: Array<{ endpoint: string; headers: Record<string, string> }> = isAnthropic
             ? apiKeys.flatMap((apiKey) => [
                 {
@@ -448,13 +505,18 @@ const createBrowserFallbackApi = (): MuApi => {
             models: []
           };
         }
-        const baseUrl = normalizeBaseUrl(settings.baseUrl);
+        const baseUrl = normalizeBaseUrl(
+          settings.baseUrl || (settings.providerType === "claude-agent" ? "https://api.anthropic.com" : "")
+        );
         const apiKeys = parseApiKeys(settings.apiKey);
         if (!baseUrl || !apiKeys.length) {
-          return { ok: false, message: "Missing Base URL or API key.", models: [] };
+          return settings.providerType === "claude-agent"
+            ? { ok: false, message: "Missing API key.", models: [] }
+            : { ok: false, message: "Missing Base URL or API key.", models: [] };
         }
 
-        const isAnthropic = settings.providerType === "anthropic";
+        const isAnthropic =
+          settings.providerType === "anthropic" || settings.providerType === "claude-agent";
         const attempts: Array<{ endpoint: string; headers: Record<string, string> }> = isAnthropic
           ? apiKeys.flatMap((apiKey) => [
               {
@@ -523,8 +585,12 @@ const createBrowserFallbackApi = (): MuApi => {
     },
     chat: {
       startStream: async ({ settings, messages }) => {
-        if (settings.providerType === "acp") {
-          throw new Error("ACP is only available in the Electron desktop runtime.");
+        if (settings.providerType === "acp" || settings.providerType === "claude-agent") {
+          throw new Error(
+            settings.providerType === "claude-agent"
+              ? "Claude Agent provider is only available in Agent mode."
+              : "ACP is only available in the Electron desktop runtime."
+          );
         }
         const streamId = crypto.randomUUID();
         const baseUrl = normalizeBaseUrl(settings.baseUrl);
@@ -541,7 +607,8 @@ const createBrowserFallbackApi = (): MuApi => {
         const debug = createSseDebugLogger(Boolean(settings.sseDebug), streamId);
 
         void (async () => {
-          const isAnthropic = settings.providerType === "anthropic";
+          const isAnthropic =
+            settings.providerType === "anthropic" || settings.providerType === "claude-agent";
           const endpoint = isAnthropic
             ? resolveAnthropicEndpoint(baseUrl, "messages")
             : `${baseUrl}/chat/completions`;
@@ -749,6 +816,114 @@ const createBrowserFallbackApi = (): MuApi => {
           }
         };
       }
+    },
+    agent: {
+      listSessions: async () => readAgentSessions(),
+      createSession: async (title) => {
+        const now = nowIso();
+        const nextSession: AgentSessionMeta = {
+          id: createId(),
+          title: title?.trim() || "New Agent Session",
+          createdAt: now,
+          updatedAt: now
+        };
+        const nextSessions = [nextSession, ...readAgentSessions()];
+        writeAgentSessions(nextSessions);
+        return nextSession;
+      },
+      deleteSession: async (sessionId) => {
+        const nextSessions = readAgentSessions().filter((session) => session.id !== sessionId);
+        writeAgentSessions(nextSessions);
+        const messagesMap = readAgentMessagesMap();
+        delete messagesMap[sessionId];
+        writeAgentMessagesMap(messagesMap);
+      },
+      updateSessionTitle: async ({ sessionId, title }) => {
+        const normalizedTitle = title.trim();
+        if (!normalizedTitle) {
+          throw new Error("Session title cannot be empty.");
+        }
+        const sessions = readAgentSessions();
+        const target = sessions.find((session) => session.id === sessionId);
+        if (!target) {
+          throw new Error("Agent session not found.");
+        }
+        const next: AgentSessionMeta = {
+          ...target,
+          title: normalizedTitle,
+          updatedAt: nowIso()
+        };
+        const nextSessions = [next, ...sessions.filter((session) => session.id !== sessionId)];
+        writeAgentSessions(nextSessions);
+        return next;
+      },
+      getMessages: async (sessionId) => readAgentMessagesMap()[sessionId] ?? [],
+      sendMessage: async (payload) => {
+        const runId = createId();
+        const sessions = readAgentSessions();
+        const target = sessions.find((session) => session.id === payload.sessionId);
+        if (!target) {
+          throw new Error("Agent session not found.");
+        }
+
+        const nextUserMessage: AgentMessage = {
+          id: createId(),
+          sessionId: payload.sessionId,
+          role: "user",
+          content: payload.input.trim(),
+          createdAt: nowIso(),
+          runId,
+          status: "completed"
+        };
+
+        const messagesMap = readAgentMessagesMap();
+        const currentMessages = messagesMap[payload.sessionId] ?? [];
+        messagesMap[payload.sessionId] = [...currentMessages, nextUserMessage];
+        writeAgentMessagesMap(messagesMap);
+
+        const timeoutId = window.setTimeout(() => {
+          emitAgent({
+            sessionId: payload.sessionId,
+            runId,
+            seq: 1,
+            timestamp: nowIso(),
+            event: {
+              type: "error",
+              message: "Claude Agent SDK is only available in the Electron desktop runtime."
+            }
+          });
+          agentRunTimers.delete(runId);
+        }, 0);
+        agentRunTimers.set(runId, timeoutId);
+
+        return { runId };
+      },
+      stop: async ({ runId }) => {
+        if (!runId) {
+          return;
+        }
+        const timeoutId = agentRunTimers.get(runId);
+        if (typeof timeoutId === "number") {
+          window.clearTimeout(timeoutId);
+          agentRunTimers.delete(runId);
+        }
+      },
+      onStreamEvent: (runId, listener) => {
+        const bucket = agentListeners.get(runId) ?? new Set<(payload: AgentStreamEnvelope) => void>();
+        bucket.add(listener);
+        agentListeners.set(runId, bucket);
+
+        return () => {
+          const current = agentListeners.get(runId);
+          if (!current) {
+            return;
+          }
+          current.delete(listener);
+          if (!current.size) {
+            agentListeners.delete(runId);
+          }
+        };
+      }
     }
   };
 };
@@ -760,7 +935,14 @@ export const getMuApi = (): MuApi => {
     return cachedApi;
   }
   if (typeof window !== "undefined" && window.muApi) {
-    cachedApi = window.muApi;
+    const fallbackApi = createBrowserFallbackApi();
+    const runtimeApi = window.muApi as Partial<MuApi>;
+    cachedApi = {
+      settings: runtimeApi.settings ?? fallbackApi.settings,
+      sessions: runtimeApi.sessions ?? fallbackApi.sessions,
+      chat: runtimeApi.chat ?? fallbackApi.chat,
+      agent: runtimeApi.agent ?? fallbackApi.agent
+    };
     return cachedApi;
   }
   cachedApi = createBrowserFallbackApi();

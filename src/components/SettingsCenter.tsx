@@ -112,6 +112,13 @@ const providerPresets: ProviderPreset[] = [
     providerType: "anthropic"
   },
   {
+    id: "claude-agent",
+    label: "Claude Agent SDK",
+    baseUrl: "https://api.anthropic.com",
+    defaultModel: "claude-sonnet-4-5",
+    providerType: "claude-agent"
+  },
+  {
     id: "ollama",
     label: "Ollama (Local)",
     baseUrl: "http://127.0.0.1:11434/v1",
@@ -138,11 +145,11 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
 const normalizeBaseUrl = (raw: string) => raw.trim().replace(/\/+$/, "");
 const resolveAnthropicEndpoint = (baseUrl: string, resource: "models" | "messages") => {
   const normalized = normalizeBaseUrl(baseUrl);
-  return normalized.endsWith("/v1")
-    ? `${normalized}/${resource}`
-    : `${normalized}/v1/${resource}`;
+  const rooted = normalized
+    .replace(/\/v1\/(messages|models)$/i, "")
+    .replace(/\/(messages|models)$/i, "");
+  return rooted.endsWith("/v1") ? `${rooted}/${resource}` : `${rooted}/v1/${resource}`;
 };
-
 const resolveProviderEndpoints = (baseUrl: string, providerType: ProviderType) => {
   if (providerType === "acp") {
     return {
@@ -152,9 +159,19 @@ const resolveProviderEndpoints = (baseUrl: string, providerType: ProviderType) =
     };
   }
 
-  const normalized = normalizeBaseUrl(baseUrl);
+  const normalized = normalizeBaseUrl(
+    baseUrl || (providerType === "claude-agent" ? "https://api.anthropic.com" : "")
+  );
   if (!normalized) {
     return null;
+  }
+
+  if (providerType === "claude-agent") {
+    return {
+      normalized,
+      models: resolveAnthropicEndpoint(normalized, "models"),
+      chat: "Claude Agent SDK query()"
+    };
   }
 
   if (providerType === "anthropic") {
@@ -293,6 +310,8 @@ const normalizeDraft = (settings: AppSettings): AppSettings => {
           ? "anthropic"
           : provider.providerType === "acp"
             ? "acp"
+            : provider.providerType === "claude-agent"
+              ? "claude-agent"
             : "openai",
       enabled: provider.enabled !== false,
       isPinned: Boolean(provider.isPinned)
@@ -305,6 +324,9 @@ const normalizeDraft = (settings: AppSettings): AppSettings => {
 const resolvePresetByBaseUrl = (baseUrl: string, providerType: ProviderType) => {
   if (providerType === "acp") {
     return providerPresets.find((preset) => preset.id === "codex-acp") ?? null;
+  }
+  if (providerType === "claude-agent" && !normalizeBaseUrl(baseUrl)) {
+    return providerPresets.find((preset) => preset.id === "claude-agent") ?? null;
   }
 
   const normalized = normalizeBaseUrl(baseUrl);
@@ -325,6 +347,7 @@ const providerBadgeByPreset: Record<
   groq: { token: "GQ", bgClass: "bg-[#f4f2ef]", textClass: "text-[#5b5350]" },
   deepseek: { token: "DS", bgClass: "bg-[#edf1f7]", textClass: "text-[#495871]" },
   claude: { token: "CL", bgClass: "bg-[#f4f1ee]", textClass: "text-[#5f5851]" },
+  "claude-agent": { token: "CA", bgClass: "bg-[#f3efe8]", textClass: "text-[#5b5449]" },
   ollama: { token: "OL", bgClass: "bg-[#edf3f2]", textClass: "text-[#47605c]" },
   lmstudio: { token: "LM", bgClass: "bg-[#f1eef6]", textClass: "text-[#5b5370]" },
   "codex-acp": { token: "CP", bgClass: "bg-[#eef1f4]", textClass: "text-[#4a5866]" }
@@ -350,6 +373,9 @@ const inferProviderPresetId = (provider: StoredProvider) => {
     return "deepseek";
   }
   if (probe.includes("anthropic") || probe.includes("claude")) {
+    if (provider.providerType === "claude-agent") {
+      return "claude-agent";
+    }
     return "claude";
   }
   if (probe.includes("ollama") || probe.includes("11434")) {
@@ -391,7 +417,11 @@ const validateSettingsForSection = (draft: AppSettings, section: SettingsSection
     if (activeProvider.providerType === "acp") {
       return null;
     }
-    if (!activeProvider.baseUrl.trim() || !isValidHttpUrl(activeProvider.baseUrl.trim())) {
+    if (activeProvider.providerType !== "claude-agent") {
+      if (!activeProvider.baseUrl.trim() || !isValidHttpUrl(activeProvider.baseUrl.trim())) {
+        return "Base URL is invalid.";
+      }
+    } else if (activeProvider.baseUrl.trim() && !isValidHttpUrl(activeProvider.baseUrl.trim())) {
       return "Base URL is invalid.";
     }
     if (!activeProvider.apiKey.trim()) {
@@ -503,6 +533,7 @@ export const SettingsCenter = ({
   const isDirty = useMemo(() => !areSettingsEqual(draft, settings), [draft, settings]);
   const activeProvider = useMemo(() => getActiveProvider(draft), [draft]);
   const isAcpProvider = activeProvider.providerType === "acp";
+  const isClaudeAgentProvider = activeProvider.providerType === "claude-agent";
   const activeProviderPreset = useMemo(
     () => resolvePresetByBaseUrl(activeProvider.baseUrl, activeProvider.providerType)?.id ?? "custom",
     [activeProvider.baseUrl, activeProvider.providerType]
@@ -589,6 +620,8 @@ export const SettingsCenter = ({
                         ? "anthropic"
                         : value === "acp"
                           ? "acp"
+                          : value === "claude-agent"
+                            ? "claude-agent"
                           : "openai"
                     ) as StoredProvider["providerType"])
                   : value
@@ -1211,6 +1244,7 @@ export const SettingsCenter = ({
                       >
                         <option value="openai">OpenAI-compatible</option>
                         <option value="anthropic">Anthropic Messages API</option>
+                        <option value="claude-agent">Claude Agent SDK</option>
                         <option value="acp">Codex CLI ACP</option>
                       </select>
                     </div>
@@ -1219,11 +1253,15 @@ export const SettingsCenter = ({
                   {!isAcpProvider ? (
                     <div className="space-y-1.5">
                       <label htmlFor="baseUrl" className="text-sm text-muted-foreground">
-                        API URL
+                        {isClaudeAgentProvider ? "Anthropic Base URL (optional)" : "API URL"}
                       </label>
                       <Input
                         id="baseUrl"
-                        placeholder="https://api.openai.com/v1"
+                        placeholder={
+                          isClaudeAgentProvider
+                            ? "https://api.anthropic.com"
+                            : "https://api.openai.com/v1"
+                        }
                         value={activeProvider.baseUrl}
                         onChange={(event) => updateActiveProviderField("baseUrl", event.target.value)}
                       />

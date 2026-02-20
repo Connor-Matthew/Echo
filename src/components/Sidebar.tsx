@@ -3,6 +3,7 @@ import {
   Bot,
   Clock3,
   Database,
+  Cpu,
   MessageSquare,
   Palette,
   PenLine,
@@ -15,6 +16,7 @@ import {
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import type { ChatSession } from "../shared/contracts";
+import type { AgentSessionMeta } from "../shared/agent-contracts";
 import { Button } from "./ui/button";
 
 export type SettingsSection = "provider" | "chat" | "theme" | "data" | "advanced";
@@ -27,6 +29,19 @@ type ChatSidebarProps = {
   onCreateSession: () => void;
   onRenameSession: (sessionId: string) => void;
   onDeleteSession: (sessionId: string) => void;
+  onEnterAgent: () => void;
+  onEnterSettings: () => void;
+};
+
+type AgentSidebarProps = {
+  mode: "agent";
+  sessions: AgentSessionMeta[];
+  activeSessionId: string;
+  onSelectSession: (sessionId: string) => void;
+  onCreateSession: () => void;
+  onRenameSession: (sessionId: string) => void;
+  onDeleteSession: (sessionId: string) => void;
+  onEnterChat: () => void;
   onEnterSettings: () => void;
 };
 
@@ -37,7 +52,7 @@ type SettingsSidebarProps = {
   onExitSettings: () => void;
 };
 
-type SidebarProps = ChatSidebarProps | SettingsSidebarProps;
+type SidebarProps = ChatSidebarProps | AgentSidebarProps | SettingsSidebarProps;
 
 const formatRelativeTime = (iso: string) => {
   const date = new Date(iso);
@@ -111,9 +126,140 @@ export const Sidebar = (props: SidebarProps) => {
     );
   }
 
+  if (props.mode === "agent") {
+    return (
+      <aside className="flex h-full flex-col overflow-hidden bg-card/50 px-3 pb-3 pt-4">
+        <div className="space-y-2 pb-4">
+          <div className="grid grid-cols-2 gap-1 rounded-[6px] border border-border/80 bg-card/70 p-1">
+            <Button
+              variant="ghost"
+              className="h-8 rounded-[4px] border border-transparent text-xs text-foreground/80"
+              onClick={props.onEnterChat}
+            >
+              Chat
+            </Button>
+            <Button
+              variant="ghost"
+              className="h-8 rounded-[4px] border border-border bg-accent/80 text-xs text-foreground shadow-[2px_2px_0_hsl(var(--border))]"
+              disabled
+            >
+              Agent
+            </Button>
+          </div>
+          <Button
+            variant="ghost"
+            className="h-9 w-full justify-start gap-2 px-2 text-sm font-semibold text-foreground"
+            onClick={props.onCreateSession}
+          >
+            <PenLine className="h-4 w-4" />
+            New Agent
+          </Button>
+        </div>
+
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="mb-2 flex items-center justify-between px-1">
+            <p className="sketch-title text-[23px] uppercase leading-none text-primary">Agent</p>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 rounded-md"
+              onClick={props.onCreateSession}
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+          <div className="min-h-0 space-y-1 overflow-auto pr-1">
+            {props.sessions.map((session) => {
+              const active = session.id === props.activeSessionId;
+              return (
+                <article
+                  key={session.id}
+                  className={cn(
+                    "group relative rounded-[4px] border bg-card/50 transition-colors",
+                    active
+                      ? "border-border bg-accent/65 shadow-[2px_2px_0_hsl(var(--border))]"
+                      : "border-transparent hover:border-border/60 hover:bg-card/85"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "absolute left-0.5 top-1.5 h-6 w-0.5 rounded bg-transparent",
+                      active && "bg-primary/90"
+                    )}
+                  />
+                  <button
+                    type="button"
+                    className="w-full px-3 py-1.5 text-left"
+                    onClick={() => props.onSelectSession(session.id)}
+                  >
+                    <p className="truncate text-sm text-foreground">{session.title}</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {formatRelativeTime(session.updatedAt)}
+                    </p>
+                  </button>
+                  <div className="absolute right-1 top-1 hidden items-center gap-1 rounded-[4px] bg-card p-0.5 group-hover:flex group-focus-within:flex">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 rounded-md"
+                      onClick={() => props.onRenameSession(session.id)}
+                      aria-label="Rename Agent Session"
+                    >
+                      <PenLine className="h-3 w-3" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 rounded-md text-destructive hover:text-destructive"
+                      onClick={() => props.onDeleteSession(session.id)}
+                      aria-label="Delete Agent Session"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="mt-3 border-t border-border/90 pt-2">
+          <Button
+            variant="ghost"
+            className="h-9 w-full justify-start gap-2 px-2 text-sm text-foreground/80"
+            onClick={props.onEnterSettings}
+          >
+            <Settings className="h-4 w-4" />
+            Settings
+          </Button>
+          <div className="mt-3 flex items-center gap-2 px-2 text-xs text-muted-foreground">
+            <Cpu className="h-3.5 w-3.5" />
+            Agent mode
+          </div>
+        </div>
+      </aside>
+    );
+  }
+
   return (
     <aside className="flex h-full flex-col overflow-hidden bg-card/50 px-3 pb-3 pt-4">
-      <div className="space-y-1 pb-4">
+      <div className="space-y-2 pb-4">
+        <div className="grid grid-cols-2 gap-1 rounded-[6px] border border-border/80 bg-card/70 p-1">
+          <Button
+            variant="ghost"
+            className="h-8 rounded-[4px] border border-border bg-accent/80 text-xs text-foreground shadow-[2px_2px_0_hsl(var(--border))]"
+            disabled
+          >
+            Chat
+          </Button>
+          <Button
+            variant="ghost"
+            className="h-8 rounded-[4px] border border-transparent text-xs text-foreground/80"
+            onClick={props.onEnterAgent}
+          >
+            Agent
+          </Button>
+        </div>
         <Button
           variant="ghost"
           className="h-9 w-full justify-start gap-2 px-2 text-sm font-semibold text-foreground"

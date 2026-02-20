@@ -1,7 +1,7 @@
 export type ThemeMode = "system" | "light" | "dark";
 export type FontScale = "sm" | "md" | "lg";
 export type MessageDensity = "compact" | "comfortable";
-export type ProviderType = "openai" | "anthropic" | "acp";
+export type ProviderType = "openai" | "anthropic" | "acp" | "claude-agent";
 export type AttachmentKind = "text" | "image" | "file";
 
 export type ModelCapabilities = {
@@ -146,6 +146,9 @@ const normalizeProviderType = (providerType: unknown): ProviderType => {
   }
   if (providerType === "acp") {
     return "acp";
+  }
+  if (providerType === "claude-agent") {
+    return "claude-agent";
   }
   return "openai";
 };

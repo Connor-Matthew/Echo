@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from "electron";
 import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { registerAgentIpcHandlers } from "./agent/agent-ipc";
 import {
   DEFAULT_SETTINGS,
   normalizeSettings,
@@ -66,11 +67,11 @@ const parseApiKeys = (raw: string) =>
   );
 const resolveAnthropicEndpoint = (baseUrl: string, resource: "models" | "messages") => {
   const normalized = normalizeBaseUrl(baseUrl);
-  return normalized.endsWith("/v1")
-    ? `${normalized}/${resource}`
-    : `${normalized}/v1/${resource}`;
+  const rooted = normalized
+    .replace(/\/v1\/(messages|models)$/i, "")
+    .replace(/\/(messages|models)$/i, "");
+  return rooted.endsWith("/v1") ? `${rooted}/${resource}` : `${rooted}/v1/${resource}`;
 };
-
 const extractModelIds = (payload: unknown): string[] => {
   if (!payload || typeof payload !== "object") {
     return [];
@@ -112,12 +113,18 @@ const isSettingsConfigured = (settings: AppSettings) => {
   if (settings.providerType === "acp") {
     return true;
   }
+  if (settings.providerType === "claude-agent") {
+    return Boolean(parseApiKeys(settings.apiKey).length && settings.model.trim());
+  }
   return Boolean(settings.baseUrl.trim() && parseApiKeys(settings.apiKey).length && settings.model.trim());
 };
 
 const isConnectionConfigured = (settings: AppSettings) => {
   if (settings.providerType === "acp") {
     return true;
+  }
+  if (settings.providerType === "claude-agent") {
+    return Boolean(parseApiKeys(settings.apiKey).length);
   }
   return Boolean(settings.baseUrl.trim() && parseApiKeys(settings.apiKey).length);
 };
@@ -614,13 +621,17 @@ const fetchModelIds = async (settings: AppSettings): Promise<ModelListResult> =>
     }
   }
 
-  const baseUrl = normalizeBaseUrl(settings.baseUrl);
+  const baseUrl = normalizeBaseUrl(
+    settings.baseUrl || (settings.providerType === "claude-agent" ? "https://api.anthropic.com" : "")
+  );
   const apiKeys = parseApiKeys(settings.apiKey);
   if (!baseUrl || !apiKeys.length) {
-    return { ok: false, message: "Please fill Base URL and API key.", models: [] };
+    return settings.providerType === "claude-agent"
+      ? { ok: false, message: "Please fill API key.", models: [] }
+      : { ok: false, message: "Please fill Base URL and API key.", models: [] };
   }
 
-  const isAnthropic = settings.providerType === "anthropic";
+  const isAnthropic = settings.providerType === "anthropic" || settings.providerType === "claude-agent";
   const attempts: Array<{ endpoint: string; headers: Record<string, string> }> = isAnthropic
     ? apiKeys.flatMap((apiKey) => [
         {
@@ -1219,7 +1230,9 @@ const registerIpcHandlers = () => {
       }
 
       if (!isConnectionConfigured(settings)) {
-        return { ok: false, message: "Please fill Base URL and API key." };
+        return settings.providerType === "claude-agent"
+          ? { ok: false, message: "Please fill API key for Claude Agent provider." }
+          : { ok: false, message: "Please fill Base URL and API key." };
       }
       const result = await fetchModelIds(settings);
       if (!result.ok) {
@@ -1242,6 +1255,9 @@ const registerIpcHandlers = () => {
   ipcMain.handle(
     "chat:startStream",
     async (event, payload: ChatStreamRequest): Promise<{ streamId: string }> => {
+      if (payload.settings.providerType === "claude-agent") {
+        throw new Error("Claude Agent provider is only available in Agent mode.");
+      }
       if (!isSettingsConfigured(payload.settings)) {
         throw new Error("Provider settings are incomplete.");
       }
@@ -1350,6 +1366,7 @@ const createMainWindow = () => {
 
 app.whenReady().then(() => {
   registerIpcHandlers();
+  registerAgentIpcHandlers();
   createMainWindow();
 
   app.on("activate", () => {
