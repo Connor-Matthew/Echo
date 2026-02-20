@@ -23,6 +23,7 @@ import {
 } from "../lib/model-capabilities";
 import type {
   AppSettings,
+  ChatContextWindow,
   ChatSession,
   ConnectionTestResult,
   FontScale,
@@ -73,6 +74,17 @@ const fontScaleOptions: Array<{ value: FontScale; label: string; description: st
 const densityOptions: Array<{ value: MessageDensity; label: string; description: string }> = [
   { value: "compact", label: "Compact", description: "Reduced spacing between messages." },
   { value: "comfortable", label: "Comfortable", description: "More breathing room in chat." }
+];
+
+const chatContextWindowOptions: Array<{
+  value: ChatContextWindow;
+  label: string;
+  description: string;
+}> = [
+  { value: 5, label: "5", description: "Use the latest 5 user turns." },
+  { value: 20, label: "20", description: "Use the latest 20 user turns." },
+  { value: 50, label: "50", description: "Use the latest 50 user turns." },
+  { value: "infinite", label: "Unlimited", description: "Use full session history." }
 ];
 
 const providerPresets: ProviderPreset[] = [
@@ -440,6 +452,9 @@ const validateSettingsForSection = (draft: AppSettings, section: SettingsSection
     if (!Number.isInteger(draft.maxTokens) || draft.maxTokens < 64 || draft.maxTokens > 8192) {
       return "Max tokens must be 64-8192.";
     }
+    if (![5, 20, 50, "infinite"].includes(draft.chatContextWindow)) {
+      return "Context window must be 5, 20, 50, or Unlimited.";
+    }
     return null;
   }
 
@@ -469,6 +484,7 @@ const areSettingsEqual = (left: AppSettings, right: AppSettings) =>
   left.systemPrompt === right.systemPrompt &&
   left.temperature === right.temperature &&
   left.maxTokens === right.maxTokens &&
+  left.chatContextWindow === right.chatContextWindow &&
   left.sendWithEnter === right.sendWithEnter &&
   left.fontScale === right.fontScale &&
   left.messageDensity === right.messageDensity &&
@@ -1591,6 +1607,34 @@ export const SettingsCenter = ({
                     }
                   />
                 </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-sm text-muted-foreground">Context Window</label>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {chatContextWindowOptions.map((option) => {
+                    const active = draft.chatContextWindow === option.value;
+                    return (
+                      <button
+                        key={String(option.value)}
+                        type="button"
+                        className={cn(
+                          "rounded-[6px] border px-4 py-3 text-left transition-colors",
+                          active
+                            ? "border-border bg-accent/60"
+                            : "border-border/70 bg-card hover:bg-secondary/65"
+                        )}
+                        onClick={() => updateField("chatContextWindow", option.value)}
+                      >
+                        <p className="text-sm font-semibold text-foreground">{option.label}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{option.description}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Applies to chat mode only. System prompt is always included.
+                </p>
               </div>
 
               <button

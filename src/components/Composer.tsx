@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type KeyboardEventHandler } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEventHandler } from "react";
 import {
   ArrowUp,
   Brain,
@@ -8,9 +8,10 @@ import {
   ImageIcon,
   Mic,
   Plus,
+  SlidersHorizontal,
   X
 } from "lucide-react";
-import type { ModelCapabilities } from "../shared/contracts";
+import type { ChatContextWindow, ModelCapabilities } from "../shared/contracts";
 import { Button } from "./ui/button";
 import { Textarea } from "./ui/textarea";
 
@@ -35,8 +36,10 @@ type ComposerProps = {
   modelOptions: ComposerModelOption[];
   modelCapabilities: ModelCapabilities;
   sendWithEnter: boolean;
+  chatContextWindow: ChatContextWindow;
   attachments: ComposerAttachment[];
   onAddFiles: (files: FileList | null) => void;
+  onChangeChatContextWindow: (value: ChatContextWindow) => void;
   onRemoveAttachment: (attachmentId: string) => void;
   onSelectModel: (modelId: string) => void;
   onChange: (value: string) => void;
@@ -47,6 +50,16 @@ type ComposerProps = {
 };
 
 const MAX_TEXTAREA_HEIGHT = 24 * 4;
+const CONTEXT_WINDOW_OPTIONS: Array<{ value: ChatContextWindow; label: string }> = [
+  { value: 5, label: "5" },
+  { value: 20, label: "20" },
+  { value: 50, label: "50" },
+  { value: "infinite", label: "无限" }
+];
+const findContextWindowIndex = (value: ChatContextWindow) => {
+  const index = CONTEXT_WINDOW_OPTIONS.findIndex((option) => option.value === value);
+  return index >= 0 ? index : 0;
+};
 
 const formatBytes = (size: number) => {
   if (size < 1024) {
@@ -65,8 +78,10 @@ export const Composer = ({
   modelOptions,
   modelCapabilities,
   sendWithEnter,
+  chatContextWindow,
   attachments,
   onAddFiles,
+  onChangeChatContextWindow,
   onRemoveAttachment,
   onSelectModel,
   onChange,
@@ -77,10 +92,16 @@ export const Composer = ({
 }: ComposerProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const quickSettingsRef = useRef<HTMLDivElement>(null);
+  const [isQuickSettingsOpen, setIsQuickSettingsOpen] = useState(false);
 
   const canSubmit = useMemo(
     () => Boolean(value.trim() || attachments.length),
     [value, attachments.length]
+  );
+  const contextWindowIndex = useMemo(
+    () => findContextWindowIndex(chatContextWindow),
+    [chatContextWindow]
   );
   const normalizedModelOptions = useMemo(() => {
     const deduped = new Map<string, ComposerModelOption>();
@@ -105,6 +126,30 @@ export const Composer = ({
     const nextHeight = Math.min(textarea.scrollHeight, MAX_TEXTAREA_HEIGHT);
     textarea.style.height = `${nextHeight}px`;
   }, [value]);
+
+  useEffect(() => {
+    if (!isQuickSettingsOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!quickSettingsRef.current?.contains(event.target as Node)) {
+        setIsQuickSettingsOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsQuickSettingsOpen(false);
+      }
+    };
+
+    window.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isQuickSettingsOpen]);
 
   const submit = () => {
     if (!canSubmit || disabled) {
@@ -212,11 +257,65 @@ export const Composer = ({
               type="button"
               variant="ghost"
               size="icon"
-              className="h-8 w-8 rounded-[4px] text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+              className="h-7 w-7 rounded-[4px] text-muted-foreground hover:bg-accent/60 hover:text-foreground"
               onClick={() => fileInputRef.current?.click()}
+              aria-label="Add attachment"
             >
-              <Plus className="h-4.5 w-4.5" />
+              <Plus className="h-4 w-4" />
             </Button>
+            <div className="relative" ref={quickSettingsRef}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 rounded-[4px] text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                onClick={() => setIsQuickSettingsOpen((previous) => !previous)}
+                aria-label="Open quick settings"
+                title="上下文档位"
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+              </Button>
+              {isQuickSettingsOpen ? (
+                <div className="absolute bottom-full left-0 z-40 mb-2 w-[236px] rounded-[6px] border border-border bg-card p-2.5 shadow-[4px_4px_0_hsl(var(--border))]">
+                  <p className="mb-1 px-1 text-[11px] uppercase tracking-[0.1em] text-muted-foreground">
+                    Context Window
+                  </p>
+                  <input
+                    type="range"
+                    min={0}
+                    max={CONTEXT_WINDOW_OPTIONS.length - 1}
+                    step={1}
+                    value={contextWindowIndex}
+                    className="h-5 w-full accent-primary"
+                    aria-label="Context window slider"
+                    onChange={(event) => {
+                      const nextIndex = Number.parseInt(event.target.value, 10);
+                      if (!Number.isFinite(nextIndex)) {
+                        return;
+                      }
+                      const clampedIndex = Math.max(
+                        0,
+                        Math.min(CONTEXT_WINDOW_OPTIONS.length - 1, nextIndex)
+                      );
+                      const nextOption = CONTEXT_WINDOW_OPTIONS[clampedIndex];
+                      if (nextOption) {
+                        onChangeChatContextWindow(nextOption.value);
+                      }
+                    }}
+                  />
+                  <div className="mt-1 flex items-center justify-between px-0.5 text-[11px] text-muted-foreground">
+                    {CONTEXT_WINDOW_OPTIONS.map((option, index) => (
+                      <span
+                        key={String(option.value)}
+                        className={index === contextWindowIndex ? "font-semibold text-foreground" : ""}
+                      >
+                        {option.label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
             <div className="relative w-[118px] shrink-0 sm:w-[180px] md:w-[200px]">
               <select
                 value={hasSelectedModel ? modelValue : ""}

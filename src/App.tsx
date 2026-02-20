@@ -203,6 +203,28 @@ const sessionToCompletionMessages = (messages: ChatMessage[]): ChatStreamRequest
     })
     .filter((message) => Boolean(message.content.trim()) || Boolean(message.attachments?.length));
 
+const limitCompletionMessagesByTurns = (
+  messages: ChatStreamRequest["messages"],
+  contextWindow: AppSettings["chatContextWindow"]
+): ChatStreamRequest["messages"] => {
+  if (contextWindow === "infinite") {
+    return messages;
+  }
+
+  let userTurnCount = 0;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].role !== "user") {
+      continue;
+    }
+    userTurnCount += 1;
+    if (userTurnCount === contextWindow) {
+      return messages.slice(index);
+    }
+  }
+
+  return messages;
+};
+
 const finalizeTitleFromPrompt = (prompt: string) => {
   const trimmed = prompt.trim();
   if (!trimmed) {
@@ -699,6 +721,25 @@ export const App = () => {
     });
   };
 
+  const updateChatContextWindow = (nextWindow: AppSettings["chatContextWindow"]) => {
+    setSettings((previous) => {
+      if (previous.chatContextWindow === nextWindow) {
+        return previous;
+      }
+
+      const nextSettings = normalizeSettings({
+        ...previous,
+        chatContextWindow: nextWindow
+      });
+
+      void api.settings.save(nextSettings).catch((error) => {
+        setErrorBanner(error instanceof Error ? error.message : "Failed to save chat context window.");
+      });
+
+      return nextSettings;
+    });
+  };
+
   const testConnection = async (next: AppSettings): Promise<ConnectionTestResult> =>
     api.settings.testConnection(next);
 
@@ -981,7 +1022,10 @@ export const App = () => {
       createdAt: nowIso()
     };
     const nextMessages = [...baseMessages, userMessage, assistantMessage];
-    const completionMessages = sessionToCompletionMessages([...baseMessages, userMessage]);
+    const completionMessages = limitCompletionMessagesByTurns(
+      sessionToCompletionMessages([...baseMessages, userMessage]),
+      settings.chatContextWindow
+    );
     const systemPrompt = settings.systemPrompt.trim();
     const messagesWithSystem = systemPrompt
       ? [{ role: "system" as const, content: systemPrompt }, ...completionMessages]
@@ -1278,6 +1322,12 @@ export const App = () => {
     }
   };
 
+  const openSettings = (section: SettingsSection = "provider") => {
+    setActiveSettingsSection(section);
+    setActiveView("settings");
+    closeSidebarIfCompact();
+  };
+
   const sidebarWidth =
     !isCompactLayout || isSidebarOpen ? getResponsiveSidebarWidth(viewportWidth) : 0;
 
@@ -1345,11 +1395,7 @@ export const App = () => {
           setActiveView("agent");
           closeSidebarIfCompact();
         }}
-        onEnterSettings={() => {
-          setActiveSettingsSection("provider");
-          setActiveView("settings");
-          closeSidebarIfCompact();
-        }}
+        onEnterSettings={() => openSettings("provider")}
       />
     ) : activeView === "agent" ? (
       <Sidebar
@@ -1374,11 +1420,7 @@ export const App = () => {
           setActiveView("chat");
           closeSidebarIfCompact();
         }}
-        onEnterSettings={() => {
-          setActiveSettingsSection("provider");
-          setActiveView("settings");
-          closeSidebarIfCompact();
-        }}
+        onEnterSettings={() => openSettings("provider")}
       />
     ) : (
       <Sidebar
@@ -1525,8 +1567,10 @@ export const App = () => {
                     modelOptions={composerModelOptions}
                     modelCapabilities={activeModelCapabilities}
                     sendWithEnter={settings.sendWithEnter}
+                    chatContextWindow={settings.chatContextWindow}
                     attachments={draftAttachments}
                     onAddFiles={addFiles}
+                    onChangeChatContextWindow={updateChatContextWindow}
                     onRemoveAttachment={removeAttachment}
                     onSelectModel={selectComposerModel}
                     onChange={setDraft}

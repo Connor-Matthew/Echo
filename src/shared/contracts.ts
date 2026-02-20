@@ -1,6 +1,7 @@
 export type ThemeMode = "system" | "light" | "dark";
 export type FontScale = "sm" | "md" | "lg";
 export type MessageDensity = "compact" | "comfortable";
+export type ChatContextWindow = 5 | 20 | 50 | "infinite";
 export type ProviderType = "openai" | "anthropic" | "acp" | "claude-agent";
 export type AttachmentKind = "text" | "image" | "file";
 
@@ -67,6 +68,7 @@ export type AppSettings = {
   systemPrompt: string;
   temperature: number;
   maxTokens: number;
+  chatContextWindow: ChatContextWindow;
   sendWithEnter: boolean;
   fontScale: FontScale;
   messageDensity: MessageDensity;
@@ -132,6 +134,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   systemPrompt: "You are a precise and pragmatic coding assistant.",
   temperature: 0.4,
   maxTokens: 2048,
+  chatContextWindow: "infinite",
   sendWithEnter: true,
   fontScale: "md",
   messageDensity: "comfortable",
@@ -225,8 +228,25 @@ const dedupeProviderIds = (providers: StoredProvider[]) => {
   });
 };
 
+const normalizeChatContextWindow = (value: unknown): ChatContextWindow => {
+  if (value === 5 || value === "5") {
+    return 5;
+  }
+  if (value === 20 || value === "20") {
+    return 20;
+  }
+  if (value === 50 || value === "50") {
+    return 50;
+  }
+  if (value === "infinite") {
+    return "infinite";
+  }
+  return DEFAULT_SETTINGS.chatContextWindow;
+};
+
 export const normalizeSettings = (saved: Partial<AppSettings>): AppSettings => {
   const merged = { ...DEFAULT_SETTINGS, ...saved };
+  const rawChatContextWindow = (saved as { chatContextWindow?: unknown }).chatContextWindow;
   const rawProviders = Array.isArray(saved.providers) ? saved.providers : [];
   const providersFromLegacy: StoredProvider[] = [
     {
@@ -260,6 +280,7 @@ export const normalizeSettings = (saved: Partial<AppSettings>): AppSettings => {
     baseUrl: activeProvider.baseUrl,
     apiKey: activeProvider.apiKey,
     model: activeProvider.model,
-    providerType: activeProvider.providerType
+    providerType: activeProvider.providerType,
+    chatContextWindow: normalizeChatContextWindow(rawChatContextWindow)
   };
 };
