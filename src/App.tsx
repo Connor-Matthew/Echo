@@ -3,25 +3,35 @@ import { PanelLeft } from "lucide-react";
 import { AgentView } from "./components/AgentView";
 import { AttachmentTray } from "./components/AttachmentTray";
 import { ChatView } from "./components/ChatView";
-import { Composer, type ComposerAttachment } from "./components/Composer";
+import { Composer } from "./components/Composer";
 import { SettingsCenter } from "./components/SettingsCenter";
 import { Sidebar, type SettingsSection } from "./components/Sidebar";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { Textarea } from "./components/ui/textarea";
+import { buildDraftAttachments, type DraftAttachment } from "./lib/app-draft-attachments";
 import {
   buildUnavailableWeather,
   collectLocalEnvironmentContext,
   toStaleWeatherFromPrevious
 } from "./lib/environment-context";
+import {
+  exportSessionAsJson,
+  exportSessionAsMarkdown,
+  exportSessionsAsJson
+} from "./lib/app-session-transfer";
+import {
+  applyUsageDeltaToSession as applyUsageDeltaToSessionMutation,
+  applyUsageToAssistantMessage as applyUsageToAssistantMessageMutation,
+  removeAssistantPlaceholderIfEmpty as removeAssistantPlaceholderIfEmptyMutation,
+  upsertSessionById
+} from "./lib/app-session-mutations";
 import { getMuApi } from "./lib/mu-api";
 import { resolveProviderModelContextWindow } from "./lib/model-context-window";
 import { resolveProviderModelCapabilities } from "./lib/model-capabilities";
 import {
   EMPTY_STREAM_USAGE_SNAPSHOT,
-  IMAGE_ATTACHMENT_LIMIT,
   SIDEBAR_AUTO_HIDE_WIDTH,
-  TEXT_ATTACHMENT_LIMIT,
   createId,
   createSession,
   decodeComposerModelOption,
@@ -39,20 +49,14 @@ import {
   getCurrentViewportWidth,
   getResponsiveSidebarWidth,
   hasAttachmentPayload,
-  isAudioAttachment,
-  isTextAttachment,
-  isVideoAttachment,
   limitCompletionMessagesByTurns,
   mergeUsageSnapshot,
   nowIso,
   estimateTokensFromText,
-  readFileAsDataUrl,
   revokeAttachmentPreview,
   sessionToCompletionMessages,
-  sessionToMarkdown,
   toModelUsageKey,
   toProviderInputTokens,
-  toSafeFileNameSegment,
   type StreamUsageSnapshot
 } from "./lib/app-chat-utils";
 import {
@@ -94,12 +98,6 @@ type ActiveStream = {
   flushTimeoutId: number | null;
   flushPending: () => void;
   unsubscribe: () => void;
-};
-
-type DraftAttachment = ComposerAttachment & {
-  mimeType: string;
-  textContent?: string;
-  imageDataUrl?: string;
 };
 
 type AppView = "chat" | "agent" | "settings";
@@ -296,9 +294,7 @@ export const App = () => {
     sessionId: string,
     mutate: (session: ChatSession) => ChatSession
   ) => {
-    setSessions((previous) =>
-      previous.map((session) => (session.id === sessionId ? mutate(session) : session))
-    );
+    setSessions((previous) => upsertSessionById(previous, sessionId, mutate));
   };
 
   const applyUsageDeltaToSession = (
@@ -306,49 +302,9 @@ export const App = () => {
     modelUsageKey: string,
     delta: StreamUsageSnapshot
   ) => {
-    if (
-      !modelUsageKey ||
-      (delta.inputTokens <= 0 &&
-        delta.outputTokens <= 0 &&
-        delta.totalTokens <= 0 &&
-        delta.cacheReadTokens <= 0 &&
-        delta.cacheWriteTokens <= 0)
-    ) {
-      return;
-    }
-
-    upsertSession(sessionId, (session) => {
-      const current = session.usageByModel?.[modelUsageKey] ?? {
-        inputTokens: 0,
-        outputTokens: 0,
-        totalTokens: 0,
-        cacheReadTokens: 0,
-        cacheWriteTokens: 0,
-        updatedAt: nowIso()
-      };
-
-      const nextInputTokens = current.inputTokens + delta.inputTokens;
-      const nextOutputTokens = current.outputTokens + delta.outputTokens;
-      const nextTotalTokens = Math.max(
-        current.totalTokens + delta.totalTokens,
-        nextInputTokens + nextOutputTokens
-      );
-
-      return {
-        ...session,
-        usageByModel: {
-          ...(session.usageByModel ?? {}),
-          [modelUsageKey]: {
-            inputTokens: nextInputTokens,
-            outputTokens: nextOutputTokens,
-            totalTokens: nextTotalTokens,
-            cacheReadTokens: current.cacheReadTokens + delta.cacheReadTokens,
-            cacheWriteTokens: current.cacheWriteTokens + delta.cacheWriteTokens,
-            updatedAt: nowIso()
-          }
-        }
-      };
-    });
+    upsertSession(sessionId, (session) =>
+      applyUsageDeltaToSessionMutation(session, modelUsageKey, delta, nowIso)
+    );
   };
 
   const applyUsageToAssistantMessage = (
@@ -357,43 +313,15 @@ export const App = () => {
     usage: StreamUsageSnapshot,
     source: ChatMessageUsage["source"]
   ) => {
-    upsertSession(sessionId, (session) => ({
-      ...session,
-      messages: session.messages.map((message) =>
-        message.id === assistantMessageId
-          ? {
-              ...message,
-              usage: {
-                inputTokens: usage.inputTokens,
-                outputTokens: usage.outputTokens,
-                totalTokens: Math.max(usage.totalTokens, usage.inputTokens + usage.outputTokens),
-                cacheReadTokens: usage.cacheReadTokens,
-                cacheWriteTokens: usage.cacheWriteTokens,
-                source
-              }
-            }
-          : message
-      )
-    }));
+    upsertSession(sessionId, (session) =>
+      applyUsageToAssistantMessageMutation(session, assistantMessageId, usage, source)
+    );
   };
 
   const removeAssistantPlaceholderIfEmpty = (sessionId: string, messageId: string) => {
-    upsertSession(sessionId, (session) => {
-      const target = session.messages.find((message) => message.id === messageId);
-      if (
-        !target ||
-        target.role !== "assistant" ||
-        target.content.trim() ||
-        target.reasoningContent?.trim()
-      ) {
-        return session;
-      }
-      return {
-        ...session,
-        updatedAt: nowIso(),
-        messages: session.messages.filter((message) => message.id !== messageId)
-      };
-    });
+    upsertSession(sessionId, (session) =>
+      removeAssistantPlaceholderIfEmptyMutation(session, messageId, nowIso)
+    );
   };
 
   const clearDraftAttachments = () => {
@@ -986,16 +914,7 @@ export const App = () => {
 
   const exportSessions = () => {
     try {
-      const payload = JSON.stringify(sessions, null, 2);
-      const blob = new Blob([payload], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `mu-sessions-${new Date().toISOString().slice(0, 10)}.json`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-      URL.revokeObjectURL(url);
+      exportSessionsAsJson(sessions);
     } catch (error) {
       setErrorBanner(error instanceof Error ? error.message : "Failed to export sessions.");
     }
@@ -1008,17 +927,7 @@ export const App = () => {
     }
 
     try {
-      const payload = JSON.stringify(target, null, 2);
-      const blob = new Blob([payload], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      const dateSuffix = new Date().toISOString().slice(0, 10);
-      anchor.download = `mu-session-${toSafeFileNameSegment(target.title)}-${dateSuffix}.json`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-      URL.revokeObjectURL(url);
+      exportSessionAsJson(target);
     } catch (error) {
       setErrorBanner(error instanceof Error ? error.message : "Failed to export session.");
     }
@@ -1031,17 +940,7 @@ export const App = () => {
     }
 
     try {
-      const payload = sessionToMarkdown(target);
-      const blob = new Blob([payload], { type: "text/markdown;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      const dateSuffix = new Date().toISOString().slice(0, 10);
-      anchor.download = `mu-session-${toSafeFileNameSegment(target.title)}-${dateSuffix}.md`;
-      document.body.appendChild(anchor);
-      anchor.click();
-      document.body.removeChild(anchor);
-      URL.revokeObjectURL(url);
+      exportSessionAsMarkdown(target);
     } catch (error) {
       setErrorBanner(error instanceof Error ? error.message : "Failed to export session markdown.");
     }
@@ -1139,99 +1038,18 @@ export const App = () => {
     }
 
     void (async () => {
-      const blockedMessages: string[] = [];
-      const nextAttachments = await Promise.all(
-        incomingFiles.map(async (file): Promise<DraftAttachment | null> => {
-          const base: DraftAttachment = {
-            id: createId(),
-            name: file.name,
-            size: file.size,
-            kind: "file",
-            mimeType: file.type || "application/octet-stream"
-          };
-
-          if (file.type.startsWith("image/")) {
-            if (!activeModelCapabilities.imageInput) {
-              blockedMessages.push(`模型 "${settings.model}" 不支持图片输入：${file.name}`);
-              return null;
-            }
-            const previewUrl = URL.createObjectURL(file);
-            if (file.size > IMAGE_ATTACHMENT_LIMIT) {
-              return {
-                ...base,
-                kind: "image",
-                previewUrl,
-                error: `图片超过 ${(IMAGE_ATTACHMENT_LIMIT / (1024 * 1024)).toFixed(0)}MB，无法发送给模型。`
-              };
-            }
-
-            try {
-              const imageDataUrl = await readFileAsDataUrl(file);
-              return {
-                ...base,
-                kind: "image",
-                previewUrl,
-                imageDataUrl
-              };
-            } catch {
-              return {
-                ...base,
-                kind: "image",
-                previewUrl,
-                error: "图片读取失败，无法发送给模型。"
-              };
-            }
-          }
-
-          if (isAudioAttachment(file)) {
-            if (!activeModelCapabilities.audioInput) {
-              blockedMessages.push(`模型 "${settings.model}" 不支持音频输入：${file.name}`);
-              return null;
-            }
-            return base;
-          }
-
-          if (isVideoAttachment(file)) {
-            if (!activeModelCapabilities.videoInput) {
-              blockedMessages.push(`模型 "${settings.model}" 不支持视频输入：${file.name}`);
-              return null;
-            }
-            return base;
-          }
-
-          if (isTextAttachment(file)) {
-            try {
-              const content = await file.text();
-              const isTrimmed = content.length > TEXT_ATTACHMENT_LIMIT;
-              return {
-                ...base,
-                kind: "text",
-                textContent: content.slice(0, TEXT_ATTACHMENT_LIMIT),
-                error: isTrimmed
-                  ? `文本已截断到前 ${TEXT_ATTACHMENT_LIMIT} 个字符。`
-                  : undefined
-              };
-            } catch {
-              return {
-                ...base,
-                kind: "text",
-                error: "文件读取失败，无法注入到消息上下文。"
-              };
-            }
-          }
-
-          return base;
-        })
-      );
+      const { accepted, blockedMessages } = await buildDraftAttachments({
+        files: incomingFiles,
+        createId,
+        modelId: settings.model,
+        modelCapabilities: activeModelCapabilities
+      });
 
       if (blockedMessages.length) {
         const uniqueMessages = Array.from(new Set(blockedMessages));
         setErrorBanner(uniqueMessages.slice(0, 3).join("；"));
       }
 
-      const accepted = nextAttachments.filter((attachment): attachment is DraftAttachment =>
-        Boolean(attachment)
-      );
       if (!accepted.length) {
         return;
       }
