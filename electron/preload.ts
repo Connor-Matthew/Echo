@@ -23,6 +23,8 @@ const api: MuApi = {
   },
   persona: {
     getSnapshot: () => ipcRenderer.invoke("persona:getSnapshot"),
+    getMarkdown: () => ipcRenderer.invoke("persona:getMarkdown"),
+    saveMarkdown: (markdown) => ipcRenderer.invoke("persona:saveMarkdown", markdown),
     getInjectionPayload: () => ipcRenderer.invoke("persona:getInjectionPayload"),
     ingestMessage: (payload) => ipcRenderer.invoke("persona:ingestMessage", payload)
   },

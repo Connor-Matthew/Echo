@@ -263,6 +263,7 @@ export type AppSettings = {
   systemPrompt: string;
   temperature: number;
   maxTokens: number;
+  defaultSoulModeEnabled: boolean;
   chatContextWindow: ChatContextWindow;
   sendWithEnter: boolean;
   fontScale: FontScale;
@@ -340,6 +341,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   systemPrompt: "You are a precise and pragmatic coding assistant.",
   temperature: 0.4,
   maxTokens: 2048,
+  defaultSoulModeEnabled: false,
   chatContextWindow: "infinite",
   sendWithEnter: true,
   fontScale: "md",
@@ -507,6 +509,8 @@ export const normalizeSettings = (saved: Partial<AppSettings>): AppSettings => {
   const merged = { ...DEFAULT_SETTINGS, ...saved };
   const rawChatContextWindow = (saved as { chatContextWindow?: unknown }).chatContextWindow;
   const rawEnvironment = (saved as { environment?: unknown }).environment;
+  const rawDefaultSoulModeEnabled = (saved as { defaultSoulModeEnabled?: unknown })
+    .defaultSoulModeEnabled;
   const rawProviders = Array.isArray(saved.providers) ? saved.providers : [];
   const providersFromLegacy: StoredProvider[] = [
     {
@@ -542,6 +546,10 @@ export const normalizeSettings = (saved: Partial<AppSettings>): AppSettings => {
     apiKey: activeProvider.apiKey,
     model: activeProvider.model,
     providerType: activeProvider.providerType,
+    defaultSoulModeEnabled:
+      typeof rawDefaultSoulModeEnabled === "boolean"
+        ? rawDefaultSoulModeEnabled
+        : DEFAULT_SETTINGS.defaultSoulModeEnabled,
     chatContextWindow: normalizeChatContextWindow(rawChatContextWindow),
     environment: normalizeEnvironmentSettings(rawEnvironment)
   };

@@ -324,7 +324,7 @@ export const revokeAttachmentPreview = (attachment: { previewUrl?: string }) => 
   }
 };
 
-export const createSession = (title = "New Chat"): ChatSession => {
+export const createSession = (title = "New Chat", soulModeEnabled = false): ChatSession => {
   const now = nowIso();
   return {
     id: createId(),
@@ -332,7 +332,7 @@ export const createSession = (title = "New Chat"): ChatSession => {
     createdAt: now,
     updatedAt: now,
     isPinned: false,
-    soulModeEnabled: false,
+    soulModeEnabled,
     messages: [],
     usageByModel: {}
   };

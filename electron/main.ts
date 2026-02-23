@@ -11,8 +11,10 @@ import {
 import { getEnvironmentDeviceStatus, getEnvironmentWeatherSnapshot } from "./env/env-context-service";
 import {
   getPersonaInjectionPayload,
+  getPersonaMarkdownDocument,
   getPersonaSnapshot,
-  ingestPersonaMessage
+  ingestPersonaMessage,
+  savePersonaMarkdownDocument
 } from "./memory/persona-service";
 import {
   DEFAULT_SETTINGS,
@@ -1514,6 +1516,13 @@ const registerIpcHandlers = () => {
   });
 
   ipcMain.handle("persona:getSnapshot", async (): Promise<PersonaSnapshot> => getPersonaSnapshot());
+
+  ipcMain.handle("persona:getMarkdown", async (): Promise<string> => getPersonaMarkdownDocument());
+
+  ipcMain.handle(
+    "persona:saveMarkdown",
+    async (_, markdown: string): Promise<PersonaSnapshot> => savePersonaMarkdownDocument(markdown)
+  );
 
   ipcMain.handle(
     "persona:getInjectionPayload",

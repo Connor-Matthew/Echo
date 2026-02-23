@@ -22,7 +22,14 @@ import type { ChatSession } from "../shared/contracts";
 import type { AgentSessionMeta } from "../shared/agent-contracts";
 import { Button } from "./ui/button";
 
-export type SettingsSection = "provider" | "chat" | "environment" | "theme" | "data" | "advanced";
+export type SettingsSection =
+  | "provider"
+  | "chat"
+  | "soul"
+  | "environment"
+  | "theme"
+  | "data"
+  | "advanced";
 
 type ChatSidebarProps = {
   mode: "chat";
@@ -150,6 +157,7 @@ export const Sidebar = (props: SidebarProps) => {
     const settingsItems: Array<{ key: SettingsSection; label: string; icon: typeof Server }> = [
       { key: "provider", label: "Provider", icon: Server },
       { key: "chat", label: "Chat", icon: MessageSquare },
+      { key: "soul", label: "Soul", icon: Sparkles },
       { key: "environment", label: "Environment", icon: Cpu },
       { key: "theme", label: "Theme", icon: Palette },
       { key: "data", label: "Data", icon: Database },

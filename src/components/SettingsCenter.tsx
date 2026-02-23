@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import {
   Check,
   ChevronDown,
@@ -14,6 +14,7 @@ import {
   Search,
   Server,
   SlidersHorizontal,
+  Sparkles,
   Trash2,
   X
 } from "lucide-react";
@@ -50,6 +51,7 @@ import type {
   ConnectionTestResult,
   ModelListResult,
   ModelCapabilities,
+  PersonaSnapshot,
   StoredProvider
 } from "../shared/contracts";
 import type { SettingsSection } from "./Sidebar";
@@ -63,6 +65,9 @@ type SettingsCenterProps = {
   onSave: (settings: AppSettings) => Promise<void>;
   onTest: (settings: AppSettings) => Promise<ConnectionTestResult>;
   onListModels: (settings: AppSettings) => Promise<ModelListResult>;
+  onGetPersonaSnapshot: () => Promise<PersonaSnapshot>;
+  onGetPersonaMarkdown: () => Promise<string>;
+  onSavePersonaMarkdown: (markdown: string) => Promise<PersonaSnapshot>;
   onExportSessions: () => void;
   onImportSessions: (sessions: ChatSession[]) => void;
   onClearSessions: () => void;
@@ -75,6 +80,9 @@ export const SettingsCenter = ({
   onSave,
   onTest,
   onListModels,
+  onGetPersonaSnapshot,
+  onGetPersonaMarkdown,
+  onSavePersonaMarkdown,
   onExportSessions,
   onImportSessions,
   onClearSessions,
@@ -96,6 +104,13 @@ export const SettingsCenter = ({
   const [isApiKeyCopied, setIsApiKeyCopied] = useState(false);
   const [modelContextWindowDraft, setModelContextWindowDraft] = useState("");
   const [isResetting, setIsResetting] = useState(false);
+  const [personaSnapshot, setPersonaSnapshot] = useState<PersonaSnapshot | null>(null);
+  const [isPersonaLoading, setIsPersonaLoading] = useState(false);
+  const [isPersonaDocumentSaving, setIsPersonaDocumentSaving] = useState(false);
+  const [personaDocumentDraft, setPersonaDocumentDraft] = useState("");
+  const [personaDocumentBaseline, setPersonaDocumentBaseline] = useState("");
+  const [personaDocumentMessage, setPersonaDocumentMessage] = useState<string | null>(null);
+  const [personaError, setPersonaError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -112,6 +127,8 @@ export const SettingsCenter = ({
     setIsApiKeyVisible(false);
     setIsApiKeyCopied(false);
     setModelContextWindowDraft("");
+    setPersonaError(null);
+    setPersonaDocumentMessage(null);
   }, [settings, section]);
 
   const isDirty = useMemo(() => !areSettingsEqual(draft, settings), [draft, settings]);
@@ -687,6 +704,51 @@ export const SettingsCenter = ({
       setIsResetting(false);
     }
   };
+
+  const refreshPersonaSnapshot = useCallback(async () => {
+    setIsPersonaLoading(true);
+    setPersonaError(null);
+    setPersonaDocumentMessage(null);
+    try {
+      const [snapshot, markdown] = await Promise.all([onGetPersonaSnapshot(), onGetPersonaMarkdown()]);
+      setPersonaSnapshot(snapshot);
+      setPersonaDocumentDraft(markdown);
+      setPersonaDocumentBaseline(markdown);
+    } catch (error) {
+      setPersonaError(error instanceof Error ? error.message : "Failed to load soul profile.");
+    } finally {
+      setIsPersonaLoading(false);
+    }
+  }, [onGetPersonaMarkdown, onGetPersonaSnapshot]);
+
+  const hasPersonaDocumentChanges = personaDocumentDraft !== personaDocumentBaseline;
+
+  const savePersonaDocument = async () => {
+    setIsPersonaDocumentSaving(true);
+    setPersonaError(null);
+    setPersonaDocumentMessage(null);
+    try {
+      const snapshot = await onSavePersonaMarkdown(personaDocumentDraft);
+      const latestMarkdown = await onGetPersonaMarkdown();
+      setPersonaSnapshot(snapshot);
+      setPersonaDocumentDraft(latestMarkdown);
+      setPersonaDocumentBaseline(latestMarkdown);
+      setPersonaDocumentMessage(
+        snapshot.warning ? `Saved with warning: ${snapshot.warning.message}` : "Document saved."
+      );
+    } catch (error) {
+      setPersonaError(error instanceof Error ? error.message : "Failed to save soul document.");
+    } finally {
+      setIsPersonaDocumentSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    if (section !== "soul") {
+      return;
+    }
+    void refreshPersonaSnapshot();
+  }, [refreshPersonaSnapshot, section]);
 
   return (
     <section className="h-full overflow-auto px-4 py-6 md:px-8 md:py-8">
@@ -1342,6 +1404,181 @@ export const SettingsCenter = ({
                   {draft.sendWithEnter ? "On" : "Off"}
                 </span>
               </button>
+
+              {saveError ? <p className="text-sm text-destructive">{saveError}</p> : null}
+              <div className="flex items-center justify-end">
+                <Button onClick={save} disabled={isSaving || !isDirty}>
+                  {isSaving ? "Saving..." : "Save"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {section === "soul" ? (
+          <Card className="border-border bg-card/80">
+            <CardHeader>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Sparkles className="h-4 w-4" />
+                <span className="text-xs font-medium uppercase tracking-[0.16em]">Soul</span>
+              </div>
+              <CardTitle className="text-2xl">Soul mode</CardTitle>
+              <CardDescription>
+                Set default behavior for new chats and inspect what Soul mode records.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <button
+                type="button"
+                className={cn(
+                  "flex w-full items-center justify-between rounded-[6px] border px-4 py-3 text-left transition-colors",
+                  draft.defaultSoulModeEnabled
+                    ? "border-border bg-accent/60"
+                    : "border-border/70 bg-card hover:bg-secondary/65"
+                )}
+                onClick={() => updateField("defaultSoulModeEnabled", !draft.defaultSoulModeEnabled)}
+              >
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Enable Soul mode for new chats</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Existing chats keep their current state. You can still toggle Soul mode per chat in
+                    the header.
+                  </p>
+                </div>
+                <span className="text-xs font-medium text-muted-foreground">
+                  {draft.defaultSoulModeEnabled ? "On" : "Off"}
+                </span>
+              </button>
+
+              <div className="rounded-[6px] border border-border/75 bg-card px-4 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">Soul profile snapshot</p>
+                    <p className="text-xs text-muted-foreground">
+                      Profile and source document used for Soul mode memory injection.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      void refreshPersonaSnapshot();
+                    }}
+                    disabled={isPersonaLoading}
+                  >
+                    {isPersonaLoading ? "Refreshing..." : "Refresh"}
+                  </Button>
+                </div>
+
+                {personaError ? <p className="mt-3 text-sm text-destructive">{personaError}</p> : null}
+                {personaDocumentMessage ? (
+                  <p className="mt-3 text-sm text-muted-foreground">{personaDocumentMessage}</p>
+                ) : null}
+
+                {personaSnapshot ? (
+                  <div className="mt-3 space-y-3">
+                    <div className="grid gap-2 text-xs text-muted-foreground md:grid-cols-2">
+                      <p>Updated: {new Date(personaSnapshot.profile.updatedAt).toLocaleString()}</p>
+                      <p>Source mode: {personaSnapshot.profile.sourceMode}</p>
+                      <p>
+                        Ingested user messages:{" "}
+                        {personaSnapshot.profile.counters.ingestedUserMessages.toLocaleString()}
+                      </p>
+                      <p>
+                        Last ingested:{" "}
+                        {personaSnapshot.profile.counters.lastIngestedAt
+                          ? new Date(personaSnapshot.profile.counters.lastIngestedAt).toLocaleString()
+                          : "n/a"}
+                      </p>
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div className="space-y-1">
+                        <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                          Stable preferences
+                        </p>
+                        {personaSnapshot.profile.stablePreferences.length ? (
+                          <div className="space-y-1 text-sm text-foreground">
+                            {personaSnapshot.profile.stablePreferences.slice(0, 6).map((item) => (
+                              <p key={item.id} className="truncate">
+                                {item.text}
+                              </p>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">No records yet.</p>
+                        )}
+                      </div>
+
+                      <div className="space-y-1">
+                        <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                          Recent events
+                        </p>
+                        {personaSnapshot.profile.recentEvents.length ? (
+                          <div className="space-y-1 text-sm text-foreground">
+                            {personaSnapshot.profile.recentEvents.slice(0, 6).map((item) => (
+                              <p key={item.id} className="truncate">
+                                {item.text}
+                              </p>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">No records yet.</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                        Source document (Markdown)
+                      </p>
+                      <textarea
+                        className="min-h-[260px] w-full rounded-md border border-input bg-background px-3 py-2 text-xs font-mono leading-5 shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        value={personaDocumentDraft}
+                        onChange={(event) => setPersonaDocumentDraft(event.target.value)}
+                        placeholder="Soul document content"
+                      />
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-xs text-muted-foreground">
+                          Path: <span className="font-mono">{personaSnapshot.markdownPath}</span>
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              void refreshPersonaSnapshot();
+                            }}
+                            disabled={isPersonaLoading}
+                          >
+                            Reload
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => {
+                              void savePersonaDocument();
+                            }}
+                            disabled={isPersonaDocumentSaving || !hasPersonaDocumentChanges}
+                          >
+                            {isPersonaDocumentSaving ? "Saving..." : "Save document"}
+                          </Button>
+                        </div>
+                      </div>
+                      {personaSnapshot.warning ? (
+                        <p className="text-xs text-destructive">
+                          Parse warning: {personaSnapshot.warning.message}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="mt-3 text-sm text-muted-foreground">
+                    {isPersonaLoading ? "Loading soul profile..." : "No soul profile data available."}
+                  </p>
+                )}
+              </div>
 
               {saveError ? <p className="text-sm text-destructive">{saveError}</p> : null}
               <div className="flex items-center justify-end">

@@ -710,7 +710,7 @@ export const App = () => {
   }, [sessions, isHydrated]);
 
   const createNewChat = () => {
-    const session = createSession();
+    const session = createSession("New Chat", settings.defaultSoulModeEnabled);
     setSessions((previous) => [session, ...previous]);
     setActiveSessionId(session.id);
     setDraft("");
@@ -766,7 +766,9 @@ export const App = () => {
 
     const sessionToDelete = sessions[currentIndex];
     const remaining = sessions.filter((session) => session.id !== sessionId);
-    const mergedSessions = remaining.length ? remaining : [createSession()];
+    const mergedSessions = remaining.length
+      ? remaining
+      : [createSession("New Chat", settings.defaultSoulModeEnabled)];
     setSessions(mergedSessions);
 
     if (activeSessionId === sessionId) {
@@ -911,6 +913,9 @@ export const App = () => {
     api.settings.testConnection(next);
 
   const listModels = async (next: AppSettings) => api.settings.listModels(next);
+  const getPersonaSnapshot = useCallback(() => api.persona.getSnapshot(), []);
+  const getPersonaMarkdown = useCallback(() => api.persona.getMarkdown(), []);
+  const savePersonaMarkdown = useCallback((markdown: string) => api.persona.saveMarkdown(markdown), []);
 
   const exportSessions = () => {
     try {
@@ -956,7 +961,7 @@ export const App = () => {
   };
 
   const clearAllSessions = () => {
-    const nextSessions = [createSession()];
+    const nextSessions = [createSession("New Chat", settings.defaultSoulModeEnabled)];
     setSessions(nextSessions);
     setActiveSessionId(nextSessions[0].id);
     setErrorBanner(null);
@@ -2048,6 +2053,9 @@ export const App = () => {
                 onSave={saveSettings}
                 onTest={testConnection}
                 onListModels={listModels}
+                onGetPersonaSnapshot={getPersonaSnapshot}
+                onGetPersonaMarkdown={getPersonaMarkdown}
+                onSavePersonaMarkdown={savePersonaMarkdown}
                 onExportSessions={exportSessions}
                 onImportSessions={importSessions}
                 onClearSessions={clearAllSessions}

@@ -13,6 +13,7 @@ import type {
 export type SettingsValidationSection =
   | "provider"
   | "chat"
+  | "soul"
   | "environment"
   | "theme"
   | "data"
@@ -493,6 +494,7 @@ export const areSettingsEqual = (left: AppSettings, right: AppSettings) =>
   left.systemPrompt === right.systemPrompt &&
   left.temperature === right.temperature &&
   left.maxTokens === right.maxTokens &&
+  left.defaultSoulModeEnabled === right.defaultSoulModeEnabled &&
   left.chatContextWindow === right.chatContextWindow &&
   left.sendWithEnter === right.sendWithEnter &&
   left.fontScale === right.fontScale &&

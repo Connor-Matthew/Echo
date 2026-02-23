@@ -22,8 +22,8 @@
   },
   "manualNotes": "",
   "counters": {
-    "ingestedUserMessages": 1,
-    "lastIngestedAt": "2026-02-22T18:36:50.923Z",
+    "ingestedUserMessages": 2,
+    "lastIngestedAt": "2026-02-23T14:09:54.260Z",
     "lastMarkdownSyncAt": "2026-02-22T18:36:50.936Z",
     "pendingAutoRefresh": false
   },
@@ -31,6 +31,10 @@
     {
       "score": 0,
       "capturedAt": "2026-02-22T18:36:50.923Z"
+    },
+    {
+      "score": 0,
+      "capturedAt": "2026-02-23T14:09:54.260Z"
     }
   ]
 }

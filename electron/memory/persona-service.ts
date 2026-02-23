@@ -1045,6 +1045,50 @@ export const getPersonaSnapshot = async (): Promise<PersonaSnapshot> => {
   };
 };
 
+export const getPersonaMarkdownDocument = async (): Promise<string> => {
+  const { profile, paths } = await readProfileWithSync();
+  const markdown = await readMarkdown(paths.markdownPath);
+  if (typeof markdown === "string") {
+    return markdown;
+  }
+  const generated = buildPersonaMarkdown(profile);
+  await writeFile(paths.markdownPath, generated, "utf-8");
+  return generated;
+};
+
+export const savePersonaMarkdownDocument = async (markdown: string): Promise<PersonaSnapshot> => {
+  const { profile: syncedProfile, paths } = await readProfileWithSync();
+  const normalizedMarkdown = `${markdown.replace(/\r\n/g, "\n").trimEnd()}\n`;
+  await writeFile(paths.markdownPath, normalizedMarkdown, "utf-8");
+
+  const parsed = parseMarkdownPatch(normalizedMarkdown);
+  if ("warning" in parsed) {
+    return {
+      profile: syncedProfile,
+      jsonPath: paths.jsonPath,
+      markdownPath: paths.markdownPath,
+      warning: parsed.warning
+    };
+  }
+
+  const merged = mergeMarkdownPatch(syncedProfile, parsed.patch);
+  const nextProfile = normalizeProfile({
+    ...merged,
+    updatedAt: nowIso(),
+    counters: {
+      ...merged.counters,
+      lastMarkdownSyncAt: nowIso()
+    }
+  });
+  await writeProfileJson(paths.jsonPath, nextProfile);
+
+  return {
+    profile: nextProfile,
+    jsonPath: paths.jsonPath,
+    markdownPath: paths.markdownPath
+  };
+};
+
 export const getPersonaInjectionPayload = async (): Promise<PersonaInjectionPayload> => {
   const snapshot = await getPersonaSnapshot();
   return {

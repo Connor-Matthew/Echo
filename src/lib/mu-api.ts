@@ -42,6 +42,8 @@ export type MuApi = {
   };
   persona: {
     getSnapshot: () => Promise<PersonaSnapshot>;
+    getMarkdown: () => Promise<string>;
+    saveMarkdown: (markdown: string) => Promise<PersonaSnapshot>;
     getInjectionPayload: () => Promise<PersonaInjectionPayload>;
     ingestMessage: (payload: PersonaIngestPayload) => Promise<void>;
   };
@@ -71,6 +73,7 @@ export type MuApi = {
 const SETTINGS_KEY = "mu.settings.v1";
 const SESSIONS_KEY = "mu.sessions.v1";
 const PERSONA_KEY = "mu.persona.v1";
+const PERSONA_MARKDOWN_KEY = "mu.persona.markdown.v1";
 const AGENT_SESSIONS_KEY = "mu.agent.sessions.v1";
 const AGENT_MESSAGES_KEY = "mu.agent.messages.v1";
 const MIN_REQUEST_TIMEOUT_MS = 5000;
@@ -135,6 +138,57 @@ const readFallbackPersonaSnapshot = () =>
 
 const writeFallbackPersonaSnapshot = (snapshot: PersonaSnapshot) => {
   writeLocalStorage(PERSONA_KEY, snapshot);
+};
+
+const buildFallbackPersonaMarkdown = (snapshot: PersonaSnapshot) => {
+  const profile = snapshot.profile;
+  const preferenceLines = profile.stablePreferences.length
+    ? profile.stablePreferences.map(
+        (item) =>
+          `- [${item.id}] ${item.text} (confidence: ${item.confidence.toFixed(2)}, last_seen: ${item.lastSeen})`
+      )
+    : ["- [pref_placeholder] 暂无（confidence: 0.00, last_seen: 1970-01-01)"];
+  const eventLines = profile.recentEvents.length
+    ? profile.recentEvents.map(
+        (item) =>
+          `- [${item.id}] ${item.text} (date: ${item.date}, confidence: ${item.confidence.toFixed(2)})`
+      )
+    : ["- [event_placeholder] 暂无（date: 1970-01-01, confidence: 0.00)"];
+
+  return [
+    "# Persona Card",
+    `- version: ${profile.version}`,
+    `- updated_at: ${profile.updatedAt}`,
+    `- source_mode: ${profile.sourceMode}`,
+    "",
+    "## Identity Hint",
+    profile.identityHint || "一句话描述用户当前阶段状态（可改写）",
+    "",
+    "## Communication Style",
+    `- 语气偏好：${profile.communicationStyle.tone}`,
+    `- 长度偏好：${profile.communicationStyle.length}`,
+    `- 禁忌表达：${profile.communicationStyle.taboo.join("、")}`,
+    "",
+    "## Stable Preferences",
+    ...preferenceLines,
+    "",
+    "## Emotion Trend (7d)",
+    `- trend: ${profile.emotionTrend7d.trend}`,
+    `- confidence: ${profile.emotionTrend7d.confidence.toFixed(2)}`,
+    `- evidence_count: ${profile.emotionTrend7d.evidenceCount}`,
+    `- note: ${profile.emotionTrend7d.note}`,
+    "",
+    "## Recent Events",
+    ...eventLines,
+    "",
+    "## Boundaries",
+    `- 不希望被提及：${profile.boundaries.avoidTopics.join("、")}`,
+    `- 敏感话题处理：${profile.boundaries.sensitiveHandling}`,
+    "",
+    "## Manual Notes",
+    profile.manualNotes || "这里内容永不被自动覆盖（用户自由编辑）",
+    ""
+  ].join("\n");
 };
 
 const normalizeBaseUrl = (value: string) => value.trim().replace(/\/+$/, "");
@@ -801,6 +855,34 @@ const createBrowserFallbackApi = (): MuApi => {
     },
     persona: {
       getSnapshot: async () => readFallbackPersonaSnapshot(),
+      getMarkdown: async () => {
+        const stored = window.localStorage.getItem(PERSONA_MARKDOWN_KEY);
+        if (stored && stored.trim()) {
+          return stored;
+        }
+        const snapshot = readFallbackPersonaSnapshot();
+        const markdown = buildFallbackPersonaMarkdown(snapshot);
+        window.localStorage.setItem(PERSONA_MARKDOWN_KEY, markdown);
+        return markdown;
+      },
+      saveMarkdown: async (markdown) => {
+        const normalized = `${markdown.replace(/\r\n/g, "\n").trimEnd()}\n`;
+        window.localStorage.setItem(PERSONA_MARKDOWN_KEY, normalized);
+        const snapshot = readFallbackPersonaSnapshot();
+        const next: PersonaSnapshot = {
+          ...snapshot,
+          profile: {
+            ...snapshot.profile,
+            updatedAt: nowIso(),
+            counters: {
+              ...snapshot.profile.counters,
+              lastMarkdownSyncAt: nowIso()
+            }
+          }
+        };
+        writeFallbackPersonaSnapshot(next);
+        return next;
+      },
       getInjectionPayload: async () => {
         const snapshot = readFallbackPersonaSnapshot();
         const preferenceLines = snapshot.profile.stablePreferences
