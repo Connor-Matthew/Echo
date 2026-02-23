@@ -10,6 +10,7 @@ import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
 import { Textarea } from "./components/ui/textarea";
 import { buildDraftAttachments, type DraftAttachment } from "./lib/app-draft-attachments";
+import { createAgentStreamEnvelopeHandler } from "./lib/app-agent-stream";
 import {
   buildUnavailableWeather,
   collectLocalEnvironmentContext,
@@ -62,8 +63,7 @@ import {
 import {
   buildAgentRunSettingsSnapshot,
   type AgentMessage,
-  type AgentSessionMeta,
-  type AgentStreamEnvelope
+  type AgentSessionMeta
 } from "./shared/agent-contracts";
 import {
   DEFAULT_SETTINGS,
@@ -1489,57 +1489,15 @@ export const App = () => {
         environmentSnapshot
       });
 
-      const handleEnvelope = (payload: AgentStreamEnvelope) => {
-        const streamEvent = payload.event;
-        if (streamEvent.type === "text_delta") {
-          upsertAgentMessages(sessionId, (messages) =>
-            messages.map((message) =>
-              message.id === assistantMessage.id
-                ? { ...message, content: `${message.content}${streamEvent.text}` }
-                : message
-            )
-          );
-          return;
-        }
-
-        if (streamEvent.type === "text_complete") {
-          upsertAgentMessages(sessionId, (messages) =>
-            messages.map((message) =>
-              message.id === assistantMessage.id
-                ? message.content.endsWith(streamEvent.text)
-                  ? message
-                  : { ...message, content: `${message.content}${streamEvent.text}` }
-                : message
-            )
-          );
-          return;
-        }
-
-        if (streamEvent.type === "task_progress") {
-          appendAgentSystemEvent(sessionId, `Progress: ${streamEvent.message}`);
-          return;
-        }
-
-        if (streamEvent.type === "tool_start") {
-          appendAgentSystemEvent(sessionId, `Tool start: ${streamEvent.toolName}`);
-          return;
-        }
-
-        if (streamEvent.type === "tool_result") {
-          appendAgentSystemEvent(sessionId, `Tool result: ${streamEvent.toolName}`);
-          return;
-        }
-
-        if (streamEvent.type === "error") {
-          setAgentErrorBanner(streamEvent.message);
-          finishAgentRun();
-          void loadAgentMessages(sessionId).catch(() => {});
-          return;
-        }
-
-        finishAgentRun();
-        void loadAgentMessages(sessionId).catch(() => {});
-      };
+      const handleEnvelope = createAgentStreamEnvelopeHandler({
+        sessionId,
+        assistantMessageId: assistantMessage.id,
+        upsertAgentMessages,
+        appendAgentSystemEvent,
+        setAgentErrorBanner,
+        finishAgentRun,
+        loadAgentMessages
+      });
 
       const unsubscribe = api.agent.onStreamEvent(runId, handleEnvelope);
       activeAgentRunRef.current = {
