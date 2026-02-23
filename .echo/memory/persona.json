@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "sourceMode": "soul",
+  "updatedAt": "2026-02-22T18:36:50.936Z",
+  "identityHint": "一句话描述用户当前阶段状态（可改写）",
+  "communicationStyle": {
+    "tone": "",
+    "length": "",
+    "taboo": []
+  },
+  "stablePreferences": [],
+  "emotionTrend7d": {
+    "trend": "unknown",
+    "confidence": 0,
+    "evidenceCount": 0,
+    "note": ""
+  },
+  "recentEvents": [],
+  "boundaries": {
+    "avoidTopics": [],
+    "sensitiveHandling": "Ask for confirmation before using sensitive inferences."
+  },
+  "manualNotes": "",
+  "counters": {
+    "ingestedUserMessages": 1,
+    "lastIngestedAt": "2026-02-22T18:36:50.923Z",
+    "lastMarkdownSyncAt": "2026-02-22T18:36:50.936Z",
+    "pendingAutoRefresh": false
+  },
+  "emotionSignals": [
+    {
+      "score": 0,
+      "capturedAt": "2026-02-22T18:36:50.923Z"
+    }
+  ]
+}

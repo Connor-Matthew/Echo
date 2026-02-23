@@ -1,11 +1,14 @@
 import {
   isValidElement,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode
 } from "react";
 import {
+  ArrowDown,
+  ArrowUp,
   ChevronDown,
   ChevronRight,
   Check,
@@ -48,6 +51,7 @@ type ChatViewProps = {
 type MessageBubbleProps = {
   message: ChatMessage;
   isGenerating: boolean;
+  activeGeneratingAssistantId?: string | null;
   onEditMessage: (
     message: ChatMessage,
     nextContent: string,
@@ -59,6 +63,7 @@ type MessageBubbleProps = {
 
 const TEXT_ATTACHMENT_LIMIT = 60000;
 const IMAGE_ATTACHMENT_LIMIT = 5 * 1024 * 1024;
+const AUTO_SCROLL_THRESHOLD = 24;
 const TEXT_ATTACHMENT_EXTENSIONS = new Set([
   ".md",
   ".txt",
@@ -84,6 +89,20 @@ const formatBytes = (size: number) => {
     return `${(size / 1024).toFixed(1)} KB`;
   }
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+const formatTokenCount = (value: number) => {
+  const formatCompact = (raw: number, suffix: "k" | "m") => {
+    const fixed = raw.toFixed(1);
+    return `${fixed.endsWith(".0") ? fixed.slice(0, -2) : fixed}${suffix}`;
+  };
+  if (value >= 1_000_000) {
+    return formatCompact(value / 1_000_000, "m");
+  }
+  if (value >= 1_000) {
+    return formatCompact(value / 1_000, "k");
+  }
+  return `${Math.round(value)}`;
 };
 
 const getExtension = (name: string) => {
@@ -299,6 +318,7 @@ const MarkdownContent = ({ content, isUser }: { content: string; isUser: boolean
 const MessageBubble = ({
   message,
   isGenerating,
+  activeGeneratingAssistantId,
   onEditMessage,
   onDeleteMessage,
   onResendMessage
@@ -435,6 +455,23 @@ const MessageBubble = ({
 
   const attachments = message.attachments ?? [];
   const hasReasoning = !isUser && Boolean(message.reasoningContent?.trim());
+  const isCurrentGeneratingAssistant = Boolean(
+    !isUser && isGenerating && activeGeneratingAssistantId === message.id
+  );
+  const assistantUsage =
+    !isCurrentGeneratingAssistant &&
+    !isUser &&
+    message.usage &&
+    ((message.usage.inputTokens ?? 0) > 0 ||
+      (message.usage.outputTokens ?? 0) > 0 ||
+      (message.usage.cacheReadTokens ?? 0) > 0 ||
+      (message.usage.cacheWriteTokens ?? 0) > 0)
+      ? message.usage
+      : null;
+  const assistantInputTokens = assistantUsage?.inputTokens ?? 0;
+  const assistantOutputTokens = assistantUsage?.outputTokens ?? 0;
+  const assistantCacheReadTokens = assistantUsage?.cacheReadTokens ?? 0;
+  const assistantCacheWriteTokens = assistantUsage?.cacheWriteTokens ?? 0;
 
   const addEditFiles = (files: FileList | null) => {
     if (!files?.length) {
@@ -700,6 +737,35 @@ const MessageBubble = ({
           </div>
         ) : null}
 
+        {assistantUsage ? (
+          <div
+            className={[
+              "mt-1 inline-flex items-center gap-2 text-[12px] font-medium tabular-nums",
+              assistantUsage.source === "provider"
+                ? "text-muted-foreground"
+                : "text-muted-foreground/80"
+            ].join(" ")}
+            title={assistantUsage.source === "provider" ? "Provider usage" : "Estimated usage"}
+          >
+            <span className="inline-flex items-center gap-1">
+              <ArrowUp className="h-3 w-3" />
+              {formatTokenCount(assistantInputTokens)}
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <ArrowDown className="h-3 w-3" />
+              {formatTokenCount(assistantOutputTokens)}
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="text-[10px] font-semibold tracking-wide">cache</span>
+              {formatTokenCount(assistantCacheReadTokens)}
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <span className="text-[10px] font-semibold uppercase tracking-wide">CW</span>
+              {formatTokenCount(assistantCacheWriteTokens)}
+            </span>
+          </div>
+        ) : null}
+
         <div
           className={[
             "mt-1.5 flex w-fit max-w-full items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100",
@@ -775,7 +841,70 @@ export const ChatView = ({
   onResendMessage
 }: ChatViewProps) => {
   const scrollContainerRef = useRef<HTMLElement | null>(null);
+  const shouldAutoScrollRef = useRef(true);
+  const pendingScrollFrameRef = useRef<number | null>(null);
+  const lastScrollTopRef = useRef(0);
   const latestMessage = messages[messages.length - 1];
+  const activeGeneratingAssistantId = useMemo(() => {
+    if (!isGenerating) {
+      return null;
+    }
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      if (messages[index].role === "assistant") {
+        return messages[index].id;
+      }
+    }
+    return null;
+  }, [isGenerating, messages]);
+
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) {
+      return;
+    }
+
+    const isNearBottom = () =>
+      container.scrollHeight - container.scrollTop - container.clientHeight <= AUTO_SCROLL_THRESHOLD;
+
+    const onWheel = (event: WheelEvent) => {
+      if (event.deltaY < 0) {
+        // Scrolling up means user wants to browse history, so pause auto-follow immediately.
+        shouldAutoScrollRef.current = false;
+      }
+    };
+
+    const onScroll = () => {
+      const currentTop = container.scrollTop;
+      const isUpward = currentTop < lastScrollTopRef.current;
+      const nearBottom = isNearBottom();
+
+      if (nearBottom) {
+        shouldAutoScrollRef.current = true;
+      } else if (isUpward) {
+        shouldAutoScrollRef.current = false;
+      }
+
+      lastScrollTopRef.current = currentTop;
+    };
+
+    lastScrollTopRef.current = container.scrollTop;
+    shouldAutoScrollRef.current = isNearBottom();
+    container.addEventListener("wheel", onWheel, { passive: true });
+    container.addEventListener("scroll", onScroll, { passive: true });
+
+    return () => {
+      container.removeEventListener("wheel", onWheel);
+      container.removeEventListener("scroll", onScroll);
+    };
+  }, [isConfigured]);
+
+  useEffect(() => {
+    return () => {
+      if (pendingScrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(pendingScrollFrameRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!messages.length) {
@@ -786,10 +915,17 @@ export const ChatView = ({
     if (!container) {
       return;
     }
+    const shouldForceScroll = latestMessage?.role === "user";
+    if (!shouldAutoScrollRef.current && !shouldForceScroll) {
+      return;
+    }
 
-    container.scrollTo({
-      top: container.scrollHeight,
-      behavior: "auto"
+    if (pendingScrollFrameRef.current !== null) {
+      window.cancelAnimationFrame(pendingScrollFrameRef.current);
+    }
+    pendingScrollFrameRef.current = window.requestAnimationFrame(() => {
+      pendingScrollFrameRef.current = null;
+      container.scrollTop = container.scrollHeight;
     });
   }, [
     messages.length,
@@ -834,6 +970,7 @@ export const ChatView = ({
             key={message.id}
             message={message}
             isGenerating={isGenerating}
+            activeGeneratingAssistantId={activeGeneratingAssistantId}
             onEditMessage={onEditMessage}
             onDeleteMessage={onDeleteMessage}
             onResendMessage={onResendMessage}

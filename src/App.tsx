@@ -1,13 +1,21 @@
-import { useEffect, useMemo, useRef, useState, type DragEventHandler } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEventHandler } from "react";
 import { PanelLeft } from "lucide-react";
 import { AgentView } from "./components/AgentView";
+import { AttachmentTray } from "./components/AttachmentTray";
 import { ChatView } from "./components/ChatView";
 import { Composer, type ComposerAttachment } from "./components/Composer";
 import { SettingsCenter } from "./components/SettingsCenter";
 import { Sidebar, type SettingsSection } from "./components/Sidebar";
 import { Button } from "./components/ui/button";
+import { Input } from "./components/ui/input";
 import { Textarea } from "./components/ui/textarea";
+import {
+  buildUnavailableWeather,
+  collectLocalEnvironmentContext,
+  toStaleWeatherFromPrevious
+} from "./lib/environment-context";
 import { getMuApi } from "./lib/mu-api";
+import { resolveProviderModelContextWindow } from "./lib/model-context-window";
 import { resolveProviderModelCapabilities } from "./lib/model-capabilities";
 import {
   buildAgentRunSettingsSnapshot,
@@ -20,10 +28,14 @@ import {
   normalizeSettings,
   type AppSettings,
   type ChatAttachment,
+  type ChatMessageUsage,
+  type ChatUsage,
   type ChatMessage,
   type ChatSession,
   type ChatStreamRequest,
-  type ConnectionTestResult
+  type ConnectionTestResult,
+  type EnvironmentSnapshot,
+  type EnvironmentWeatherSnapshot
 } from "./shared/contracts";
 
 type RemovedSession = {
@@ -36,11 +48,24 @@ type ActiveStream = {
   streamId: string;
   sessionId: string;
   assistantMessageId: string;
+  usageModelKey: string;
+  usageSnapshot: StreamUsageSnapshot;
+  hasUsageEvent: boolean;
+  estimatedInputTokens: number;
+  estimatedOutputTokens: number;
   pendingDelta: string;
   pendingReasoningDelta: string;
   flushTimeoutId: number | null;
   flushPending: () => void;
   unsubscribe: () => void;
+};
+
+type StreamUsageSnapshot = {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
 };
 
 type DraftAttachment = ComposerAttachment & {
@@ -87,6 +112,7 @@ const TEXT_ATTACHMENT_MIME_TYPES = new Set([
 const AUDIO_ATTACHMENT_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".ogg", ".flac", ".aac"]);
 const VIDEO_ATTACHMENT_EXTENSIONS = new Set([".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"]);
 const COMPOSER_MODEL_DELIMITER = "::";
+const MODEL_USAGE_KEY_DELIMITER = "::";
 const SIDEBAR_AUTO_HIDE_WIDTH = 800;
 const SIDEBAR_MIN_WIDTH = 228;
 const SIDEBAR_MAX_WIDTH = 322;
@@ -127,6 +153,185 @@ const decodeComposerModelOption = (rawValue: string) => {
   } catch {
     return null;
   }
+};
+
+const toModelUsageKey = (providerId: string, modelId: string) =>
+  `${providerId}${MODEL_USAGE_KEY_DELIMITER}${modelId.trim().toLowerCase()}`;
+
+const toTokenNumber = (value: unknown) =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+
+const EMPTY_STREAM_USAGE_SNAPSHOT: StreamUsageSnapshot = {
+  inputTokens: 0,
+  outputTokens: 0,
+  totalTokens: 0,
+  cacheReadTokens: 0,
+  cacheWriteTokens: 0
+};
+
+const mergeUsageSnapshot = (previous: StreamUsageSnapshot, incoming: ChatUsage) => {
+  const nextInputTokens = toTokenNumber(incoming.inputTokens);
+  const nextOutputTokens = toTokenNumber(incoming.outputTokens);
+  const nextCacheReadTokens = toTokenNumber(incoming.cacheReadTokens);
+  const nextCacheWriteTokens = toTokenNumber(incoming.cacheWriteTokens);
+  const nextTotalTokens = toTokenNumber(incoming.totalTokens);
+
+  let resolvedInputTokens = nextInputTokens ?? previous.inputTokens;
+  let resolvedOutputTokens = nextOutputTokens ?? previous.outputTokens;
+  let resolvedTotalTokens = nextTotalTokens ?? previous.totalTokens;
+
+  if (nextTotalTokens !== null) {
+    if (nextOutputTokens === null) {
+      resolvedOutputTokens = Math.max(0, nextTotalTokens - resolvedInputTokens);
+    }
+    if (nextInputTokens === null) {
+      resolvedInputTokens = Math.max(0, nextTotalTokens - resolvedOutputTokens);
+    }
+  }
+
+  const next: StreamUsageSnapshot = {
+    inputTokens: resolvedInputTokens,
+    outputTokens: resolvedOutputTokens,
+    cacheReadTokens: nextCacheReadTokens ?? previous.cacheReadTokens,
+    cacheWriteTokens: nextCacheWriteTokens ?? previous.cacheWriteTokens,
+    totalTokens: resolvedTotalTokens
+  };
+
+  next.totalTokens = Math.max(next.totalTokens, next.inputTokens + next.outputTokens);
+
+  const delta: StreamUsageSnapshot = {
+    inputTokens: Math.max(0, next.inputTokens - previous.inputTokens),
+    outputTokens: Math.max(0, next.outputTokens - previous.outputTokens),
+    totalTokens: Math.max(0, next.totalTokens - previous.totalTokens),
+    cacheReadTokens: Math.max(0, next.cacheReadTokens - previous.cacheReadTokens),
+    cacheWriteTokens: Math.max(0, next.cacheWriteTokens - previous.cacheWriteTokens)
+  };
+
+  return { next, delta };
+};
+
+const formatTokenCount = (value: number) => {
+  const formatCompact = (raw: number, suffix: "k" | "m") => {
+    const fixed = raw.toFixed(1);
+    return `${fixed.endsWith(".0") ? fixed.slice(0, -2) : fixed}${suffix}`;
+  };
+  if (value >= 1_000_000) {
+    return formatCompact(value / 1_000_000, "m");
+  }
+  if (value >= 1_000) {
+    return formatCompact(value / 1_000, "k");
+  }
+  return `${Math.round(value)}`;
+};
+
+const estimateTokensFromText = (value: string) => {
+  const normalized = value.trim();
+  if (!normalized) {
+    return 0;
+  }
+  const cjkCount = (normalized.match(/[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/g) ?? []).length;
+  const nonWhitespaceCount = (normalized.match(/\S/g) ?? []).length;
+  const otherCount = Math.max(0, nonWhitespaceCount - cjkCount);
+  const estimated = cjkCount * 1.05 + otherCount * 0.3;
+  return Math.max(1, Math.ceil(estimated));
+};
+
+const estimateTokensFromAttachment = (attachment: ChatAttachment) => {
+  if (attachment.kind === "text") {
+    return estimateTokensFromText(attachment.textContent ?? attachment.name);
+  }
+  if (attachment.kind === "image") {
+    return 260;
+  }
+  return 24;
+};
+
+const estimateTokensFromCompletionMessages = (messages: ChatStreamRequest["messages"]) =>
+  messages.reduce((total, message) => {
+    const contentTokens = estimateTokensFromText(message.content);
+    const attachmentTokens = (message.attachments ?? []).reduce(
+      (attachmentTotal, attachment) => attachmentTotal + estimateTokensFromAttachment(attachment),
+      0
+    );
+    // Include rough per-message protocol overhead.
+    return total + contentTokens + attachmentTokens + 8;
+  }, 0);
+
+const toProviderInputTokens = (usage?: ChatMessage["usage"]) => {
+  if (!usage || usage.source !== "provider") {
+    return 0;
+  }
+  return Math.max(0, usage.inputTokens);
+};
+
+const formatEnvironmentWeatherLabel = (
+  weather: EnvironmentWeatherSnapshot | undefined,
+  temperatureUnit: AppSettings["environment"]["temperatureUnit"]
+) => {
+  if (!weather || weather.status === "unavailable") {
+    return weather?.reason ? `Unavailable (${weather.reason})` : "Unavailable";
+  }
+  const metric = weather.temp === undefined ? "" : ` ${weather.temp}°${temperatureUnit.toUpperCase()}`;
+  const staleLabel = weather.status === "stale" ? " (stale)" : "";
+  return `${weather.summary ?? "Unknown"}${metric}${staleLabel}`.trim();
+};
+
+const formatEnvironmentBatteryLabel = (snapshot: EnvironmentSnapshot | null) => {
+  const battery = snapshot?.device.battery;
+  if (!battery) {
+    return "n/a";
+  }
+  const level = typeof battery.level === "number" ? `${battery.level}%` : "unknown";
+  return `${level}, ${battery.charging ? "charging" : "discharging"}`;
+};
+
+const formatBytes = (bytes: number | undefined) => {
+  if (typeof bytes !== "number" || !Number.isFinite(bytes) || bytes <= 0) {
+    return "n/a";
+  }
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = bytes;
+  let index = 0;
+  while (value >= 1024 && index < units.length - 1) {
+    value /= 1024;
+    index += 1;
+  }
+  const fixed = value >= 100 ? value.toFixed(0) : value >= 10 ? value.toFixed(1) : value.toFixed(2);
+  return `${fixed}${units[index]}`;
+};
+
+const formatEnvironmentMemoryLabel = (snapshot: EnvironmentSnapshot | null) => {
+  const physicalMemory = snapshot?.device.system?.physicalMemory?.trim();
+  if (physicalMemory) {
+    return physicalMemory;
+  }
+  const memory = snapshot?.device.memory;
+  if (!memory) {
+    return "n/a";
+  }
+  return `${formatBytes(memory.usedBytes)} / ${formatBytes(memory.totalBytes)}`;
+};
+
+const formatEnvironmentStorageLabel = (snapshot: EnvironmentSnapshot | null) => {
+  const storage = snapshot?.device.storage;
+  if (!storage) {
+    return "n/a";
+  }
+  return `${formatBytes(storage.usedBytes)} / ${formatBytes(storage.totalBytes)} (${storage.mountPath})`;
+};
+
+const formatEnvironmentSystemLabel = (snapshot: EnvironmentSnapshot | null) => {
+  const system = snapshot?.device.system;
+  if (!system) {
+    return "n/a";
+  }
+  const machine = system.machineName || system.machineModel || system.platform;
+  return `${machine} ${system.version || system.release} (${system.arch})`;
+};
+
+const formatEnvironmentChipLabel = (snapshot: EnvironmentSnapshot | null) => {
+  const chip = snapshot?.device.system?.chip?.trim();
+  return chip || "n/a";
 };
 
 const getExtension = (name: string) => {
@@ -187,7 +392,10 @@ const createSession = (title = "New Chat"): ChatSession => {
     title,
     createdAt: now,
     updatedAt: now,
-    messages: []
+    isPinned: false,
+    soulModeEnabled: false,
+    messages: [],
+    usageByModel: {}
   };
 };
 
@@ -233,7 +441,79 @@ const finalizeTitleFromPrompt = (prompt: string) => {
   return trimmed.length > 34 ? `${trimmed.slice(0, 34)}...` : trimmed;
 };
 
-const ensureSessions = (value: ChatSession[]) => (value.length ? value : [createSession()]);
+const normalizeSession = (session: ChatSession): ChatSession => ({
+  ...session,
+  isPinned: Boolean(session.isPinned),
+  soulModeEnabled: Boolean(session.soulModeEnabled)
+});
+
+const ensureSessions = (value: ChatSession[]) => {
+  const normalized = value.map(normalizeSession);
+  return normalized.length ? normalized : [createSession()];
+};
+
+const toSafeFileNameSegment = (value: string) => {
+  const cleaned = value
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return cleaned || "chat-session";
+};
+
+const sessionToMarkdown = (session: ChatSession) => {
+  const createdAt = new Date(session.createdAt).toLocaleString();
+  const updatedAt = new Date(session.updatedAt).toLocaleString();
+  const lines: string[] = [
+    `# ${session.title || "未命名会话"}`,
+    "",
+    `- 会话 ID: ${session.id}`,
+    `- 创建时间: ${createdAt}`,
+    `- 更新时间: ${updatedAt}`,
+    `- 灵魂模式: ${session.soulModeEnabled ? "开启" : "关闭"}`,
+    "",
+    "## 对话记录",
+    ""
+  ];
+
+  if (!session.messages.length) {
+    lines.push("_暂无消息_");
+    lines.push("");
+    return lines.join("\n");
+  }
+
+  session.messages.forEach((message, index) => {
+    const roleLabel =
+      message.role === "user" ? "用户" : message.role === "assistant" ? "助手" : "系统";
+    lines.push(`### ${index + 1}. ${roleLabel} (${new Date(message.createdAt).toLocaleString()})`);
+    lines.push("");
+    lines.push(message.content.trim() ? message.content : "_空内容_");
+    lines.push("");
+
+    if (message.reasoningContent?.trim()) {
+      lines.push("#### 推理内容");
+      lines.push("");
+      lines.push(message.reasoningContent);
+      lines.push("");
+    }
+
+    if (message.attachments?.length) {
+      lines.push("#### 附件");
+      message.attachments.forEach((attachment) => {
+        lines.push(
+          `- ${attachment.name} (${attachment.kind}, ${Math.max(
+            0,
+            Math.round(attachment.size / 1024)
+          )}KB)`
+        );
+      });
+      lines.push("");
+    }
+  });
+
+  return lines.join("\n");
+};
 
 export const App = () => {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -253,6 +533,12 @@ export const App = () => {
   const [agentDraft, setAgentDraft] = useState("");
   const [isAgentRunning, setIsAgentRunning] = useState(false);
   const [agentErrorBanner, setAgentErrorBanner] = useState<string | null>(null);
+  const [agentEnvironmentSnapshot, setAgentEnvironmentSnapshot] =
+    useState<EnvironmentSnapshot | null>(null);
+  const [agentEnvironmentCityDraft, setAgentEnvironmentCityDraft] = useState("");
+  const [agentEnvironmentWeatherSummaryDraft, setAgentEnvironmentWeatherSummaryDraft] = useState("");
+  const [isAgentEnvironmentRefreshing, setIsAgentEnvironmentRefreshing] = useState(false);
+  const [isAgentEnvironmentExpanded, setIsAgentEnvironmentExpanded] = useState(true);
   const [isHydrated, setIsHydrated] = useState(false);
   const [removedSession, setRemovedSession] = useState<RemovedSession | null>(null);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
@@ -265,6 +551,10 @@ export const App = () => {
   const removedTimeoutRef = useRef<number | null>(null);
   const draftAttachmentsRef = useRef<DraftAttachment[]>([]);
   const activeAgentRunRef = useRef<ActiveAgentRun | null>(null);
+  const agentEnvironmentSnapshotRef = useRef<EnvironmentSnapshot | null>(null);
+  const chatEnvironmentSnapshotRef = useRef<EnvironmentSnapshot | null>(null);
+  const agentEnvironmentCityDraftRef = useRef("");
+  const agentEnvironmentWeatherSummaryDraftRef = useRef("");
   const wasCompactLayoutRef = useRef(getCurrentViewportWidth() < SIDEBAR_AUTO_HIDE_WIDTH);
   const chatDropDepthRef = useRef(0);
   const [isChatDragOver, setIsChatDragOver] = useState(false);
@@ -282,6 +572,17 @@ export const App = () => {
     () => sessions.find((session) => session.id === activeSessionId),
     [sessions, activeSessionId]
   );
+  const orderedChatSessions = useMemo(() => {
+    const indexed = sessions.map((session, index) => ({ session, index }));
+    indexed.sort((left, right) => {
+      const pinDelta = Number(Boolean(right.session.isPinned)) - Number(Boolean(left.session.isPinned));
+      if (pinDelta !== 0) {
+        return pinDelta;
+      }
+      return left.index - right.index;
+    });
+    return indexed.map((entry) => entry.session);
+  }, [sessions]);
   const activeAgentSession = useMemo(
     () => agentSessions.find((session) => session.id === activeAgentSessionId),
     [agentSessions, activeAgentSessionId]
@@ -360,6 +661,33 @@ export const App = () => {
     () => resolveProviderModelCapabilities(activeProvider, settings.model),
     [activeProvider, settings.model]
   );
+  const activeModelContextWindow = useMemo(
+    () => resolveProviderModelContextWindow(activeProvider, settings.model),
+    [activeProvider, settings.model]
+  );
+  const latestAssistantProviderInputTokens = useMemo<number | null>(() => {
+    if (!activeSession) {
+      return null;
+    }
+    for (let index = activeSession.messages.length - 1; index >= 0; index -= 1) {
+      const candidate = activeSession.messages[index];
+      if (candidate.role !== "assistant") {
+        continue;
+      }
+      const inputTokens = toProviderInputTokens(candidate.usage);
+      if (inputTokens > 0) {
+        return inputTokens;
+      }
+    }
+    return null;
+  }, [activeSession]);
+  const composerUsageLabel = useMemo(() => {
+    const inputTokenLabel =
+      latestAssistantProviderInputTokens && latestAssistantProviderInputTokens > 0
+        ? formatTokenCount(latestAssistantProviderInputTokens)
+        : "--";
+    return `${inputTokenLabel} / ${formatTokenCount(activeModelContextWindow)}`;
+  }, [activeModelContextWindow, latestAssistantProviderInputTokens]);
   const agentSettingsSnapshot = useMemo(() => buildAgentRunSettingsSnapshot(settings), [settings]);
   const isAgentConfigured = useMemo(
     () => Boolean(agentSettingsSnapshot?.apiKey.trim() && agentSettingsSnapshot.model.trim()),
@@ -373,6 +701,82 @@ export const App = () => {
     setSessions((previous) =>
       previous.map((session) => (session.id === sessionId ? mutate(session) : session))
     );
+  };
+
+  const applyUsageDeltaToSession = (
+    sessionId: string,
+    modelUsageKey: string,
+    delta: StreamUsageSnapshot
+  ) => {
+    if (
+      !modelUsageKey ||
+      (delta.inputTokens <= 0 &&
+        delta.outputTokens <= 0 &&
+        delta.totalTokens <= 0 &&
+        delta.cacheReadTokens <= 0 &&
+        delta.cacheWriteTokens <= 0)
+    ) {
+      return;
+    }
+
+    upsertSession(sessionId, (session) => {
+      const current = session.usageByModel?.[modelUsageKey] ?? {
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        updatedAt: nowIso()
+      };
+
+      const nextInputTokens = current.inputTokens + delta.inputTokens;
+      const nextOutputTokens = current.outputTokens + delta.outputTokens;
+      const nextTotalTokens = Math.max(
+        current.totalTokens + delta.totalTokens,
+        nextInputTokens + nextOutputTokens
+      );
+
+      return {
+        ...session,
+        usageByModel: {
+          ...(session.usageByModel ?? {}),
+          [modelUsageKey]: {
+            inputTokens: nextInputTokens,
+            outputTokens: nextOutputTokens,
+            totalTokens: nextTotalTokens,
+            cacheReadTokens: current.cacheReadTokens + delta.cacheReadTokens,
+            cacheWriteTokens: current.cacheWriteTokens + delta.cacheWriteTokens,
+            updatedAt: nowIso()
+          }
+        }
+      };
+    });
+  };
+
+  const applyUsageToAssistantMessage = (
+    sessionId: string,
+    assistantMessageId: string,
+    usage: StreamUsageSnapshot,
+    source: ChatMessageUsage["source"]
+  ) => {
+    upsertSession(sessionId, (session) => ({
+      ...session,
+      messages: session.messages.map((message) =>
+        message.id === assistantMessageId
+          ? {
+              ...message,
+              usage: {
+                inputTokens: usage.inputTokens,
+                outputTokens: usage.outputTokens,
+                totalTokens: Math.max(usage.totalTokens, usage.inputTokens + usage.outputTokens),
+                cacheReadTokens: usage.cacheReadTokens,
+                cacheWriteTokens: usage.cacheWriteTokens,
+                source
+              }
+            }
+          : message
+      )
+    }));
   };
 
   const removeAssistantPlaceholderIfEmpty = (sessionId: string, messageId: string) => {
@@ -444,6 +848,149 @@ export const App = () => {
     }));
   };
 
+  const refreshAgentEnvironmentSnapshot = useCallback(async (): Promise<EnvironmentSnapshot | null> => {
+    if (!settings.environment.enabled) {
+      setAgentEnvironmentSnapshot(null);
+      return null;
+    }
+
+    setIsAgentEnvironmentRefreshing(true);
+    try {
+      const city = agentEnvironmentCityDraftRef.current.trim() || settings.environment.city.trim();
+      const cwd = activeAgentSession?.lastCwd ?? "";
+      const [local, systemStatus] = await Promise.all([
+        collectLocalEnvironmentContext(cwd),
+        api.env.getSystemStatus().catch(() => ({}))
+      ]);
+      let weather = buildUnavailableWeather(city ? "weather_lookup_skipped" : "city_not_set");
+
+      if (city) {
+        const timeoutMs = Math.min(Math.max(settings.environment.sendTimeoutMs, 100), 2000);
+        let timeoutId: number | null = null;
+
+        try {
+          const weatherRequest = api.env.getWeatherSnapshot({
+            city,
+            temperatureUnit: settings.environment.temperatureUnit,
+            cacheTtlMs: settings.environment.weatherCacheTtlMs
+          });
+          const timeoutRequest = new Promise<null>((resolve) => {
+            timeoutId = window.setTimeout(() => resolve(null), timeoutMs);
+          });
+          const nextWeather = await Promise.race([weatherRequest, timeoutRequest]);
+          weather =
+            nextWeather ??
+            toStaleWeatherFromPrevious(agentEnvironmentSnapshotRef.current?.weather, "weather_timeout") ??
+            buildUnavailableWeather("weather_timeout");
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : "weather_lookup_failed";
+          weather =
+            toStaleWeatherFromPrevious(agentEnvironmentSnapshotRef.current?.weather, reason) ??
+            buildUnavailableWeather(reason);
+        } finally {
+          if (timeoutId !== null) {
+            window.clearTimeout(timeoutId);
+          }
+        }
+      }
+
+      const summaryOverride = agentEnvironmentWeatherSummaryDraftRef.current.trim();
+      if (summaryOverride) {
+        weather = { ...weather, summary: summaryOverride };
+      }
+
+      const snapshot: EnvironmentSnapshot = {
+        ...local,
+        device: {
+          ...local.device,
+          ...systemStatus
+        },
+        location: { city },
+        weather
+      };
+      setAgentEnvironmentSnapshot(snapshot);
+      return snapshot;
+    } catch {
+      const fallback = agentEnvironmentSnapshotRef.current;
+      if (fallback) {
+        return fallback;
+      }
+      return null;
+    } finally {
+      setIsAgentEnvironmentRefreshing(false);
+    }
+  }, [
+    activeAgentSession?.lastCwd,
+    settings.environment.city,
+    settings.environment.enabled,
+    settings.environment.sendTimeoutMs,
+    settings.environment.temperatureUnit,
+    settings.environment.weatherCacheTtlMs
+  ]);
+
+  const buildChatEnvironmentSystemMessage = useCallback(async (): Promise<string | null> => {
+    if (!settings.environment.enabled) {
+      console.info("[chat][environment][injected]\nenvironment_snapshot_json: null (disabled)");
+      return null;
+    }
+
+    const city = settings.environment.city.trim();
+    const [local, systemStatus] = await Promise.all([
+      collectLocalEnvironmentContext(""),
+      api.env.getSystemStatus().catch(() => ({}))
+    ]);
+    let weather = buildUnavailableWeather(city ? "weather_lookup_skipped" : "city_not_set");
+
+    if (city) {
+      const timeoutMs = Math.min(Math.max(settings.environment.sendTimeoutMs, 100), 2000);
+      let timeoutId: number | null = null;
+      try {
+        const weatherRequest = api.env.getWeatherSnapshot({
+          city,
+          temperatureUnit: settings.environment.temperatureUnit,
+          cacheTtlMs: settings.environment.weatherCacheTtlMs
+        });
+        const timeoutRequest = new Promise<null>((resolve) => {
+          timeoutId = window.setTimeout(() => resolve(null), timeoutMs);
+        });
+        const nextWeather = await Promise.race([weatherRequest, timeoutRequest]);
+        weather =
+          nextWeather ??
+          toStaleWeatherFromPrevious(chatEnvironmentSnapshotRef.current?.weather, "weather_timeout") ??
+          buildUnavailableWeather("weather_timeout");
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : "weather_lookup_failed";
+        weather =
+          toStaleWeatherFromPrevious(chatEnvironmentSnapshotRef.current?.weather, reason) ??
+          buildUnavailableWeather(reason);
+      } finally {
+        if (timeoutId !== null) {
+          window.clearTimeout(timeoutId);
+        }
+      }
+    }
+
+    const snapshot: EnvironmentSnapshot = {
+      ...local,
+      device: {
+        ...local.device,
+        ...systemStatus
+      },
+      location: { city },
+      weather
+    };
+    chatEnvironmentSnapshotRef.current = snapshot;
+    const content = `environment_snapshot_json:\n${JSON.stringify(snapshot, null, 2)}`;
+    console.info(`[chat][environment][injected]\n${content}`);
+    return content;
+  }, [
+    settings.environment.city,
+    settings.environment.enabled,
+    settings.environment.sendTimeoutMs,
+    settings.environment.temperatureUnit,
+    settings.environment.weatherCacheTtlMs
+  ]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -460,7 +1007,7 @@ export const App = () => {
 
         const initialAgentSession =
           savedAgentSessions[0] ?? (await api.agent.createSession("New Agent Session"));
-        const nextSessions = savedSessions.length ? savedSessions : [createSession()];
+        const nextSessions = ensureSessions(savedSessions);
         const initialAgentMessages = await api.agent.getMessages(initialAgentSession.id);
         setSettings(savedSettings);
         setSessions(nextSessions);
@@ -503,6 +1050,50 @@ export const App = () => {
   useEffect(() => {
     draftAttachmentsRef.current = draftAttachments;
   }, [draftAttachments]);
+
+  useEffect(() => {
+    agentEnvironmentSnapshotRef.current = agentEnvironmentSnapshot;
+  }, [agentEnvironmentSnapshot]);
+
+  useEffect(() => {
+    agentEnvironmentCityDraftRef.current = agentEnvironmentCityDraft;
+  }, [agentEnvironmentCityDraft]);
+
+  useEffect(() => {
+    agentEnvironmentWeatherSummaryDraftRef.current = agentEnvironmentWeatherSummaryDraft;
+  }, [agentEnvironmentWeatherSummaryDraft]);
+
+  useEffect(() => {
+    if (!isHydrated) {
+      return;
+    }
+    if (agentEnvironmentCityDraftRef.current.trim()) {
+      return;
+    }
+    if (!settings.environment.city.trim()) {
+      return;
+    }
+    setAgentEnvironmentCityDraft(settings.environment.city);
+  }, [isHydrated, settings.environment.city]);
+
+  useEffect(() => {
+    if (!isHydrated || activeView !== "agent") {
+      return;
+    }
+    if (!settings.environment.enabled) {
+      setAgentEnvironmentSnapshot(null);
+      return;
+    }
+    void refreshAgentEnvironmentSnapshot().catch(() => {});
+  }, [
+    activeAgentSessionId,
+    activeView,
+    isHydrated,
+    refreshAgentEnvironmentSnapshot,
+    settings.environment.city,
+    settings.environment.enabled,
+    settings.environment.temperatureUnit
+  ]);
 
   useEffect(() => {
     if (!isHydrated || !activeAgentSessionId || agentMessagesBySession[activeAgentSessionId]) {
@@ -600,7 +1191,22 @@ export const App = () => {
     clearDraftAttachments();
   };
 
-  const renameChat = (sessionId: string) => {
+  const applyChatTitle = (sessionId: string, nextTitle: string) => {
+    const title = nextTitle.trim();
+    if (!title) {
+      return;
+    }
+    upsertSession(sessionId, (session) =>
+      session.title === title ? session : { ...session, title, updatedAt: nowIso() }
+    );
+  };
+
+  const renameChat = (sessionId: string, overrideTitle?: string) => {
+    if (typeof overrideTitle === "string") {
+      applyChatTitle(sessionId, overrideTitle);
+      return;
+    }
+
     const target = sessions.find((session) => session.id === sessionId);
     if (!target) {
       return;
@@ -613,7 +1219,11 @@ export const App = () => {
     if (!title) {
       return;
     }
-    upsertSession(sessionId, (session) => ({ ...session, title, updatedAt: nowIso() }));
+    applyChatTitle(sessionId, title);
+  };
+
+  const toggleChatPin = (sessionId: string) => {
+    upsertSession(sessionId, (session) => ({ ...session, isPinned: !Boolean(session.isPinned) }));
   };
 
   const deleteChat = (sessionId: string) => {
@@ -740,6 +1350,37 @@ export const App = () => {
     });
   };
 
+  const toggleChatEnvironmentInjection = () => {
+    setSettings((previous) => {
+      const nextSettings = normalizeSettings({
+        ...previous,
+        environment: {
+          ...previous.environment,
+          enabled: !previous.environment.enabled
+        }
+      });
+
+      void api.settings.save(nextSettings).catch((error) => {
+        setErrorBanner(
+          error instanceof Error ? error.message : "Failed to save environment injection setting."
+        );
+      });
+
+      return nextSettings;
+    });
+  };
+
+  const toggleSessionSoulMode = () => {
+    if (!activeSession) {
+      return;
+    }
+    upsertSession(activeSession.id, (session) => ({
+      ...session,
+      soulModeEnabled: !Boolean(session.soulModeEnabled),
+      updatedAt: nowIso()
+    }));
+  };
+
   const testConnection = async (next: AppSettings): Promise<ConnectionTestResult> =>
     api.settings.testConnection(next);
 
@@ -759,6 +1400,52 @@ export const App = () => {
       URL.revokeObjectURL(url);
     } catch (error) {
       setErrorBanner(error instanceof Error ? error.message : "Failed to export sessions.");
+    }
+  };
+
+  const exportSession = (sessionId: string) => {
+    const target = sessions.find((session) => session.id === sessionId);
+    if (!target) {
+      return;
+    }
+
+    try {
+      const payload = JSON.stringify(target, null, 2);
+      const blob = new Blob([payload], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      const dateSuffix = new Date().toISOString().slice(0, 10);
+      anchor.download = `mu-session-${toSafeFileNameSegment(target.title)}-${dateSuffix}.json`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setErrorBanner(error instanceof Error ? error.message : "Failed to export session.");
+    }
+  };
+
+  const exportSessionMarkdown = (sessionId: string) => {
+    const target = sessions.find((session) => session.id === sessionId);
+    if (!target) {
+      return;
+    }
+
+    try {
+      const payload = sessionToMarkdown(target);
+      const blob = new Blob([payload], { type: "text/markdown;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      const dateSuffix = new Date().toISOString().slice(0, 10);
+      anchor.download = `mu-session-${toSafeFileNameSegment(target.title)}-${dateSuffix}.md`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setErrorBanner(error instanceof Error ? error.message : "Failed to export session markdown.");
     }
   };
 
@@ -844,15 +1531,19 @@ export const App = () => {
     await saveSettings(DEFAULT_SETTINGS);
   };
 
-  const addFiles = (files: FileList | null) => {
-    if (!files || !files.length) {
+  const addFiles = (files: FileList | File[] | null) => {
+    if (!files) {
+      return;
+    }
+    const incomingFiles = Array.isArray(files) ? files : Array.from(files);
+    if (!incomingFiles.length) {
       return;
     }
 
     void (async () => {
       const blockedMessages: string[] = [];
       const nextAttachments = await Promise.all(
-        Array.from(files).map(async (file): Promise<DraftAttachment | null> => {
+        incomingFiles.map(async (file): Promise<DraftAttachment | null> => {
           const base: DraftAttachment = {
             id: createId(),
             name: file.name,
@@ -999,14 +1690,15 @@ export const App = () => {
       content: trimmedContent,
       attachments: nextAttachments.length ? nextAttachments : undefined
     };
-    void sendFromBaseMessages(activeSession, baseMessages, editedMessage, false);
+    void sendFromBaseMessages(activeSession, baseMessages, editedMessage, false, false);
   };
 
   const sendFromBaseMessages = async (
     session: ChatSession,
     baseMessages: ChatMessage[],
     userMessage: ChatMessage,
-    allowRetitle: boolean
+    allowRetitle: boolean,
+    shouldIngestPersona: boolean
   ) => {
     if (!isConfigured || isGenerating) {
       return;
@@ -1027,9 +1719,60 @@ export const App = () => {
       settings.chatContextWindow
     );
     const systemPrompt = settings.systemPrompt.trim();
-    const messagesWithSystem = systemPrompt
-      ? [{ role: "system" as const, content: systemPrompt }, ...completionMessages]
-      : completionMessages;
+
+    if (shouldIngestPersona) {
+      void api.persona
+        .ingestMessage({
+          text: userMessage.content,
+          createdAt: userMessage.createdAt
+        })
+        .catch((error) => {
+          console.warn(
+            "[persona][ingest] failed",
+            error instanceof Error ? error.message : "unknown_error"
+          );
+        });
+    }
+
+    let environmentSystemContent: string | null = null;
+    try {
+      environmentSystemContent = await buildChatEnvironmentSystemMessage();
+    } catch (error) {
+      console.warn(
+        "[chat][environment][injected] failed",
+        error instanceof Error ? error.message : "unknown_error"
+      );
+      environmentSystemContent = null;
+    }
+
+    let soulMemoryContent: string | null = null;
+    if (session.soulModeEnabled) {
+      try {
+        const payload = await api.persona.getInjectionPayload();
+        soulMemoryContent = payload.block.trim() || null;
+        if (payload.snapshot.warning) {
+          console.warn("[persona][sync] warning", payload.snapshot.warning.message);
+        }
+      } catch (error) {
+        console.warn(
+          "[persona][injected] failed",
+          error instanceof Error ? error.message : "unknown_error"
+        );
+        soulMemoryContent = null;
+      }
+    }
+
+    const systemMessages: ChatStreamRequest["messages"] = [
+      ...(systemPrompt ? [{ role: "system" as const, content: systemPrompt }] : []),
+      ...(environmentSystemContent
+        ? [{ role: "system" as const, content: environmentSystemContent }]
+        : []),
+      ...(soulMemoryContent
+        ? [{ role: "system" as const, content: soulMemoryContent }]
+        : [])
+    ];
+    const messagesWithSystem = [...systemMessages, ...completionMessages];
+    const submittedContextTokens = estimateTokensFromCompletionMessages(messagesWithSystem);
 
     upsertSession(session.id, (current) => {
       const shouldRetitle =
@@ -1044,6 +1787,7 @@ export const App = () => {
 
     setDraft("");
     setIsGenerating(true);
+    const streamModelUsageKey = toModelUsageKey(settings.activeProviderId, settings.model);
 
     try {
       const { streamId } = await api.chat.startStream({
@@ -1055,11 +1799,55 @@ export const App = () => {
         streamId,
         sessionId: session.id,
         assistantMessageId: assistantMessage.id,
+        usageModelKey: streamModelUsageKey,
+        usageSnapshot: { ...EMPTY_STREAM_USAGE_SNAPSHOT },
+        hasUsageEvent: false,
+        estimatedInputTokens: submittedContextTokens,
+        estimatedOutputTokens: 0,
         pendingDelta: "",
         pendingReasoningDelta: "",
         flushTimeoutId: null,
         flushPending: () => {},
         unsubscribe: () => {}
+      };
+
+      const applyEstimatedUsageFallback = () => {
+        if (streamState.hasUsageEvent) {
+          return;
+        }
+        const totalTokens = streamState.estimatedInputTokens + streamState.estimatedOutputTokens;
+        if (totalTokens <= 0) {
+          return;
+        }
+        console.info("[usage][estimated]", {
+          streamId: streamState.streamId,
+          providerType: settings.providerType,
+          model: settings.model,
+          usage: {
+            inputTokens: streamState.estimatedInputTokens,
+            outputTokens: streamState.estimatedOutputTokens,
+            totalTokens
+          }
+        });
+        applyUsageDeltaToSession(streamState.sessionId, streamState.usageModelKey, {
+          inputTokens: streamState.estimatedInputTokens,
+          outputTokens: streamState.estimatedOutputTokens,
+          totalTokens,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0
+        });
+        applyUsageToAssistantMessage(
+          streamState.sessionId,
+          streamState.assistantMessageId,
+          {
+            inputTokens: streamState.estimatedInputTokens,
+            outputTokens: streamState.estimatedOutputTokens,
+            totalTokens,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0
+          },
+          "estimated"
+        );
       };
 
       const flushPendingDelta = () => {
@@ -1088,6 +1876,7 @@ export const App = () => {
 
       const unsubscribe = api.chat.onStreamEvent(streamId, (event) => {
         if (event.type === "delta") {
+          streamState.estimatedOutputTokens += estimateTokensFromText(event.delta);
           streamState.pendingDelta += event.delta;
           if (streamState.flushTimeoutId === null) {
             streamState.flushTimeoutId = window.setTimeout(() => {
@@ -1098,6 +1887,7 @@ export const App = () => {
           return;
         }
         if (event.type === "reasoning") {
+          streamState.estimatedOutputTokens += estimateTokensFromText(event.delta);
           streamState.pendingReasoningDelta += event.delta;
           if (streamState.flushTimeoutId === null) {
             streamState.flushTimeoutId = window.setTimeout(() => {
@@ -1107,9 +1897,29 @@ export const App = () => {
           }
           return;
         }
+        if (event.type === "usage") {
+          console.info("[usage][stream:event]", {
+            streamId: streamState.streamId,
+            providerType: settings.providerType,
+            model: settings.model,
+            usage: event.usage
+          });
+          streamState.hasUsageEvent = true;
+          const { next, delta } = mergeUsageSnapshot(streamState.usageSnapshot, event.usage);
+          streamState.usageSnapshot = next;
+          applyUsageDeltaToSession(streamState.sessionId, streamState.usageModelKey, delta);
+          applyUsageToAssistantMessage(
+            streamState.sessionId,
+            streamState.assistantMessageId,
+            streamState.usageSnapshot,
+            "provider"
+          );
+          return;
+        }
 
         if (event.type === "error") {
           flushPendingDelta();
+          applyEstimatedUsageFallback();
           removeAssistantPlaceholderIfEmpty(streamState.sessionId, streamState.assistantMessageId);
           setErrorBanner(event.message);
           finishActiveStream();
@@ -1117,6 +1927,7 @@ export const App = () => {
         }
 
         flushPendingDelta();
+        applyEstimatedUsageFallback();
         removeAssistantPlaceholderIfEmpty(streamState.sessionId, streamState.assistantMessageId);
         finishActiveStream();
       });
@@ -1142,7 +1953,7 @@ export const App = () => {
 
     const baseMessages = activeSession.messages.slice(0, resendIndex);
     const userMessage = activeSession.messages[resendIndex];
-    void sendFromBaseMessages(activeSession, baseMessages, userMessage, false);
+    void sendFromBaseMessages(activeSession, baseMessages, userMessage, false, false);
   };
 
   const sendMessage = async (content: string) => {
@@ -1174,7 +1985,7 @@ export const App = () => {
       attachments: messageAttachments.length ? messageAttachments : undefined
     };
 
-    await sendFromBaseMessages(activeSession, activeSession.messages, userMessage, true);
+    await sendFromBaseMessages(activeSession, activeSession.messages, userMessage, true, true);
     clearDraftAttachments();
   };
 
@@ -1205,6 +2016,15 @@ export const App = () => {
     if (!runSettings) {
       setAgentErrorBanner("请先在 Settings 选择 Claude Agent SDK provider。");
       return;
+    }
+
+    let environmentSnapshot: EnvironmentSnapshot | undefined;
+    if (settings.environment.enabled) {
+      try {
+        environmentSnapshot = (await refreshAgentEnvironmentSnapshot()) ?? undefined;
+      } catch {
+        environmentSnapshot = undefined;
+      }
     }
 
     setAgentErrorBanner(null);
@@ -1241,13 +2061,16 @@ export const App = () => {
       );
     }
     setAgentDraft("");
+    setAgentEnvironmentWeatherSummaryDraft("");
+    agentEnvironmentWeatherSummaryDraftRef.current = "";
     setIsAgentRunning(true);
 
     try {
       const { runId } = await api.agent.sendMessage({
         sessionId,
         input,
-        settings: runSettings
+        settings: runSettings,
+        environmentSnapshot
       });
 
       const handleEnvelope = (payload: AgentStreamEnvelope) => {
@@ -1379,7 +2202,7 @@ export const App = () => {
     activeView === "chat" ? (
       <Sidebar
         mode="chat"
-        sessions={sessions}
+        sessions={orderedChatSessions}
         activeSessionId={activeSessionId}
         onSelectSession={(sessionId) => {
           setActiveSessionId(sessionId);
@@ -1389,8 +2212,11 @@ export const App = () => {
           createNewChat();
           closeSidebarIfCompact();
         }}
-        onRenameSession={renameChat}
+        onRenameSession={(sessionId, title) => renameChat(sessionId, title)}
         onDeleteSession={deleteChat}
+        onTogglePinSession={toggleChatPin}
+        onExportSession={exportSession}
+        onExportSessionMarkdown={exportSessionMarkdown}
         onEnterAgent={() => {
           setActiveView("agent");
           closeSidebarIfCompact();
@@ -1518,9 +2344,29 @@ export const App = () => {
                       </p>
                     </div>
                   </div>
-                  <p className="rounded-[4px] border border-border/90 bg-card/70 px-2.5 py-1 text-xs text-muted-foreground">
-                    {activeSession?.messages.length ?? 0} notes
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant={activeSession?.soulModeEnabled ? "default" : "outline"}
+                      size="sm"
+                      className="h-8 px-2 text-xs"
+                      onClick={toggleSessionSoulMode}
+                    >
+                      灵魂模式: {activeSession?.soulModeEnabled ? "On" : "Off"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-8 px-2 text-xs"
+                      onClick={toggleChatEnvironmentInjection}
+                    >
+                      环境注入: {settings.environment.enabled ? "On" : "Off"}
+                    </Button>
+                    <p className="rounded-[4px] border border-border/90 bg-card/70 px-2.5 py-1 text-xs text-muted-foreground">
+                      {activeSession?.messages.length ?? 0} notes
+                    </p>
+                  </div>
                 </div>
               </header>
 
@@ -1560,6 +2406,10 @@ export const App = () => {
 
               <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-[#f5f8fe] via-[#f5f8fe]/95 to-transparent px-2 pb-2 pt-4 dark:from-[#20293a] dark:via-[#20293a]/94 sm:px-3 sm:pb-3 sm:pt-6 md:px-6 md:pb-4 md:pt-7">
                 <div className="pointer-events-auto mx-auto w-full min-w-0 max-w-[980px]">
+                  <AttachmentTray
+                    attachments={draftAttachments}
+                    onRemoveAttachment={removeAttachment}
+                  />
                   <Composer
                     value={draft}
                     modelLabel={settings.model || "Model"}
@@ -1568,10 +2418,9 @@ export const App = () => {
                     modelCapabilities={activeModelCapabilities}
                     sendWithEnter={settings.sendWithEnter}
                     chatContextWindow={settings.chatContextWindow}
-                    attachments={draftAttachments}
+                    attachmentCount={draftAttachments.length}
                     onAddFiles={addFiles}
                     onChangeChatContextWindow={updateChatContextWindow}
-                    onRemoveAttachment={removeAttachment}
                     onSelectModel={selectComposerModel}
                     onChange={setDraft}
                     onSubmit={(value) => {
@@ -1580,6 +2429,7 @@ export const App = () => {
                     onStop={() => {
                       void stopGenerating();
                     }}
+                    usageLabel={composerUsageLabel}
                     disabled={!isConfigured}
                     isGenerating={isGenerating}
                   />
@@ -1634,12 +2484,115 @@ export const App = () => {
                 </div>
               ) : null}
 
-              <div className="h-full min-h-0 bg-card/40 pb-[168px]">
+              <div className="h-full min-h-0 bg-card/40 pb-[332px]">
                 <AgentView messages={activeAgentMessages} isRunning={isAgentRunning} />
               </div>
 
               <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-[#f5f8fe] via-[#f5f8fe]/95 to-transparent px-2 pb-2 pt-4 dark:from-[#20293a] dark:via-[#20293a]/94 sm:px-3 sm:pb-3 sm:pt-6 md:px-6 md:pb-4 md:pt-7">
                 <div className="pointer-events-auto mx-auto w-full min-w-0 max-w-[980px] rounded-[8px] border border-border/85 bg-card/90 p-3 shadow-[3px_3px_0_hsl(var(--border))]">
+                  {settings.environment.enabled ? (
+                    <div className="mb-3 rounded-[6px] border border-border/70 bg-background/60 px-3 py-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                          Environment Context
+                        </p>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 px-2 text-[11px]"
+                            onClick={() => {
+                              void refreshAgentEnvironmentSnapshot();
+                            }}
+                            disabled={isAgentEnvironmentRefreshing}
+                          >
+                            {isAgentEnvironmentRefreshing ? "Refreshing..." : "Refresh"}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-[11px]"
+                            onClick={() => setIsAgentEnvironmentExpanded((previous) => !previous)}
+                          >
+                            {isAgentEnvironmentExpanded ? "Hide" : "Show"}
+                          </Button>
+                        </div>
+                      </div>
+
+                      {isAgentEnvironmentExpanded ? (
+                        <div className="mt-2 space-y-2 border-t border-border/55 pt-2">
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            <div className="space-y-1">
+                              <label className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
+                                City
+                              </label>
+                              <Input
+                                value={agentEnvironmentCityDraft}
+                                onChange={(event) => {
+                                  const nextValue = event.target.value;
+                                  setAgentEnvironmentCityDraft(nextValue);
+                                  agentEnvironmentCityDraftRef.current = nextValue;
+                                }}
+                                placeholder={settings.environment.city || "e.g. San Francisco"}
+                                className="h-8 text-xs"
+                              />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
+                                Weather Summary Override
+                              </label>
+                              <Input
+                                value={agentEnvironmentWeatherSummaryDraft}
+                                onChange={(event) => {
+                                  const nextValue = event.target.value;
+                                  setAgentEnvironmentWeatherSummaryDraft(nextValue);
+                                  agentEnvironmentWeatherSummaryDraftRef.current = nextValue;
+                                }}
+                                placeholder="Optional, e.g. light rain"
+                                className="h-8 text-xs"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="rounded-[6px] border border-border/60 bg-card/60 px-2.5 py-2 text-xs text-muted-foreground">
+                            <p>
+                              Time: {agentEnvironmentSnapshot?.time.date ?? "--"}{" "}
+                              {agentEnvironmentSnapshot?.time.time ?? "--"} (
+                              {agentEnvironmentSnapshot?.time.timezone ?? "--"})
+                            </p>
+                            <p>City: {agentEnvironmentSnapshot?.location.city || "(not set)"}</p>
+                            <p>
+                              Weather:{" "}
+                              {formatEnvironmentWeatherLabel(
+                                agentEnvironmentSnapshot?.weather,
+                                settings.environment.temperatureUnit
+                              )}
+                            </p>
+                            <p>
+                              Network:{" "}
+                              {agentEnvironmentSnapshot?.device.network
+                                ? `${agentEnvironmentSnapshot.device.network.online ? "online" : "offline"}${agentEnvironmentSnapshot.device.network.effectiveType ? ` (${agentEnvironmentSnapshot.device.network.effectiveType})` : ""}`
+                                : "n/a"}
+                            </p>
+                            <p>Battery: {formatEnvironmentBatteryLabel(agentEnvironmentSnapshot)}</p>
+                            <p>Device: {agentEnvironmentSnapshot?.device.type ?? "unknown"}</p>
+                            <p>System: {formatEnvironmentSystemLabel(agentEnvironmentSnapshot)}</p>
+                            <p>Chip: {formatEnvironmentChipLabel(agentEnvironmentSnapshot)}</p>
+                            <p>Memory: {formatEnvironmentMemoryLabel(agentEnvironmentSnapshot)}</p>
+                            <p>Storage: {formatEnvironmentStorageLabel(agentEnvironmentSnapshot)}</p>
+                            <p>CWD: {agentEnvironmentSnapshot?.cwd || "(default)"}</p>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div className="mb-3 rounded-[6px] border border-dashed border-border/65 bg-background/40 px-3 py-2 text-xs text-muted-foreground">
+                      Environment context is disabled. Enable it in Settings {" > "} Chat.
+                    </div>
+                  )}
+
                   <div className="mb-2 flex items-center justify-between gap-2">
                     <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
                       {agentSettingsSnapshot?.model || "Agent model"}
@@ -1675,6 +2628,10 @@ export const App = () => {
                     disabled={!isAgentConfigured || isAgentRunning}
                     className="min-h-[96px] resize-none"
                     onKeyDown={(event) => {
+                      if (event.nativeEvent.isComposing || event.keyCode === 229) {
+                        return;
+                      }
+
                       if (!settings.sendWithEnter) {
                         return;
                       }

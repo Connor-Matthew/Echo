@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronRight,
   Copy,
+  Cpu,
   Database,
   Eye,
   EyeOff,
@@ -17,6 +18,10 @@ import {
   X
 } from "lucide-react";
 import { cn } from "../lib/utils";
+import {
+  resolveProviderModelContextWindow,
+  toModelContextWindowKey
+} from "../lib/model-context-window";
 import {
   resolveProviderModelCapabilities,
   toModelCapabilityKey
@@ -223,6 +228,7 @@ const createProvider = (index: number): StoredProvider => ({
   model: "",
   savedModels: [],
   modelCapabilities: {},
+  modelContextWindows: {},
   providerType: "openai",
   enabled: true,
   isPinned: false
@@ -238,6 +244,7 @@ const getActiveProvider = (settings: AppSettings): StoredProvider => {
       model: settings.model,
       savedModels: settings.model.trim() ? [settings.model.trim()] : [],
       modelCapabilities: {},
+      modelContextWindows: {},
       providerType: settings.providerType,
       enabled: true,
       isPinned: false
@@ -307,6 +314,21 @@ const normalizeDraft = (settings: AppSettings): AppSettings => {
         })
         .filter((entry): entry is [string, ModelCapabilities] => Boolean(entry))
     );
+    const modelContextWindows = Object.fromEntries(
+      Object.entries(provider.modelContextWindows ?? {})
+        .map(([modelId, contextWindow]) => {
+          const key = modelId.trim().toLowerCase();
+          if (!key || typeof contextWindow !== "number" || !Number.isFinite(contextWindow)) {
+            return null;
+          }
+          const rounded = Math.round(contextWindow);
+          if (rounded < 1024 || rounded > 2_000_000) {
+            return null;
+          }
+          return [key, rounded] as const;
+        })
+        .filter((entry): entry is [string, number] => Boolean(entry))
+    );
 
     return {
       ...provider,
@@ -317,6 +339,7 @@ const normalizeDraft = (settings: AppSettings): AppSettings => {
       model,
       savedModels,
       modelCapabilities,
+      modelContextWindows,
       providerType:
         provider.providerType === "anthropic"
           ? "anthropic"
@@ -458,6 +481,27 @@ const validateSettingsForSection = (draft: AppSettings, section: SettingsSection
     return null;
   }
 
+  if (section === "environment") {
+    if (draft.environment.temperatureUnit !== "c" && draft.environment.temperatureUnit !== "f") {
+      return "Environment temperature unit must be C or F.";
+    }
+    if (
+      !Number.isInteger(draft.environment.weatherCacheTtlMs) ||
+      draft.environment.weatherCacheTtlMs < 60000 ||
+      draft.environment.weatherCacheTtlMs > 3600000
+    ) {
+      return "Weather cache TTL must be 60000-3600000 ms.";
+    }
+    if (
+      !Number.isInteger(draft.environment.sendTimeoutMs) ||
+      draft.environment.sendTimeoutMs < 100 ||
+      draft.environment.sendTimeoutMs > 2000
+    ) {
+      return "Environment timeout must be 100-2000 ms.";
+    }
+    return null;
+  }
+
   if (section === "advanced") {
     if (
       !Number.isInteger(draft.requestTimeoutMs) ||
@@ -490,7 +534,8 @@ const areSettingsEqual = (left: AppSettings, right: AppSettings) =>
   left.messageDensity === right.messageDensity &&
   left.requestTimeoutMs === right.requestTimeoutMs &&
   left.retryCount === right.retryCount &&
-  left.sseDebug === right.sseDebug;
+  left.sseDebug === right.sseDebug &&
+  JSON.stringify(left.environment) === JSON.stringify(right.environment);
 
 const isValidImportedSessions = (value: unknown): value is ChatSession[] =>
   Array.isArray(value) &&
@@ -528,6 +573,7 @@ export const SettingsCenter = ({
   const [collapsedModelGroups, setCollapsedModelGroups] = useState<Record<string, boolean>>({});
   const [isApiKeyVisible, setIsApiKeyVisible] = useState(false);
   const [isApiKeyCopied, setIsApiKeyCopied] = useState(false);
+  const [modelContextWindowDraft, setModelContextWindowDraft] = useState("");
   const [isResetting, setIsResetting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -544,6 +590,7 @@ export const SettingsCenter = ({
     setIsFetchingModels(false);
     setIsApiKeyVisible(false);
     setIsApiKeyCopied(false);
+    setModelContextWindowDraft("");
   }, [settings, section]);
 
   const isDirty = useMemo(() => !areSettingsEqual(draft, settings), [draft, settings]);
@@ -572,6 +619,14 @@ export const SettingsCenter = ({
   const hasActiveModelCapabilityOverride = useMemo(() => {
     const key = toModelCapabilityKey(activeProvider.model);
     return Boolean(key && activeProvider.modelCapabilities?.[key]);
+  }, [activeProvider]);
+  const activeModelContextWindow = useMemo(
+    () => resolveProviderModelContextWindow(activeProvider, activeProvider.model),
+    [activeProvider]
+  );
+  const hasActiveModelContextWindowOverride = useMemo(() => {
+    const key = toModelContextWindowKey(activeProvider.model);
+    return Boolean(key && typeof activeProvider.modelContextWindows?.[key] === "number");
   }, [activeProvider]);
   const mergedModelOptions = useMemo(() => {
     const currentModel = activeProvider.model.trim();
@@ -616,8 +671,25 @@ export const SettingsCenter = ({
     return Array.from(groups.entries()).sort((left, right) => left[0].localeCompare(right[0]));
   }, [filteredModelOptions]);
 
+  useEffect(() => {
+    setModelContextWindowDraft(String(activeModelContextWindow));
+  }, [activeModelContextWindow, activeProvider.id, activeProvider.model]);
+
   const updateField = <K extends keyof AppSettings>(field: K, value: AppSettings[K]) => {
     setDraft((previous) => ({ ...previous, [field]: value }));
+  };
+
+  const updateEnvironmentField = <K extends keyof AppSettings["environment"]>(
+    field: K,
+    value: AppSettings["environment"][K]
+  ) => {
+    setDraft((previous) => ({
+      ...previous,
+      environment: {
+        ...previous.environment,
+        [field]: value
+      }
+    }));
   };
 
   const updateActiveProviderField = (
@@ -745,14 +817,17 @@ export const SettingsCenter = ({
         const nextModel = provider.model === modelId ? nextSavedModels[0] ?? "" : provider.model;
         const key = toModelCapabilityKey(modelId);
         const nextCapabilities = { ...(provider.modelCapabilities ?? {}) };
+        const nextContextWindows = { ...(provider.modelContextWindows ?? {}) };
         if (key) {
           delete nextCapabilities[key];
+          delete nextContextWindows[key];
         }
         return {
           ...provider,
           model: nextModel,
           savedModels: nextSavedModels,
-          modelCapabilities: nextCapabilities
+          modelCapabilities: nextCapabilities,
+          modelContextWindows: nextContextWindows
         };
       });
       return syncProviderState(previous, nextProviders, previous.activeProviderId);
@@ -822,6 +897,58 @@ export const SettingsCenter = ({
       return syncProviderState(previous, nextProviders, previous.activeProviderId);
     });
     setProviderMessage("Model capabilities reset to auto-detected values.");
+  };
+
+  const setActiveModelContextWindow = (nextValue: number) => {
+    const modelId = activeProvider.model.trim();
+    const key = toModelContextWindowKey(modelId);
+    if (!key) {
+      setProviderMessage("Please choose a model first.");
+      return;
+    }
+
+    const normalized = Math.round(clamp(nextValue, 1024, 2_000_000));
+    setDraft((previous) => {
+      const nextProviders = previous.providers.map((provider) => {
+        if (provider.id !== previous.activeProviderId) {
+          return provider;
+        }
+        return {
+          ...provider,
+          modelContextWindows: {
+            ...(provider.modelContextWindows ?? {}),
+            [key]: normalized
+          }
+        };
+      });
+      return syncProviderState(previous, nextProviders, previous.activeProviderId);
+    });
+    setProviderMessage(`Updated model context window: ${normalized.toLocaleString()} tokens`);
+    setSaveError(null);
+  };
+
+  const resetActiveModelContextWindow = () => {
+    const key = toModelContextWindowKey(activeProvider.model);
+    if (!key) {
+      setProviderMessage("Please choose a model first.");
+      return;
+    }
+
+    setDraft((previous) => {
+      const nextProviders = previous.providers.map((provider) => {
+        if (provider.id !== previous.activeProviderId) {
+          return provider;
+        }
+        const nextContextWindows = { ...(provider.modelContextWindows ?? {}) };
+        delete nextContextWindows[key];
+        return {
+          ...provider,
+          modelContextWindows: nextContextWindows
+        };
+      });
+      return syncProviderState(previous, nextProviders, previous.activeProviderId);
+    });
+    setProviderMessage("Model context window reset to auto-detected value.");
   };
 
   const switchActiveProvider = (providerId: string) => {
@@ -1436,6 +1563,41 @@ export const SettingsCenter = ({
                         默认按模型名自动推断；你可以手动覆盖。输入窗口会按这些能力限制附件并给出提示。
                       </p>
                     </div>
+                    <div className="space-y-1.5 rounded-md border border-border bg-secondary/45 p-2.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                          Context Window (tokens)
+                        </p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={resetActiveModelContextWindow}
+                          disabled={!activeProvider.model.trim() || !hasActiveModelContextWindowOverride}
+                        >
+                          Auto detect
+                        </Button>
+                      </div>
+                      <Input
+                        value={modelContextWindowDraft}
+                        onChange={(event) => setModelContextWindowDraft(event.target.value)}
+                        onBlur={() => {
+                          const parsed = Number.parseInt(modelContextWindowDraft, 10);
+                          if (!Number.isFinite(parsed)) {
+                            setModelContextWindowDraft(String(activeModelContextWindow));
+                            return;
+                          }
+                          setActiveModelContextWindow(parsed);
+                        }}
+                        type="number"
+                        min={1024}
+                        max={2_000_000}
+                        step={1}
+                      />
+                      <p className="text-[11px] text-muted-foreground">
+                        这里是模型可用上下文窗口。输入框右下角的 usage 监控会显示“已用 / 这个上限”。
+                      </p>
+                    </div>
                     <div className="space-y-1.5">
                       <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
                         Saved models for this channel
@@ -1659,6 +1821,145 @@ export const SettingsCenter = ({
                   {draft.sendWithEnter ? "On" : "Off"}
                 </span>
               </button>
+
+              {saveError ? <p className="text-sm text-destructive">{saveError}</p> : null}
+              <div className="flex items-center justify-end">
+                <Button onClick={save} disabled={isSaving || !isDirty}>
+                  {isSaving ? "Saving..." : "Save"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {section === "environment" ? (
+          <Card className="border-border bg-card/80">
+            <CardHeader>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Cpu className="h-4 w-4" />
+                <span className="text-xs font-medium uppercase tracking-[0.16em]">Environment</span>
+              </div>
+              <CardTitle className="text-2xl">Environment injection</CardTitle>
+              <CardDescription>
+                Configure runtime environment context injection for Chat and Agent.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-3 rounded-[6px] border border-border/75 bg-card px-4 py-3">
+                <button
+                  type="button"
+                  className={cn(
+                    "flex w-full items-center justify-between rounded-[6px] border px-3 py-2 text-left transition-colors",
+                    draft.environment.enabled
+                      ? "border-border bg-accent/50"
+                      : "border-border/70 bg-background hover:bg-secondary/65"
+                  )}
+                  onClick={() => updateEnvironmentField("enabled", !draft.environment.enabled)}
+                >
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">Inject environment context</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Adds date, time, city weather, network, battery, and device hints to runtime context.
+                    </p>
+                  </div>
+                  <span className="text-xs font-medium text-muted-foreground">
+                    {draft.environment.enabled ? "On" : "Off"}
+                  </span>
+                </button>
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label htmlFor="environmentCity" className="text-sm text-muted-foreground">
+                      City (manual)
+                    </label>
+                    <Input
+                      id="environmentCity"
+                      value={draft.environment.city}
+                      onChange={(event) => updateEnvironmentField("city", event.target.value)}
+                      placeholder="e.g. San Francisco"
+                      disabled={!draft.environment.enabled}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-sm text-muted-foreground">Temperature unit</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(["c", "f"] as const).map((unit) => (
+                        <button
+                          key={unit}
+                          type="button"
+                          className={cn(
+                            "rounded-[6px] border px-3 py-2 text-sm font-medium transition-colors",
+                            draft.environment.temperatureUnit === unit
+                              ? "border-border bg-accent/60"
+                              : "border-border/70 bg-background hover:bg-secondary/65"
+                          )}
+                          onClick={() => updateEnvironmentField("temperatureUnit", unit)}
+                          disabled={!draft.environment.enabled}
+                        >
+                          {unit === "c" ? "Celsius (C)" : "Fahrenheit (F)"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <label htmlFor="weatherCacheTtlMs" className="text-sm text-muted-foreground">
+                      Weather cache TTL (60000 - 3600000 ms)
+                    </label>
+                    <Input
+                      id="weatherCacheTtlMs"
+                      type="number"
+                      min={60000}
+                      max={3600000}
+                      step={1000}
+                      value={draft.environment.weatherCacheTtlMs}
+                      onChange={(event) =>
+                        updateEnvironmentField(
+                          "weatherCacheTtlMs",
+                          Number.parseInt(event.target.value, 10) || 60000
+                        )
+                      }
+                      onBlur={() =>
+                        updateEnvironmentField(
+                          "weatherCacheTtlMs",
+                          Math.round(clamp(draft.environment.weatherCacheTtlMs, 60000, 3600000))
+                        )
+                      }
+                      disabled={!draft.environment.enabled}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label htmlFor="environmentSendTimeoutMs" className="text-sm text-muted-foreground">
+                      Send-time wait limit (100 - 2000 ms)
+                    </label>
+                    <Input
+                      id="environmentSendTimeoutMs"
+                      type="number"
+                      min={100}
+                      max={2000}
+                      step={50}
+                      value={draft.environment.sendTimeoutMs}
+                      onChange={(event) =>
+                        updateEnvironmentField(
+                          "sendTimeoutMs",
+                          Number.parseInt(event.target.value, 10) || 100
+                        )
+                      }
+                      onBlur={() =>
+                        updateEnvironmentField(
+                          "sendTimeoutMs",
+                          Math.round(clamp(draft.environment.sendTimeoutMs, 100, 2000))
+                        )
+                      }
+                      disabled={!draft.environment.enabled}
+                    />
+                  </div>
+                </div>
+              </div>
 
               {saveError ? <p className="text-sm text-destructive">{saveError}</p> : null}
               <div className="flex items-center justify-end">

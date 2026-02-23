@@ -1,4 +1,4 @@
-import type { AppSettings, StoredProvider } from "./contracts";
+import type { AppSettings, EnvironmentSnapshot, StoredProvider } from "./contracts";
 
 export type AgentSessionMeta = {
   id: string;
@@ -64,6 +64,7 @@ export type AgentSendMessageRequest = {
   input: string;
   cwd?: string;
   settings: AgentRunSettingsSnapshot;
+  environmentSnapshot?: EnvironmentSnapshot;
 };
 
 export type AgentSendMessageResult = {

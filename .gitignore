@@ -5,3 +5,5 @@ dist-electron
 vite.config.js
 vite.config.d.ts
 .alma-snapshots
+.DS_Store
+release/

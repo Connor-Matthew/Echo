@@ -1,10 +1,12 @@
 import type { AgentMessage, AgentRunSettingsSnapshot } from "../../src/shared/agent-contracts";
+import type { EnvironmentSnapshot } from "../../src/shared/contracts";
 
 type BuildAgentPromptInput = {
   settings: AgentRunSettingsSnapshot;
   input: string;
   history: AgentMessage[];
   cwd: string;
+  environmentSnapshot?: EnvironmentSnapshot;
 };
 
 const HISTORY_LIMIT = 20;
@@ -41,14 +43,29 @@ const buildSystemPrompt = (settings: AgentRunSettingsSnapshot) => {
   return userPrompt ? `${basePrompt}\n\n<user_system_prompt>\n${userPrompt}\n</user_system_prompt>` : basePrompt;
 };
 
-export const buildAgentPrompt = ({ settings, input, history, cwd }: BuildAgentPromptInput) => {
+const formatEnvironmentSnapshot = (snapshot: EnvironmentSnapshot) =>
+  JSON.stringify(snapshot, null, 2)
+    .split("\n")
+    .map((line) => `  ${line}`)
+    .join("\n");
+
+export const buildAgentPrompt = ({
+  settings,
+  input,
+  history,
+  cwd,
+  environmentSnapshot
+}: BuildAgentPromptInput) => {
   const now = new Date().toLocaleString();
   const historyBlock = formatHistory(history);
+  const environmentBlock = environmentSnapshot
+    ? `environment_snapshot_json:\n${formatEnvironmentSnapshot(environmentSnapshot)}`
+    : "environment_snapshot_json: null";
+  const runtimeContextBlock = `<runtime_context>\ncurrent_time: ${now}\nworking_directory: ${cwd}\nprovider: ${settings.providerName}\nmodel: ${settings.model}\n${environmentBlock}\n</runtime_context>`;
 
-  const segments = [
-    buildSystemPrompt(settings),
-    `<runtime_context>\ncurrent_time: ${now}\nworking_directory: ${cwd}\nprovider: ${settings.providerName}\nmodel: ${settings.model}\n</runtime_context>`
-  ];
+  console.info(`[agent][environment][injected]\n${environmentBlock}`);
+
+  const segments = [buildSystemPrompt(settings), runtimeContextBlock];
 
   if (historyBlock) {
     segments.push(`<conversation_history>\n${historyBlock}\n</conversation_history>`);

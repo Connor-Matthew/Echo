@@ -1,18 +1,34 @@
 import { app, BrowserWindow, ipcMain, type IpcMainInvokeEvent } from "electron";
-import { spawn } from "node:child_process";
+import {
+  spawn,
+  type ChildProcessWithoutNullStreams,
+  type SpawnOptionsWithoutStdio
+} from "node:child_process";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { registerAgentIpcHandlers } from "./agent/agent-ipc";
+import { getEnvironmentDeviceStatus, getEnvironmentWeatherSnapshot } from "./env/env-context-service";
+import {
+  getPersonaInjectionPayload,
+  getPersonaSnapshot,
+  ingestPersonaMessage
+} from "./memory/persona-service";
 import {
   DEFAULT_SETTINGS,
   normalizeSettings,
   type AppSettings,
   type ChatAttachment,
+  type ChatUsage,
   type ChatSession,
   type ChatStreamEvent,
   type ChatStreamRequest,
   type CompletionMessage,
   type ConnectionTestResult,
+  type EnvironmentWeatherRequest,
+  type PersonaIngestPayload,
+  type PersonaInjectionPayload,
+  type PersonaSnapshot,
   type ModelListResult,
   type StreamEnvelope
 } from "../src/shared/contracts";
@@ -26,10 +42,119 @@ const MAX_REQUEST_TIMEOUT_MS = 180000;
 const MIN_RETRY_COUNT = 0;
 const MAX_RETRY_COUNT = 3;
 const CODEX_RUNTIME_CHECK_TIMEOUT_MS = 12000;
+const APP_ICON_FILE = "tabler_brand-nuxt.png";
+const KNOWN_CLI_PATH_SEGMENTS = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"];
 
 const streamControllers = new Map<string, AbortController>();
 
 const createId = () => crypto.randomUUID();
+
+const resolveAppIconPath = () => {
+  const candidates = [
+    path.join(app.getAppPath(), APP_ICON_FILE),
+    path.resolve(__dirname, "..", APP_ICON_FILE),
+    path.join(process.cwd(), APP_ICON_FILE)
+  ];
+  return candidates.find((candidate) => existsSync(candidate));
+};
+
+const buildCliEnv = (extraPathSegments: string[] = []) => {
+  const delimiter = path.delimiter;
+  const currentSegments = (process.env.PATH || "")
+    .split(delimiter)
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  const mergedSegments = Array.from(
+    new Set([...currentSegments, ...KNOWN_CLI_PATH_SEGMENTS, ...extraPathSegments])
+  );
+
+  return {
+    ...process.env,
+    PATH: mergedSegments.join(delimiter)
+  };
+};
+
+const resolveCodexExecutable = () => {
+  const homeDir = process.env.HOME || process.env.USERPROFILE || "";
+  const resolveNvmCandidates = () => {
+    if (!homeDir) {
+      return [] as string[];
+    }
+
+    const versionsRoot = path.join(homeDir, ".nvm", "versions", "node");
+    const candidates: string[] = [];
+    const defaultAliasPath = path.join(homeDir, ".nvm", "alias", "default");
+
+    if (existsSync(defaultAliasPath)) {
+      try {
+        const defaultAlias = readFileSync(defaultAliasPath, "utf-8").trim();
+        if (defaultAlias) {
+          candidates.push(path.join(versionsRoot, defaultAlias, "bin", "codex"));
+        }
+      } catch {
+        // Ignore alias read errors and continue with directory scan.
+      }
+    }
+
+    if (!existsSync(versionsRoot)) {
+      return candidates;
+    }
+
+    try {
+      const versions = readdirSync(versionsRoot).sort((a, b) =>
+        b.localeCompare(a, undefined, { numeric: true, sensitivity: "base" })
+      );
+      for (const version of versions) {
+        candidates.push(path.join(versionsRoot, version, "bin", "codex"));
+      }
+    } catch {
+      // Ignore directory read errors and fall back to static candidates.
+    }
+
+    return candidates;
+  };
+
+  const candidatePaths = [
+    process.env.ECHO_CODEX_PATH,
+    process.env.CODEX_PATH,
+    process.env.NVM_BIN ? path.join(process.env.NVM_BIN, "codex") : "",
+    homeDir ? path.join(homeDir, ".local", "bin", "codex") : "",
+    homeDir ? path.join(homeDir, ".bun", "bin", "codex") : "",
+    ...resolveNvmCandidates(),
+    "/opt/homebrew/bin/codex",
+    "/usr/local/bin/codex",
+    "/usr/bin/codex"
+  ].filter((candidate): candidate is string => Boolean(candidate));
+
+  for (const candidate of candidatePaths) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return "codex";
+};
+
+const spawnCodex = (
+  args: string[],
+  options: Omit<SpawnOptionsWithoutStdio, "stdio"> = {}
+): ChildProcessWithoutNullStreams => {
+  const executable = resolveCodexExecutable();
+  const executableDir = path.isAbsolute(executable) ? path.dirname(executable) : "";
+  const baseEnv = buildCliEnv(executableDir ? [executableDir] : []);
+  const mergedEnv = options.env
+    ? {
+        ...baseEnv,
+        ...options.env
+      }
+    : baseEnv;
+
+  return spawn(executable, args, {
+    ...options,
+    stdio: "pipe",
+    env: mergedEnv
+  });
+};
 
 const ensureStoreDir = async () => {
   const storeDir = path.join(app.getPath("userData"), STORE_DIR_NAME);
@@ -276,13 +401,307 @@ const extractAnthropicDeltas = (payload: unknown): { content: string; reasoning:
   return { content: text, reasoning: thinking };
 };
 
+const toTokenNumber = (value: unknown) => {
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    const parsed = Number(trimmed);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      return parsed;
+    }
+  }
+  return undefined;
+};
+
+const pickLargestTokenNumber = (...values: unknown[]) => {
+  let resolved: number | undefined;
+  for (const value of values) {
+    const token = toTokenNumber(value);
+    if (token === undefined) {
+      continue;
+    }
+    resolved = resolved === undefined ? token : Math.max(resolved, token);
+  }
+  return resolved;
+};
+
+const readNestedTokenNumber = (
+  source: Record<string, unknown>,
+  key: string,
+  nestedKey: string
+) => {
+  const nested = source[key];
+  if (!nested || typeof nested !== "object") {
+    return undefined;
+  }
+  return toTokenNumber((nested as Record<string, unknown>)[nestedKey]);
+};
+
+const extractOpenAiUsage = (payload: unknown): ChatUsage | undefined => {
+  if (!payload || typeof payload !== "object") {
+    return undefined;
+  }
+
+  const source = payload as { usage?: Record<string, unknown> };
+  if (!source.usage || typeof source.usage !== "object") {
+    return undefined;
+  }
+
+  const usage = source.usage;
+  const inputTokens = toTokenNumber(usage.prompt_tokens ?? usage.input_tokens ?? usage.inputTokens);
+  const outputTokens = toTokenNumber(
+    usage.completion_tokens ?? usage.output_tokens ?? usage.outputTokens
+  );
+  const totalTokens = toTokenNumber(usage.total_tokens ?? usage.totalTokens);
+  const cacheReadTokens = pickLargestTokenNumber(
+    usage.cached_tokens,
+    usage.cache_read_input_tokens,
+    readNestedTokenNumber(usage, "prompt_tokens_details", "cached_tokens"),
+    readNestedTokenNumber(usage, "input_tokens_details", "cached_tokens")
+  );
+  const cacheWriteTokens = toTokenNumber(usage.cache_creation_input_tokens);
+
+  if (
+    inputTokens === undefined &&
+    outputTokens === undefined &&
+    totalTokens === undefined &&
+    cacheReadTokens === undefined &&
+    cacheWriteTokens === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    cacheReadTokens,
+    cacheWriteTokens
+  };
+};
+
+const extractAnthropicUsage = (payload: unknown): ChatUsage | undefined => {
+  if (!payload || typeof payload !== "object") {
+    return undefined;
+  }
+
+  const source = payload as {
+    usage?: Record<string, unknown>;
+    message?: { usage?: Record<string, unknown> };
+    delta?: { usage?: Record<string, unknown> };
+  };
+  const usageSource = source.usage ?? source.message?.usage ?? source.delta?.usage;
+  if (!usageSource || typeof usageSource !== "object") {
+    return undefined;
+  }
+
+  const inputTokens = toTokenNumber(usageSource.input_tokens ?? usageSource.inputTokens);
+  const outputTokens = toTokenNumber(usageSource.output_tokens ?? usageSource.outputTokens);
+  const cacheReadTokens = toTokenNumber(
+    usageSource.cache_read_input_tokens ?? usageSource.cacheReadTokens
+  );
+  const cacheWriteTokens = toTokenNumber(
+    usageSource.cache_creation_input_tokens ?? usageSource.cacheWriteTokens
+  );
+  const totalTokens = toTokenNumber(usageSource.total_tokens ?? usageSource.totalTokens);
+
+  if (
+    inputTokens === undefined &&
+    outputTokens === undefined &&
+    totalTokens === undefined &&
+    cacheReadTokens === undefined &&
+    cacheWriteTokens === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens:
+      totalTokens ??
+      (inputTokens !== undefined || outputTokens !== undefined
+        ? (inputTokens ?? 0) + (outputTokens ?? 0)
+        : undefined),
+    cacheReadTokens,
+    cacheWriteTokens
+  };
+};
+
+const extractGenericUsage = (payload: unknown): ChatUsage | undefined => {
+  if (!payload || typeof payload !== "object") {
+    return undefined;
+  }
+
+  const source = payload as Record<string, unknown>;
+  const usageSource =
+    (source.usage && typeof source.usage === "object" ? (source.usage as Record<string, unknown>) : null) ??
+    (source.turn && typeof source.turn === "object"
+      ? (((source.turn as Record<string, unknown>).usage as Record<string, unknown> | undefined) ?? null)
+      : null) ??
+    (source.result && typeof source.result === "object"
+      ? (((source.result as Record<string, unknown>).usage as Record<string, unknown> | undefined) ?? null)
+      : null);
+
+  if (!usageSource) {
+    return undefined;
+  }
+
+  const inputTokens = toTokenNumber(
+    usageSource.input_tokens ??
+      usageSource.inputTokens ??
+      usageSource.prompt_tokens ??
+      usageSource.promptTokens
+  );
+  const outputTokens = toTokenNumber(
+    usageSource.output_tokens ??
+      usageSource.outputTokens ??
+      usageSource.completion_tokens ??
+      usageSource.completionTokens
+  );
+  const totalTokens = toTokenNumber(usageSource.total_tokens ?? usageSource.totalTokens);
+  const cacheReadTokens = pickLargestTokenNumber(
+    usageSource.cache_read_input_tokens,
+    usageSource.cacheReadTokens,
+    usageSource.cached_tokens,
+    readNestedTokenNumber(usageSource, "prompt_tokens_details", "cached_tokens"),
+    readNestedTokenNumber(usageSource, "input_tokens_details", "cached_tokens")
+  );
+  const cacheWriteTokens = toTokenNumber(
+    usageSource.cache_creation_input_tokens ?? usageSource.cacheWriteTokens
+  );
+
+  if (
+    inputTokens === undefined &&
+    outputTokens === undefined &&
+    totalTokens === undefined &&
+    cacheReadTokens === undefined &&
+    cacheWriteTokens === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens:
+      totalTokens ??
+      (inputTokens !== undefined || outputTokens !== undefined
+        ? (inputTokens ?? 0) + (outputTokens ?? 0)
+        : undefined),
+    cacheReadTokens,
+    cacheWriteTokens
+  };
+};
+
+const logProviderUsage = (
+  streamId: string,
+  providerType: AppSettings["providerType"],
+  source: string,
+  usage: ChatUsage,
+  providerPayload: unknown,
+  rawData: string
+) => {
+  console.info("[chat][provider:usage]", {
+    streamId,
+    providerType,
+    source,
+    usage,
+    providerPayload,
+    rawData
+  });
+};
+
+const logProviderUsageMissing = (
+  streamId: string,
+  providerType: AppSettings["providerType"],
+  source: string,
+  reason: string,
+  providerPayload: unknown,
+  rawData: string
+) => {
+  console.info("[chat][provider:usage-missing]", {
+    streamId,
+    providerType,
+    source,
+    reason,
+    providerPayload,
+    rawData
+  });
+};
+
+const REQUEST_LOG_STRING_LIMIT = 1600;
+const REQUEST_LOG_ARRAY_LIMIT = 40;
+const REQUEST_LOG_OBJECT_KEY_LIMIT = 40;
+const REQUEST_LOG_MAX_DEPTH = 8;
+
+const truncateForLog = (value: string) =>
+  value.length > REQUEST_LOG_STRING_LIMIT
+    ? `${value.slice(0, REQUEST_LOG_STRING_LIMIT)}...[truncated ${
+        value.length - REQUEST_LOG_STRING_LIMIT
+      } chars]`
+    : value;
+
+const toRequestPreview = (value: unknown, depth = 0): unknown => {
+  if (typeof value === "string") {
+    return truncateForLog(value);
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  if (depth >= REQUEST_LOG_MAX_DEPTH) {
+    return "[max-depth]";
+  }
+  if (Array.isArray(value)) {
+    const items = value
+      .slice(0, REQUEST_LOG_ARRAY_LIMIT)
+      .map((entry) => toRequestPreview(entry, depth + 1));
+    if (value.length > REQUEST_LOG_ARRAY_LIMIT) {
+      items.push(`[+${value.length - REQUEST_LOG_ARRAY_LIMIT} items omitted]`);
+    }
+    return items;
+  }
+
+  const source = value as Record<string, unknown>;
+  const entries = Object.entries(source).slice(0, REQUEST_LOG_OBJECT_KEY_LIMIT);
+  const preview = Object.fromEntries(
+    entries.map(([key, entry]) => [key, toRequestPreview(entry, depth + 1)] as const)
+  );
+  if (Object.keys(source).length > REQUEST_LOG_OBJECT_KEY_LIMIT) {
+    return {
+      ...preview,
+      __omittedKeys: Object.keys(source).length - REQUEST_LOG_OBJECT_KEY_LIMIT
+    };
+  }
+  return preview;
+};
+
+const logChatRequestPayload = (
+  streamId: string,
+  providerType: AppSettings["providerType"],
+  source: string,
+  requestPayload: unknown
+) => {
+  console.info("[chat][provider:request]", {
+    streamId,
+    providerType,
+    source,
+    requestPayload: toRequestPreview(requestPayload)
+  });
+};
+
 const runCodexCommand = async (
   args: string[],
   timeoutMs = CODEX_RUNTIME_CHECK_TIMEOUT_MS
 ): Promise<{ ok: boolean; message: string }> =>
   new Promise((resolve) => {
     let settled = false;
-    const child = spawn("codex", args, { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawnCodex(args);
     let stdout = "";
     let stderr = "";
 
@@ -322,9 +741,7 @@ const runCodexCommand = async (
 
 const listCodexAcpModels = async (timeoutMs = CODEX_RUNTIME_CHECK_TIMEOUT_MS): Promise<string[]> =>
   new Promise((resolve, reject) => {
-    const child = spawn("codex", ["app-server", "--listen", "stdio://"], {
-      stdio: ["pipe", "pipe", "pipe"]
-    });
+    const child = spawnCodex(["app-server", "--listen", "stdio://"]);
     let settled = false;
     let stderr = "";
     let stdoutBuffer = "";
@@ -712,17 +1129,20 @@ const streamOpenAICompatible = async (
   onDelta?: () => void
 ) => {
   const baseUrl = normalizeBaseUrl(payload.settings.baseUrl);
+  const requestBody = {
+    model: payload.settings.model.trim(),
+    stream: true,
+    stream_options: { include_usage: true },
+    messages: toOpenAiStreamMessages(payload.messages)
+  };
+  logChatRequestPayload(streamId, payload.settings.providerType, "openai-sse", requestBody);
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`
     },
-    body: JSON.stringify({
-      model: payload.settings.model.trim(),
-      stream: true,
-      messages: toOpenAiStreamMessages(payload.messages)
-    }),
+    body: JSON.stringify(requestBody),
     signal
   });
 
@@ -738,6 +1158,25 @@ const streamOpenAICompatible = async (
   const decoder = new TextDecoder();
   let buffer = "";
   let doneSent = false;
+  let sawUsage = false;
+  let usageMissingLogged = false;
+  let lastProviderPayload: unknown = null;
+  let lastRawData = "";
+
+  const reportUsageMissing = (reason: string, providerPayload: unknown, rawData: string) => {
+    if (sawUsage || usageMissingLogged) {
+      return;
+    }
+    usageMissingLogged = true;
+    logProviderUsageMissing(
+      streamId,
+      payload.settings.providerType,
+      "openai-sse",
+      reason,
+      providerPayload,
+      rawData
+    );
+  };
 
   const emitDone = () => {
     if (!doneSent) {
@@ -749,6 +1188,7 @@ const streamOpenAICompatible = async (
   while (true) {
     const { value, done } = await reader.read();
     if (done) {
+      reportUsageMissing("stream-closed", lastProviderPayload, lastRawData);
       emitDone();
       return;
     }
@@ -764,6 +1204,7 @@ const streamOpenAICompatible = async (
       }
       const data = trimmed.slice(5).trim();
       if (data === "[DONE]") {
+        reportUsageMissing("done-marker", lastProviderPayload, data);
         emitDone();
         return;
       }
@@ -772,7 +1213,10 @@ const streamOpenAICompatible = async (
         const parsed = JSON.parse(data) as {
           choices?: Array<{ delta?: unknown; finish_reason?: string }>;
           error?: { message?: string };
+          usage?: Record<string, unknown>;
         };
+        lastProviderPayload = parsed;
+        lastRawData = data;
 
         if (parsed.error?.message) {
           sendStreamEvent(sender, streamId, {
@@ -784,6 +1228,12 @@ const streamOpenAICompatible = async (
         }
 
         const { content, reasoning } = extractOpenAiLikeDeltas(parsed.choices?.[0]?.delta);
+        const usage = extractOpenAiUsage(parsed);
+        if (usage) {
+          sawUsage = true;
+          logProviderUsage(streamId, payload.settings.providerType, "openai-sse", usage, parsed, data);
+          sendStreamEvent(sender, streamId, { type: "usage", usage });
+        }
         if (content) {
           onDelta?.();
           sendStreamEvent(sender, streamId, { type: "delta", delta: content });
@@ -794,8 +1244,8 @@ const streamOpenAICompatible = async (
         }
 
         if (parsed.choices?.[0]?.finish_reason) {
-          emitDone();
-          return;
+          // OpenAI-compatible providers may send usage in a trailing chunk after finish_reason.
+          continue;
         }
       } catch {
         continue;
@@ -825,6 +1275,15 @@ const streamAnthropic = async (
       content: toAnthropicContentBlocks(message)
     }));
   const normalizedAnthropicMessages = anthropicMessages.filter((message) => message.content.length);
+  const requestBody = {
+    model: payload.settings.model.trim(),
+    stream: true,
+    max_tokens: payload.settings.maxTokens,
+    temperature: payload.settings.temperature,
+    system: systemPrompt || undefined,
+    messages: normalizedAnthropicMessages
+  };
+  logChatRequestPayload(streamId, payload.settings.providerType, "anthropic-sse", requestBody);
 
   const response = await fetch(endpoint, {
     method: "POST",
@@ -833,14 +1292,7 @@ const streamAnthropic = async (
       "x-api-key": apiKey,
       "anthropic-version": "2023-06-01"
     },
-    body: JSON.stringify({
-      model: payload.settings.model.trim(),
-      stream: true,
-      max_tokens: payload.settings.maxTokens,
-      temperature: payload.settings.temperature,
-      system: systemPrompt || undefined,
-      messages: normalizedAnthropicMessages
-    }),
+    body: JSON.stringify(requestBody),
     signal
   });
 
@@ -856,6 +1308,25 @@ const streamAnthropic = async (
   const decoder = new TextDecoder();
   let buffer = "";
   let doneSent = false;
+  let sawUsage = false;
+  let usageMissingLogged = false;
+  let lastProviderPayload: unknown = null;
+  let lastRawData = "";
+
+  const reportUsageMissing = (reason: string, providerPayload: unknown, rawData: string) => {
+    if (sawUsage || usageMissingLogged) {
+      return;
+    }
+    usageMissingLogged = true;
+    logProviderUsageMissing(
+      streamId,
+      payload.settings.providerType,
+      "anthropic-sse",
+      reason,
+      providerPayload,
+      rawData
+    );
+  };
 
   const emitDone = () => {
     if (!doneSent) {
@@ -867,6 +1338,7 @@ const streamAnthropic = async (
   while (true) {
     const { value, done } = await reader.read();
     if (done) {
+      reportUsageMissing("stream-closed", lastProviderPayload, lastRawData);
       emitDone();
       return;
     }
@@ -882,6 +1354,7 @@ const streamAnthropic = async (
       }
       const data = trimmed.slice(5).trim();
       if (!data || data === "[DONE]") {
+        reportUsageMissing("done-marker", lastProviderPayload, data || "[EMPTY]");
         emitDone();
         return;
       }
@@ -889,13 +1362,18 @@ const streamAnthropic = async (
       try {
         const parsed = JSON.parse(data) as {
           type?: string;
+          usage?: Record<string, unknown>;
+          message?: { usage?: Record<string, unknown> };
           delta?: {
+            usage?: Record<string, unknown>;
             type?: string;
             text?: string;
             thinking?: string;
           };
           error?: { message?: string };
         };
+        lastProviderPayload = parsed;
+        lastRawData = data;
 
         if (parsed.type === "error") {
           sendStreamEvent(sender, streamId, {
@@ -907,6 +1385,12 @@ const streamAnthropic = async (
         }
 
         const { content, reasoning } = extractAnthropicDeltas(parsed);
+        const usage = extractAnthropicUsage(parsed);
+        if (usage) {
+          sawUsage = true;
+          logProviderUsage(streamId, payload.settings.providerType, "anthropic-sse", usage, parsed, data);
+          sendStreamEvent(sender, streamId, { type: "usage", usage });
+        }
         if (content) {
           onDelta?.();
           sendStreamEvent(sender, streamId, { type: "delta", delta: content });
@@ -917,6 +1401,7 @@ const streamAnthropic = async (
         }
 
         if (parsed.type === "message_stop") {
+          reportUsageMissing("message-stop-without-usage", parsed, data);
           emitDone();
           return;
         }
@@ -940,15 +1425,30 @@ const streamCodexAcp = async (
     throw new Error("No message content to send.");
   }
 
-  const child = spawn("codex", ["app-server", "--listen", "stdio://"], {
-    stdio: ["pipe", "pipe", "pipe"]
-  });
+  const child = spawnCodex(["app-server", "--listen", "stdio://"]);
 
   let stderr = "";
   let stdoutBuffer = "";
   let doneSent = false;
   let settled = false;
   let emittedAnyDelta = false;
+  let sawUsage = false;
+  let usageMissingLogged = false;
+
+  const reportUsageMissing = (reason: string, providerPayload: unknown, rawData: string) => {
+    if (sawUsage || usageMissingLogged) {
+      return;
+    }
+    usageMissingLogged = true;
+    logProviderUsageMissing(
+      streamId,
+      payload.settings.providerType,
+      "acp-rpc",
+      reason,
+      providerPayload,
+      rawData
+    );
+  };
 
   const emitDone = () => {
     if (!doneSent) {
@@ -1097,22 +1597,24 @@ const streamCodexAcp = async (
             settleReject(reject, new Error("ACP start did not return a chat id."));
             return;
           }
+          const turnStartParams = {
+            threadId: chatId,
+            input: [{ type: "text", text: turnInput, text_elements: [] }],
+            cwd: process.cwd(),
+            approvalPolicy: null,
+            sandboxPolicy: null,
+            model: payload.settings.model.trim() || null,
+            effort: null,
+            summary: null,
+            personality: null,
+            outputSchema: null,
+            collaborationMode: null
+          };
+          logChatRequestPayload(streamId, payload.settings.providerType, "acp:turn/start", turnStartParams);
           writeRpc({
             method: "turn/start",
             id: turnStartId,
-            params: {
-              threadId: chatId,
-              input: [{ type: "text", text: turnInput, text_elements: [] }],
-              cwd: process.cwd(),
-              approvalPolicy: null,
-              sandboxPolicy: null,
-              model: payload.settings.model.trim() || null,
-              effort: null,
-              summary: null,
-              personality: null,
-              outputSchema: null,
-              collaborationMode: null
-            }
+            params: turnStartParams
           });
           continue;
         }
@@ -1163,6 +1665,23 @@ const streamCodexAcp = async (
           continue;
         }
 
+        if (parsed.method && parsed.method.toLowerCase().includes("usage")) {
+          const usage = extractGenericUsage(parsed.params ?? parsed.result);
+          if (usage) {
+            sawUsage = true;
+            logProviderUsage(
+              streamId,
+              payload.settings.providerType,
+              `acp:${parsed.method}`,
+              usage,
+              parsed,
+              trimmed
+            );
+            sendStreamEvent(sender, streamId, { type: "usage", usage });
+          }
+          continue;
+        }
+
         if (parsed.method === "error") {
           const errorPayload = parsed.params?.error as { message?: string } | undefined;
           const retrying = parsed.params?.willRetry === true;
@@ -1177,8 +1696,23 @@ const streamCodexAcp = async (
 
         if (parsed.method === "turn/completed") {
           const turn = parsed.params?.turn as
-            | { status?: string; error?: { message?: string } | null }
+            | { status?: string; error?: { message?: string } | null; usage?: Record<string, unknown> }
             | undefined;
+          const usage = extractGenericUsage(turn ?? parsed.params);
+          if (usage) {
+            sawUsage = true;
+            logProviderUsage(
+              streamId,
+              payload.settings.providerType,
+              "acp:turn/completed",
+              usage,
+              parsed,
+              trimmed
+            );
+            sendStreamEvent(sender, streamId, { type: "usage", usage });
+          } else {
+            reportUsageMissing("turn-completed-without-usage", parsed, trimmed);
+          }
           const status = turn?.status;
           if (status && status !== "completed") {
             emitError(turn?.error?.message || "ACP turn failed.");
@@ -1246,10 +1780,28 @@ const registerIpcHandlers = () => {
     fetchModelIds(settings)
   );
 
+  ipcMain.handle(
+    "env:getWeatherSnapshot",
+    async (_, payload: EnvironmentWeatherRequest) => getEnvironmentWeatherSnapshot(payload)
+  );
+
+  ipcMain.handle("env:getSystemStatus", async () => getEnvironmentDeviceStatus());
+
   ipcMain.handle("sessions:get", async () => readJson<ChatSession[]>(SESSIONS_FILE, []));
 
   ipcMain.handle("sessions:save", async (_, sessions: ChatSession[]) => {
     await writeJson(SESSIONS_FILE, sessions);
+  });
+
+  ipcMain.handle("persona:getSnapshot", async (): Promise<PersonaSnapshot> => getPersonaSnapshot());
+
+  ipcMain.handle(
+    "persona:getInjectionPayload",
+    async (): Promise<PersonaInjectionPayload> => getPersonaInjectionPayload()
+  );
+
+  ipcMain.handle("persona:ingestMessage", async (_, payload: PersonaIngestPayload) => {
+    await ingestPersonaMessage(payload);
   });
 
   ipcMain.handle(
@@ -1340,6 +1892,7 @@ const registerIpcHandlers = () => {
 
 const createMainWindow = () => {
   const preloadPath = path.join(__dirname, "preload.cjs");
+  const iconPath = resolveAppIconPath();
   const mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
@@ -1347,6 +1900,7 @@ const createMainWindow = () => {
     minHeight: 450,
     backgroundColor: "#f3f5f8",
     titleBarStyle: "hiddenInset",
+    ...(iconPath ? { icon: iconPath } : {}),
     webPreferences: {
       preload: preloadPath,
       contextIsolation: true,
@@ -1365,6 +1919,11 @@ const createMainWindow = () => {
 };
 
 app.whenReady().then(() => {
+  const iconPath = resolveAppIconPath();
+  if (iconPath && process.platform === "darwin") {
+    app.dock?.setIcon(iconPath);
+  }
+
   registerIpcHandlers();
   registerAgentIpcHandlers();
   createMainWindow();

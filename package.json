@@ -3,12 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "main": "dist-electron/main.cjs",
   "scripts": {
     "dev": "concurrently -k \"bun run dev:renderer\" \"bun run dev:electron\"",
     "dev:renderer": "vite",
     "dev:electron": "node scripts/ensure-electron.cjs && wait-on tcp:5173 && bun run build:electron && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron dist-electron/main.cjs",
     "build:electron": "esbuild electron/main.ts electron/preload.ts --bundle --platform=node --format=cjs --outdir=dist-electron --out-extension:.js=.cjs --external:electron --external:@anthropic-ai/claude-agent-sdk --sourcemap",
     "build": "tsc --noEmit && vite build && bun run build:electron",
+    "make:icon:mac": "bash scripts/make-mac-icon.sh",
+    "pack:mac-arm64": "bun run build && electron-builder --mac dmg zip --arm64",
     "start": "electron dist-electron/main.cjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"
@@ -34,11 +37,44 @@
     "concurrently": "^9.2.1",
     "cross-env": "^10.1.0",
     "electron": "^37.2.6",
+    "electron-builder": "^26.8.1",
     "esbuild": "^0.25.12",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.18",
     "typescript": "^5.7.2",
     "vite": "^6.0.6",
     "wait-on": "^8.0.5"
+  },
+  "build": {
+    "appId": "com.echo.chat",
+    "productName": "Echo",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**",
+      "dist-electron/**",
+      "package.json"
+    ],
+    "asar": true,
+    "mac": {
+      "icon": "tabler_brand-nuxt.png",
+      "category": "public.app-category.productivity",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ]
+    }
   }
 }

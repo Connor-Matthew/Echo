@@ -6,8 +6,15 @@ import {
   type ChatSession,
   type ChatStreamEvent,
   type ChatStreamRequest,
+  type ChatUsage,
   type CompletionMessage,
   type ConnectionTestResult,
+  type EnvironmentDeviceStatus,
+  type EnvironmentWeatherRequest,
+  type EnvironmentWeatherSnapshot,
+  type PersonaIngestPayload,
+  type PersonaInjectionPayload,
+  type PersonaSnapshot,
   type ModelListResult
 } from "../shared/contracts";
 import type {
@@ -28,6 +35,15 @@ export type MuApi = {
   sessions: {
     get: () => Promise<ChatSession[]>;
     save: (sessions: ChatSession[]) => Promise<void>;
+  };
+  env: {
+    getWeatherSnapshot: (payload: EnvironmentWeatherRequest) => Promise<EnvironmentWeatherSnapshot>;
+    getSystemStatus: () => Promise<EnvironmentDeviceStatus>;
+  };
+  persona: {
+    getSnapshot: () => Promise<PersonaSnapshot>;
+    getInjectionPayload: () => Promise<PersonaInjectionPayload>;
+    ingestMessage: (payload: PersonaIngestPayload) => Promise<void>;
   };
   chat: {
     startStream: (payload: ChatStreamRequest) => Promise<{ streamId: string }>;
@@ -54,6 +70,7 @@ export type MuApi = {
 
 const SETTINGS_KEY = "mu.settings.v1";
 const SESSIONS_KEY = "mu.sessions.v1";
+const PERSONA_KEY = "mu.persona.v1";
 const AGENT_SESSIONS_KEY = "mu.agent.sessions.v1";
 const AGENT_MESSAGES_KEY = "mu.agent.messages.v1";
 const MIN_REQUEST_TIMEOUT_MS = 5000;
@@ -75,6 +92,49 @@ const readLocalStorage = <T>(key: string, fallback: T): T => {
 
 const writeLocalStorage = (key: string, value: unknown) => {
   window.localStorage.setItem(key, JSON.stringify(value));
+};
+
+const createFallbackPersonaSnapshot = (): PersonaSnapshot => {
+  const now = new Date().toISOString();
+  return {
+    profile: {
+      version: 1,
+      sourceMode: "soul",
+      updatedAt: now,
+      identityHint: "",
+      communicationStyle: {
+        tone: "",
+        length: "",
+        taboo: []
+      },
+      stablePreferences: [],
+      emotionTrend7d: {
+        trend: "unknown",
+        confidence: 0,
+        evidenceCount: 0,
+        note: ""
+      },
+      recentEvents: [],
+      boundaries: {
+        avoidTopics: [],
+        sensitiveHandling: "Ask for confirmation before using sensitive inferences."
+      },
+      manualNotes: "",
+      counters: {
+        ingestedUserMessages: 0
+      },
+      emotionSignals: []
+    },
+    jsonPath: "localStorage://mu.persona.v1",
+    markdownPath: "localStorage://mu.persona.v1"
+  };
+};
+
+const readFallbackPersonaSnapshot = () =>
+  readLocalStorage<PersonaSnapshot>(PERSONA_KEY, createFallbackPersonaSnapshot());
+
+const writeFallbackPersonaSnapshot = (snapshot: PersonaSnapshot) => {
+  writeLocalStorage(PERSONA_KEY, snapshot);
 };
 
 const normalizeBaseUrl = (value: string) => value.trim().replace(/\/+$/, "");
@@ -290,6 +350,154 @@ const extractAnthropicDeltas = (payload: unknown): { content: string; reasoning:
   }
 
   return { content: text, reasoning: thinking };
+};
+
+const toTokenNumber = (value: unknown) => {
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    const parsed = Number(trimmed);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      return parsed;
+    }
+  }
+  return undefined;
+};
+
+const pickLargestTokenNumber = (...values: unknown[]) => {
+  let resolved: number | undefined;
+  for (const value of values) {
+    const token = toTokenNumber(value);
+    if (token === undefined) {
+      continue;
+    }
+    resolved = resolved === undefined ? token : Math.max(resolved, token);
+  }
+  return resolved;
+};
+
+const readNestedTokenNumber = (
+  source: Record<string, unknown>,
+  key: string,
+  nestedKey: string
+) => {
+  const nested = source[key];
+  if (!nested || typeof nested !== "object") {
+    return undefined;
+  }
+  return toTokenNumber((nested as Record<string, unknown>)[nestedKey]);
+};
+
+const extractOpenAiUsage = (payload: unknown): ChatUsage | undefined => {
+  if (!payload || typeof payload !== "object") {
+    return undefined;
+  }
+
+  const source = payload as { usage?: Record<string, unknown> };
+  if (!source.usage || typeof source.usage !== "object") {
+    return undefined;
+  }
+
+  const usage = source.usage;
+  const inputTokens = toTokenNumber(usage.prompt_tokens ?? usage.input_tokens ?? usage.inputTokens);
+  const outputTokens = toTokenNumber(
+    usage.completion_tokens ?? usage.output_tokens ?? usage.outputTokens
+  );
+  const totalTokens = toTokenNumber(usage.total_tokens ?? usage.totalTokens);
+  const cacheReadTokens = pickLargestTokenNumber(
+    usage.cached_tokens,
+    usage.cache_read_input_tokens,
+    readNestedTokenNumber(usage, "prompt_tokens_details", "cached_tokens"),
+    readNestedTokenNumber(usage, "input_tokens_details", "cached_tokens")
+  );
+  const cacheWriteTokens = toTokenNumber(usage.cache_creation_input_tokens);
+
+  if (
+    inputTokens === undefined &&
+    outputTokens === undefined &&
+    totalTokens === undefined &&
+    cacheReadTokens === undefined &&
+    cacheWriteTokens === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    cacheReadTokens,
+    cacheWriteTokens
+  };
+};
+
+const extractAnthropicUsage = (payload: unknown): ChatUsage | undefined => {
+  if (!payload || typeof payload !== "object") {
+    return undefined;
+  }
+
+  const source = payload as {
+    usage?: Record<string, unknown>;
+    message?: { usage?: Record<string, unknown> };
+    delta?: { usage?: Record<string, unknown> };
+  };
+  const usageSource = source.usage ?? source.message?.usage ?? source.delta?.usage;
+  if (!usageSource || typeof usageSource !== "object") {
+    return undefined;
+  }
+
+  const inputTokens = toTokenNumber(usageSource.input_tokens ?? usageSource.inputTokens);
+  const outputTokens = toTokenNumber(usageSource.output_tokens ?? usageSource.outputTokens);
+  const cacheReadTokens = toTokenNumber(
+    usageSource.cache_read_input_tokens ?? usageSource.cacheReadTokens
+  );
+  const cacheWriteTokens = toTokenNumber(
+    usageSource.cache_creation_input_tokens ?? usageSource.cacheWriteTokens
+  );
+  const totalTokens = toTokenNumber(usageSource.total_tokens ?? usageSource.totalTokens);
+
+  if (
+    inputTokens === undefined &&
+    outputTokens === undefined &&
+    totalTokens === undefined &&
+    cacheReadTokens === undefined &&
+    cacheWriteTokens === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens:
+      totalTokens ??
+      (inputTokens !== undefined || outputTokens !== undefined
+        ? (inputTokens ?? 0) + (outputTokens ?? 0)
+        : undefined),
+    cacheReadTokens,
+    cacheWriteTokens
+  };
+};
+
+const logProviderUsage = (
+  streamId: string,
+  providerType: AppSettings["providerType"],
+  source: string,
+  usage: ChatUsage,
+  rawData: string
+) => {
+  console.info("[usage][provider:fallback]", {
+    streamId,
+    providerType,
+    source,
+    usage,
+    rawData
+  });
 };
 
 const toAttachmentMetaText = (attachment: ChatAttachment) =>
@@ -583,6 +791,65 @@ const createBrowserFallbackApi = (): MuApi => {
       get: async () => readLocalStorage<ChatSession[]>(SESSIONS_KEY, []),
       save: async (sessions) => writeLocalStorage(SESSIONS_KEY, sessions)
     },
+    env: {
+      getWeatherSnapshot: async () => ({
+        status: "unavailable" as const,
+        source: "open-meteo" as const,
+        reason: "environment_weather_ipc_unavailable"
+      }),
+      getSystemStatus: async () => ({})
+    },
+    persona: {
+      getSnapshot: async () => readFallbackPersonaSnapshot(),
+      getInjectionPayload: async () => {
+        const snapshot = readFallbackPersonaSnapshot();
+        const preferenceLines = snapshot.profile.stablePreferences
+          .slice(0, 2)
+          .map(
+            (entry) =>
+              `  - ${entry.text} (confidence: ${entry.confidence.toFixed(2)}, last_seen: ${entry.lastSeen})`
+          );
+        const eventLines = snapshot.profile.recentEvents
+          .slice(0, 1)
+          .map(
+            (entry) => `  - ${entry.text} (date: ${entry.date}, confidence: ${entry.confidence.toFixed(2)})`
+          );
+        const block = [
+          "<user_memory_profile>",
+          `profile_version: ${snapshot.profile.version}`,
+          `updated_at: ${snapshot.profile.updatedAt}`,
+          "stable_preferences:",
+          ...(preferenceLines.length ? preferenceLines : ["  - none"]),
+          "emotion_trend_7d:",
+          `  trend: ${snapshot.profile.emotionTrend7d.trend}`,
+          `  confidence: ${snapshot.profile.emotionTrend7d.confidence.toFixed(2)}`,
+          "recent_events:",
+          ...(eventLines.length ? eventLines : ["  - none"]),
+          "</user_memory_profile>"
+        ].join("\n");
+        return { block, snapshot };
+      },
+      ingestMessage: async (payload) => {
+        const text = payload.text.trim();
+        if (!text) {
+          return;
+        }
+        const snapshot = readFallbackPersonaSnapshot();
+        const next: PersonaSnapshot = {
+          ...snapshot,
+          profile: {
+            ...snapshot.profile,
+            updatedAt: nowIso(),
+            counters: {
+              ...snapshot.profile.counters,
+              ingestedUserMessages: snapshot.profile.counters.ingestedUserMessages + 1,
+              lastIngestedAt: payload.createdAt?.trim() || nowIso()
+            }
+          }
+        };
+        writeFallbackPersonaSnapshot(next);
+      }
+    },
     chat: {
       startStream: async ({ settings, messages }) => {
         if (settings.providerType === "acp" || settings.providerType === "claude-agent") {
@@ -637,6 +904,7 @@ const createBrowserFallbackApi = (): MuApi => {
             : {
                 model: settings.model.trim(),
                 stream: true,
+                stream_options: { include_usage: true },
                 messages: toOpenAiStreamMessages(messages)
               };
           let attempt = 0;
@@ -716,7 +984,10 @@ const createBrowserFallbackApi = (): MuApi => {
                       const parsed = JSON.parse(data) as {
                         choices?: Array<{ delta?: unknown; finish_reason?: string }>;
                         type?: string;
+                        usage?: Record<string, unknown>;
+                        message?: { usage?: Record<string, unknown> };
                         delta?: {
+                          usage?: Record<string, unknown>;
                           type?: string;
                           text?: string;
                           thinking?: string;
@@ -742,6 +1013,19 @@ const createBrowserFallbackApi = (): MuApi => {
                       const deltas = isAnthropic
                         ? extractAnthropicDeltas(parsed)
                         : extractOpenAiLikeDeltas(parsed.choices?.[0]?.delta);
+                      const usage = isAnthropic
+                        ? extractAnthropicUsage(parsed)
+                        : extractOpenAiUsage(parsed);
+                      if (usage) {
+                        logProviderUsage(
+                          streamId,
+                          settings.providerType,
+                          isAnthropic ? "anthropic-sse" : "openai-sse",
+                          usage,
+                          data
+                        );
+                        emit(streamId, { type: "usage", usage });
+                      }
                       if (deltas.content) {
                         emittedDelta = true;
                         emit(streamId, { type: "delta", delta: deltas.content });
@@ -751,10 +1035,12 @@ const createBrowserFallbackApi = (): MuApi => {
                         emit(streamId, { type: "reasoning", delta: deltas.reasoning });
                       }
 
-                      if (
-                        (!isAnthropic && parsed.choices?.[0]?.finish_reason) ||
-                        (isAnthropic && parsed.type === "message_stop")
-                      ) {
+                      if (!isAnthropic && parsed.choices?.[0]?.finish_reason) {
+                        // OpenAI-compatible providers may send usage in a trailing chunk.
+                        continue;
+                      }
+
+                      if (isAnthropic && parsed.type === "message_stop") {
                         emit(streamId, { type: "done" });
                         return;
                       }
@@ -940,6 +1226,8 @@ export const getMuApi = (): MuApi => {
     cachedApi = {
       settings: runtimeApi.settings ?? fallbackApi.settings,
       sessions: runtimeApi.sessions ?? fallbackApi.sessions,
+      env: runtimeApi.env ?? fallbackApi.env,
+      persona: runtimeApi.persona ?? fallbackApi.persona,
       chat: runtimeApi.chat ?? fallbackApi.chat,
       agent: runtimeApi.agent ?? fallbackApi.agent
     };

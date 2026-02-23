@@ -1,15 +1,20 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEventHandler } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ClipboardEventHandler,
+  type KeyboardEventHandler
+} from "react";
 import {
   ArrowUp,
   Brain,
   ChevronDown,
   CircleStop,
-  FileText,
   ImageIcon,
   Mic,
   Plus,
-  SlidersHorizontal,
-  X
+  SlidersHorizontal
 } from "lucide-react";
 import type { ChatContextWindow, ModelCapabilities } from "../shared/contracts";
 import { Button } from "./ui/button";
@@ -20,6 +25,7 @@ export type ComposerAttachment = {
   name: string;
   size: number;
   kind: "text" | "image" | "file";
+  textContent?: string;
   previewUrl?: string;
   error?: string;
 };
@@ -37,38 +43,138 @@ type ComposerProps = {
   modelCapabilities: ModelCapabilities;
   sendWithEnter: boolean;
   chatContextWindow: ChatContextWindow;
-  attachments: ComposerAttachment[];
-  onAddFiles: (files: FileList | null) => void;
+  attachmentCount: number;
+  onAddFiles: (files: FileList | File[] | null) => void;
   onChangeChatContextWindow: (value: ChatContextWindow) => void;
-  onRemoveAttachment: (attachmentId: string) => void;
   onSelectModel: (modelId: string) => void;
   onChange: (value: string) => void;
   onSubmit: (value: string) => void;
   onStop: () => void;
+  usageLabel?: string | null;
   disabled: boolean;
   isGenerating: boolean;
 };
 
 const MAX_TEXTAREA_HEIGHT = 24 * 4;
+const PASTE_AS_FILE_CHAR_THRESHOLD = 1500;
+const PASTE_AS_FILE_LINE_THRESHOLD = 28;
+const CODE_PASTE_MIN_LINE_THRESHOLD = 10;
+const CODE_FENCE_REGEX = /```[\s\S]*?```/;
+const CODE_HINT_REGEX =
+  /(^\s*(import|export|from|const|let|var|function|class|interface|type|def|if|for|while|switch|return)\b|=>|[{}()[\];<>])/gm;
+const FENCED_CODE_LANGUAGE_REGEX = /^\s*```([a-z0-9_+-]+)/im;
+const PASTED_TEXT_MIME_BY_EXTENSION: Record<string, string> = {
+  json: "application/json",
+  xml: "application/xml",
+  md: "text/markdown",
+  txt: "text/plain"
+};
 const CONTEXT_WINDOW_OPTIONS: Array<{ value: ChatContextWindow; label: string }> = [
   { value: 5, label: "5" },
   { value: 20, label: "20" },
   { value: 50, label: "50" },
   { value: "infinite", label: "无限" }
 ];
+const CODE_LANGUAGE_TO_EXTENSION: Record<string, string> = {
+  c: "c",
+  cpp: "cpp",
+  csharp: "cs",
+  css: "css",
+  go: "go",
+  html: "html",
+  java: "java",
+  javascript: "js",
+  js: "js",
+  json: "json",
+  jsx: "jsx",
+  kotlin: "kt",
+  markdown: "md",
+  md: "md",
+  php: "php",
+  py: "py",
+  python: "py",
+  ruby: "rb",
+  rs: "rs",
+  rust: "rs",
+  sh: "sh",
+  sql: "sql",
+  swift: "swift",
+  ts: "ts",
+  tsx: "tsx",
+  typescript: "ts",
+  xml: "xml",
+  yaml: "yaml",
+  yml: "yml"
+};
 const findContextWindowIndex = (value: ChatContextWindow) => {
   const index = CONTEXT_WINDOW_OPTIONS.findIndex((option) => option.value === value);
   return index >= 0 ? index : 0;
 };
 
-const formatBytes = (size: number) => {
-  if (size < 1024) {
-    return `${size} B`;
+const getLineCount = (text: string) => text.split(/\r?\n/).length;
+
+const shouldConvertPastedTextToFile = (rawText: string) => {
+  const text = rawText.trim();
+  if (!text) {
+    return false;
   }
-  if (size < 1024 * 1024) {
-    return `${(size / 1024).toFixed(1)} KB`;
+
+  const lineCount = getLineCount(text);
+  if (text.length >= PASTE_AS_FILE_CHAR_THRESHOLD || lineCount >= PASTE_AS_FILE_LINE_THRESHOLD) {
+    return true;
   }
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+
+  if (CODE_FENCE_REGEX.test(text)) {
+    return true;
+  }
+
+  if (lineCount < CODE_PASTE_MIN_LINE_THRESHOLD) {
+    return false;
+  }
+
+  const codeHintCount = text.match(CODE_HINT_REGEX)?.length ?? 0;
+  return codeHintCount >= 5;
+};
+
+const inferPastedFileExtension = (rawText: string) => {
+  const text = rawText.trim();
+  if (!text) {
+    return "txt";
+  }
+
+  const fencedLanguage = text.match(FENCED_CODE_LANGUAGE_REGEX)?.[1]?.toLowerCase();
+  if (fencedLanguage && CODE_LANGUAGE_TO_EXTENSION[fencedLanguage]) {
+    return CODE_LANGUAGE_TO_EXTENSION[fencedLanguage];
+  }
+
+  if ((text.startsWith("{") && text.endsWith("}")) || (text.startsWith("[") && text.endsWith("]"))) {
+    return "json";
+  }
+
+  if (text.startsWith("<?xml") || /^<[a-z][\w-]*[\s>]/i.test(text)) {
+    return "xml";
+  }
+
+  if (/^#{1,6}\s/m.test(text) || /^[-*]\s/m.test(text)) {
+    return "md";
+  }
+
+  return "txt";
+};
+
+const toPastedTextFile = (content: string) => {
+  const extension = inferPastedFileExtension(content);
+  const isoTimestamp = new Date().toISOString();
+  const stamp = [
+    isoTimestamp.slice(0, 4),
+    isoTimestamp.slice(5, 7),
+    isoTimestamp.slice(8, 10),
+    isoTimestamp.slice(11, 13),
+    isoTimestamp.slice(14, 16),
+    isoTimestamp.slice(17, 19)
+  ].join("");
+  const mimeType = PASTED_TEXT_MIME_BY_EXTENSION[extension] ?? "text/plain";
+  return new File([content], `pasted-${stamp}.${extension}`, { type: mimeType });
 };
 
 export const Composer = ({
@@ -79,14 +185,14 @@ export const Composer = ({
   modelCapabilities,
   sendWithEnter,
   chatContextWindow,
-  attachments,
+  attachmentCount,
   onAddFiles,
   onChangeChatContextWindow,
-  onRemoveAttachment,
   onSelectModel,
   onChange,
   onSubmit,
   onStop,
+  usageLabel,
   disabled,
   isGenerating
 }: ComposerProps) => {
@@ -96,8 +202,8 @@ export const Composer = ({
   const [isQuickSettingsOpen, setIsQuickSettingsOpen] = useState(false);
 
   const canSubmit = useMemo(
-    () => Boolean(value.trim() || attachments.length),
-    [value, attachments.length]
+    () => Boolean(value.trim() || attachmentCount),
+    [value, attachmentCount]
   );
   const contextWindowIndex = useMemo(
     () => findContextWindowIndex(chatContextWindow),
@@ -159,6 +265,10 @@ export const Composer = ({
   };
 
   const onKeyDown: KeyboardEventHandler<HTMLTextAreaElement> = (event) => {
+    if (event.nativeEvent.isComposing || event.keyCode === 229) {
+      return;
+    }
+
     if (event.key !== "Enter") {
       return;
     }
@@ -177,6 +287,33 @@ export const Composer = ({
     }
   };
 
+  const onPaste: ClipboardEventHandler<HTMLTextAreaElement> = (event) => {
+    const files = event.clipboardData?.files;
+    if (files?.length) {
+      event.preventDefault();
+      onAddFiles(files);
+      return;
+    }
+
+    const fallbackFiles = Array.from(event.clipboardData?.items ?? [])
+      .filter((item) => item.kind === "file")
+      .map((item) => item.getAsFile())
+      .filter((item): item is File => Boolean(item));
+
+    if (!fallbackFiles.length) {
+      const text = event.clipboardData?.getData("text/plain") ?? "";
+      if (!shouldConvertPastedTextToFile(text)) {
+        return;
+      }
+      event.preventDefault();
+      onAddFiles([toPastedTextFile(text)]);
+      return;
+    }
+
+    event.preventDefault();
+    onAddFiles(fallbackFiles);
+  };
+
   return (
     <footer className="w-full">
       <div className="w-full rounded-[8px] border border-border bg-card/95 px-3 py-2.5 shadow-[4px_4px_0_hsl(var(--border))] sm:px-4 sm:py-3 md:px-5 md:py-3.5">
@@ -192,56 +329,12 @@ export const Composer = ({
           }}
         />
 
-        {attachments.length ? (
-          <div className="mb-3 grid gap-2 sm:grid-cols-2">
-            {attachments.map((attachment) => (
-              <div
-                key={attachment.id}
-                className="rounded-[4px] border border-border bg-secondary/35 px-2.5 py-2"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      {attachment.kind === "image" ? (
-                        <ImageIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                      ) : (
-                        <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-                      )}
-                      <p className="truncate text-xs font-medium text-foreground">{attachment.name}</p>
-                    </div>
-                    <p className="mt-0.5 text-[11px] text-muted-foreground">{formatBytes(attachment.size)}</p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 shrink-0 rounded-md"
-                    onClick={() => onRemoveAttachment(attachment.id)}
-                    aria-label="Remove attachment"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-                {attachment.previewUrl ? (
-                  <img
-                    src={attachment.previewUrl}
-                    alt={attachment.name}
-                    className="mt-2 h-16 w-full rounded-md object-cover"
-                  />
-                ) : null}
-                {attachment.error ? (
-                  <p className="mt-1 text-[11px] text-destructive/80">{attachment.error}</p>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        ) : null}
-
         <Textarea
           ref={textareaRef}
           value={value}
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={onKeyDown}
+          onPaste={onPaste}
           rows={1}
           className="max-h-[96px] min-h-[38px] resize-none border-0 bg-transparent p-0 text-[16px] leading-6 text-foreground shadow-none placeholder:text-muted-foreground focus-visible:ring-0"
           placeholder={
@@ -365,6 +458,11 @@ export const Composer = ({
             </div>
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-2">
+            {usageLabel ? (
+              <p className="text-[15px] font-medium tabular-nums leading-none text-muted-foreground">
+                {usageLabel}
+              </p>
+            ) : null}
             <Button
               type="button"
               variant="ghost"

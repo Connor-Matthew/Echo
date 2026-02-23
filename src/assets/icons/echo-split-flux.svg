@@ -1,0 +1,51 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="116" y1="88" x2="904" y2="936" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0D1A31" />
+      <stop offset="55%" stop-color="#0A1326" />
+      <stop offset="100%" stop-color="#070D1B" />
+    </linearGradient>
+    <radialGradient id="topGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(290 214) rotate(35) scale(510 460)">
+      <stop offset="0%" stop-color="#8CD7FF" stop-opacity="0.18" />
+      <stop offset="100%" stop-color="#8CD7FF" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="fluxStroke" x1="262" y1="512" x2="762" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="56%" stop-color="#60D6FF" />
+      <stop offset="100%" stop-color="#A78BFA" />
+    </linearGradient>
+    <linearGradient id="fluxHighlight" x1="262" y1="430" x2="762" y2="430" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.20" />
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.06" />
+    </linearGradient>
+    <filter id="fluxGlow" x="194" y="276" width="636" height="472" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix" />
+      <feGaussianBlur in="SourceGraphic" stdDeviation="7" result="blurred" />
+      <feMerge>
+        <feMergeNode in="blurred" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect x="68" y="68" width="888" height="888" rx="210" fill="url(#bg)" />
+  <rect x="68" y="68" width="888" height="888" rx="210" fill="url(#topGlow)" />
+  <rect x="68.5" y="68.5" width="887" height="887" rx="209.5" stroke="#ECF4FF" stroke-opacity="0.10" />
+
+  <g filter="url(#fluxGlow)">
+    <path
+      d="M440 570C392 620 310 620 262 570C214 520 214 439 262 389C310 339 392 339 440 389C474 425 500 470 512 512C524 554 550 599 584 635C632 685 714 685 762 635C810 585 810 504 762 454C714 404 632 404 584 454"
+      stroke="url(#fluxStroke)"
+      stroke-width="58"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <path
+      d="M440 570C392 620 310 620 262 570C214 520 214 439 262 389C310 339 392 339 440 389C474 425 500 470 512 512C524 554 550 599 584 635C632 685 714 685 762 635C810 585 810 504 762 454C714 404 632 404 584 454"
+      stroke="url(#fluxHighlight)"
+      stroke-width="22"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </g>
+</svg>

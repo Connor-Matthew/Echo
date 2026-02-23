@@ -17,6 +17,15 @@ const api: MuApi = {
     get: () => ipcRenderer.invoke("sessions:get"),
     save: (sessions) => ipcRenderer.invoke("sessions:save", sessions)
   },
+  env: {
+    getWeatherSnapshot: (payload) => ipcRenderer.invoke("env:getWeatherSnapshot", payload),
+    getSystemStatus: () => ipcRenderer.invoke("env:getSystemStatus")
+  },
+  persona: {
+    getSnapshot: () => ipcRenderer.invoke("persona:getSnapshot"),
+    getInjectionPayload: () => ipcRenderer.invoke("persona:getInjectionPayload"),
+    ingestMessage: (payload) => ipcRenderer.invoke("persona:ingestMessage", payload)
+  },
   chat: {
     startStream: (payload) => ipcRenderer.invoke("chat:startStream", payload),
     stopStream: (streamId) => ipcRenderer.invoke("chat:stopStream", streamId),

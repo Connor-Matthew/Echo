@@ -4,6 +4,8 @@ export type MessageDensity = "compact" | "comfortable";
 export type ChatContextWindow = 5 | 20 | 50 | "infinite";
 export type ProviderType = "openai" | "anthropic" | "acp" | "claude-agent";
 export type AttachmentKind = "text" | "image" | "file";
+export type EnvironmentTemperatureUnit = "c" | "f";
+export type EnvironmentWeatherStatus = "ok" | "stale" | "unavailable";
 
 export type ModelCapabilities = {
   textInput: boolean;
@@ -11,6 +13,23 @@ export type ModelCapabilities = {
   audioInput: boolean;
   videoInput: boolean;
   reasoningDisplay: boolean;
+};
+
+export type ChatUsage = {
+  inputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+};
+
+export type ChatSessionUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  updatedAt: string;
 };
 
 export type StoredProvider = {
@@ -21,6 +40,7 @@ export type StoredProvider = {
   model: string;
   savedModels: string[];
   modelCapabilities: Record<string, ModelCapabilities>;
+  modelContextWindows: Record<string, number>;
   providerType: ProviderType;
   enabled: boolean;
   isPinned: boolean;
@@ -33,8 +53,18 @@ export type ChatMessage = {
   role: MessageRole;
   content: string;
   reasoningContent?: string;
+  usage?: ChatMessageUsage;
   createdAt: string;
   attachments?: ChatAttachment[];
+};
+
+export type ChatMessageUsage = {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  source: "provider" | "estimated";
 };
 
 export type ChatAttachment = {
@@ -54,7 +84,172 @@ export type ChatSession = {
   title: string;
   createdAt: string;
   updatedAt: string;
+  isPinned?: boolean;
+  soulModeEnabled?: boolean;
   messages: ChatMessage[];
+  usageByModel?: Record<string, ChatSessionUsage>;
+};
+
+export type PersonaEmotionTrend = "stable" | "positive" | "low" | "volatile" | "unknown";
+
+export type PersonaPreference = {
+  id: string;
+  text: string;
+  confidence: number;
+  lastSeen: string;
+  evidenceCount: number;
+};
+
+export type PersonaRecentEvent = {
+  id: string;
+  text: string;
+  date: string;
+  confidence: number;
+};
+
+export type PersonaEmotionWindow = {
+  trend: PersonaEmotionTrend;
+  confidence: number;
+  evidenceCount: number;
+  note: string;
+};
+
+export type PersonaProfile = {
+  version: number;
+  sourceMode: "soul";
+  updatedAt: string;
+  identityHint: string;
+  communicationStyle: {
+    tone: string;
+    length: string;
+    taboo: string[];
+  };
+  stablePreferences: PersonaPreference[];
+  emotionTrend7d: PersonaEmotionWindow;
+  recentEvents: PersonaRecentEvent[];
+  boundaries: {
+    avoidTopics: string[];
+    sensitiveHandling: string;
+  };
+  manualNotes: string;
+  counters: {
+    ingestedUserMessages: number;
+    lastAutoRefreshAt?: string;
+    lastIngestedAt?: string;
+    lastMarkdownSyncAt?: string;
+    pendingAutoRefresh?: boolean;
+  };
+  emotionSignals: Array<{
+    score: -1 | 0 | 1;
+    capturedAt: string;
+  }>;
+};
+
+export type PersonaSyncWarning = {
+  code: "markdown_parse_failed";
+  message: string;
+};
+
+export type PersonaSnapshot = {
+  profile: PersonaProfile;
+  jsonPath: string;
+  markdownPath: string;
+  warning?: PersonaSyncWarning;
+};
+
+export type PersonaInjectionPayload = {
+  block: string;
+  snapshot: PersonaSnapshot;
+};
+
+export type PersonaIngestPayload = {
+  text: string;
+  createdAt?: string;
+};
+
+export type EnvironmentSettings = {
+  enabled: boolean;
+  city: string;
+  temperatureUnit: EnvironmentTemperatureUnit;
+  weatherCacheTtlMs: number;
+  sendTimeoutMs: number;
+};
+
+export type EnvironmentWeatherSnapshot = {
+  status: EnvironmentWeatherStatus;
+  source: "open-meteo";
+  fetchedAt?: string;
+  city?: string;
+  summary?: string;
+  temp?: number;
+  feelsLike?: number;
+  humidity?: number;
+  windKph?: number;
+  reason?: string;
+};
+
+export type EnvironmentSystemInfo = {
+  platform: string;
+  release: string;
+  version?: string;
+  arch: string;
+  hostname?: string;
+  machineName?: string;
+  machineModel?: string;
+  chip?: string;
+  physicalMemory?: string;
+};
+
+export type EnvironmentMemoryInfo = {
+  totalBytes: number;
+  freeBytes: number;
+  usedBytes: number;
+};
+
+export type EnvironmentStorageInfo = {
+  mountPath: string;
+  totalBytes: number;
+  freeBytes: number;
+  usedBytes: number;
+};
+
+export type EnvironmentDeviceStatus = {
+  system?: EnvironmentSystemInfo;
+  memory?: EnvironmentMemoryInfo;
+  storage?: EnvironmentStorageInfo;
+};
+
+export type EnvironmentSnapshot = {
+  capturedAt: string;
+  cwd: string;
+  time: {
+    iso: string;
+    date: string;
+    time: string;
+    timezone: string;
+    locale: string;
+  };
+  device: {
+    type: "desktop" | "laptop" | "unknown";
+    network?: {
+      online: boolean;
+      effectiveType?: string;
+    };
+    battery?: {
+      level?: number;
+      charging?: boolean;
+    };
+  } & EnvironmentDeviceStatus;
+  location: {
+    city: string;
+  };
+  weather: EnvironmentWeatherSnapshot;
+};
+
+export type EnvironmentWeatherRequest = {
+  city: string;
+  temperatureUnit: EnvironmentTemperatureUnit;
+  cacheTtlMs?: number;
 };
 
 export type AppSettings = {
@@ -75,6 +270,7 @@ export type AppSettings = {
   requestTimeoutMs: number;
   retryCount: number;
   sseDebug: boolean;
+  environment: EnvironmentSettings;
 };
 
 export type ConnectionTestResult = {
@@ -102,6 +298,7 @@ export type ChatStreamRequest = {
 export type ChatStreamEvent =
   | { type: "delta"; delta: string }
   | { type: "reasoning"; delta: string }
+  | { type: "usage"; usage: ChatUsage }
   | { type: "done" }
   | { type: "error"; message: string };
 
@@ -118,9 +315,18 @@ const DEFAULT_PROVIDER: StoredProvider = {
   model: "",
   savedModels: [],
   modelCapabilities: {},
+  modelContextWindows: {},
   providerType: "openai",
   enabled: true,
   isPinned: false
+};
+
+export const DEFAULT_ENVIRONMENT_SETTINGS: EnvironmentSettings = {
+  enabled: true,
+  city: "",
+  temperatureUnit: "c",
+  weatherCacheTtlMs: 600000,
+  sendTimeoutMs: 600
 };
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -140,7 +346,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   messageDensity: "comfortable",
   requestTimeoutMs: 60000,
   retryCount: 1,
-  sseDebug: false
+  sseDebug: false,
+  environment: DEFAULT_ENVIRONMENT_SETTINGS
 };
 
 const normalizeProviderType = (providerType: unknown): ProviderType => {
@@ -194,6 +401,25 @@ const sanitizeProvider = (
       })
       .filter((entry): entry is [string, ModelCapabilities] => Boolean(entry))
   );
+  const rawModelContextWindows =
+    candidate?.modelContextWindows && typeof candidate.modelContextWindows === "object"
+      ? candidate.modelContextWindows
+      : {};
+  const normalizedContextWindows = Object.fromEntries(
+    Object.entries(rawModelContextWindows)
+      .map(([modelId, contextWindow]) => {
+        const key = modelId.trim().toLowerCase();
+        if (!key || typeof contextWindow !== "number" || !Number.isFinite(contextWindow)) {
+          return null;
+        }
+        const rounded = Math.round(contextWindow);
+        if (rounded < 1024 || rounded > 2_000_000) {
+          return null;
+        }
+        return [key, rounded] as const;
+      })
+      .filter((entry): entry is [string, number] => Boolean(entry))
+  );
 
   return {
     id: candidate?.id?.trim() || `provider-${fallbackIndex + 1}`,
@@ -203,6 +429,7 @@ const sanitizeProvider = (
     model,
     savedModels: dedupedSavedModels,
     modelCapabilities: normalizedCapabilities,
+    modelContextWindows: normalizedContextWindows,
     providerType: normalizeProviderType(candidate?.providerType),
     enabled: candidate?.enabled !== false,
     isPinned: Boolean(candidate?.isPinned)
@@ -244,9 +471,42 @@ const normalizeChatContextWindow = (value: unknown): ChatContextWindow => {
   return DEFAULT_SETTINGS.chatContextWindow;
 };
 
+const clampInteger = (value: unknown, min: number, max: number, fallback: number) => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, Math.round(value)));
+};
+
+const normalizeEnvironmentTemperatureUnit = (value: unknown): EnvironmentTemperatureUnit =>
+  value === "f" ? "f" : "c";
+
+const normalizeEnvironmentSettings = (value: unknown): EnvironmentSettings => {
+  const source =
+    value && typeof value === "object" ? (value as Partial<EnvironmentSettings>) : undefined;
+  return {
+    enabled: source?.enabled !== false,
+    city: typeof source?.city === "string" ? source.city : "",
+    temperatureUnit: normalizeEnvironmentTemperatureUnit(source?.temperatureUnit),
+    weatherCacheTtlMs: clampInteger(
+      source?.weatherCacheTtlMs,
+      60000,
+      3600000,
+      DEFAULT_ENVIRONMENT_SETTINGS.weatherCacheTtlMs
+    ),
+    sendTimeoutMs: clampInteger(
+      source?.sendTimeoutMs,
+      100,
+      2000,
+      DEFAULT_ENVIRONMENT_SETTINGS.sendTimeoutMs
+    )
+  };
+};
+
 export const normalizeSettings = (saved: Partial<AppSettings>): AppSettings => {
   const merged = { ...DEFAULT_SETTINGS, ...saved };
   const rawChatContextWindow = (saved as { chatContextWindow?: unknown }).chatContextWindow;
+  const rawEnvironment = (saved as { environment?: unknown }).environment;
   const rawProviders = Array.isArray(saved.providers) ? saved.providers : [];
   const providersFromLegacy: StoredProvider[] = [
     {
@@ -257,6 +517,7 @@ export const normalizeSettings = (saved: Partial<AppSettings>): AppSettings => {
       model: merged.model,
       savedModels: merged.model.trim() ? [merged.model.trim()] : [],
       modelCapabilities: {},
+      modelContextWindows: {},
       providerType: normalizeProviderType(merged.providerType),
       enabled: true,
       isPinned: false
@@ -281,6 +542,7 @@ export const normalizeSettings = (saved: Partial<AppSettings>): AppSettings => {
     apiKey: activeProvider.apiKey,
     model: activeProvider.model,
     providerType: activeProvider.providerType,
-    chatContextWindow: normalizeChatContextWindow(rawChatContextWindow)
+    chatContextWindow: normalizeChatContextWindow(rawChatContextWindow),
+    environment: normalizeEnvironmentSettings(rawEnvironment)
   };
 };

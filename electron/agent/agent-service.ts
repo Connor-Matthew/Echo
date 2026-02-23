@@ -264,7 +264,8 @@ export const runClaudeAgentQuery = async ({
     settings: request.settings,
     input,
     history,
-    cwd
+    cwd,
+    environmentSnapshot: request.environmentSnapshot
   });
 
   const sdkModule = (await import("@anthropic-ai/claude-agent-sdk")) as {

@@ -1,12 +1,15 @@
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   Bot,
   Clock3,
-  Database,
   Cpu,
+  Database,
+  Download,
   MessageSquare,
   Palette,
   PenLine,
+  Pin,
   Plus,
   Server,
   Settings,
@@ -19,7 +22,7 @@ import type { ChatSession } from "../shared/contracts";
 import type { AgentSessionMeta } from "../shared/agent-contracts";
 import { Button } from "./ui/button";
 
-export type SettingsSection = "provider" | "chat" | "theme" | "data" | "advanced";
+export type SettingsSection = "provider" | "chat" | "environment" | "theme" | "data" | "advanced";
 
 type ChatSidebarProps = {
   mode: "chat";
@@ -27,8 +30,11 @@ type ChatSidebarProps = {
   activeSessionId: string;
   onSelectSession: (sessionId: string) => void;
   onCreateSession: () => void;
-  onRenameSession: (sessionId: string) => void;
+  onRenameSession: (sessionId: string, title?: string) => void;
   onDeleteSession: (sessionId: string) => void;
+  onTogglePinSession: (sessionId: string) => void;
+  onExportSession: (sessionId: string) => void;
+  onExportSessionMarkdown: (sessionId: string) => void;
   onEnterAgent: () => void;
   onEnterSettings: () => void;
 };
@@ -53,6 +59,7 @@ type SettingsSidebarProps = {
 };
 
 type SidebarProps = ChatSidebarProps | AgentSidebarProps | SettingsSidebarProps;
+type ChatContextMenuState = { sessionId: string; x: number; y: number };
 
 const formatRelativeTime = (iso: string) => {
   const date = new Date(iso);
@@ -65,10 +72,85 @@ const formatRelativeTime = (iso: string) => {
 };
 
 export const Sidebar = (props: SidebarProps) => {
+  const [editingChatSessionId, setEditingChatSessionId] = useState<string | null>(null);
+  const [editingChatTitle, setEditingChatTitle] = useState("");
+  const [chatContextMenu, setChatContextMenu] = useState<ChatContextMenuState | null>(null);
+  const editInputRef = useRef<HTMLInputElement | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (props.mode === "chat" && editingChatSessionId) {
+      editInputRef.current?.focus();
+      editInputRef.current?.select();
+      return;
+    }
+    setEditingChatSessionId(null);
+    setEditingChatTitle("");
+  }, [editingChatSessionId, props.mode]);
+
+  useEffect(() => {
+    if (!chatContextMenu) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (contextMenuRef.current && target instanceof Node && contextMenuRef.current.contains(target)) {
+        return;
+      }
+      setChatContextMenu(null);
+    };
+
+    const closeMenu = () => setChatContextMenu(null);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setChatContextMenu(null);
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("resize", closeMenu);
+    window.addEventListener("scroll", closeMenu, true);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("resize", closeMenu);
+      window.removeEventListener("scroll", closeMenu, true);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [chatContextMenu]);
+
+  const startChatRename = (session: ChatSession) => {
+    if (props.mode !== "chat") {
+      return;
+    }
+    setEditingChatSessionId(session.id);
+    setEditingChatTitle(session.title);
+    setChatContextMenu(null);
+  };
+
+  const cancelChatRename = () => {
+    setEditingChatSessionId(null);
+    setEditingChatTitle("");
+  };
+
+  const commitChatRename = () => {
+    if (props.mode !== "chat" || !editingChatSessionId) {
+      return;
+    }
+    const title = editingChatTitle.trim();
+    const target = props.sessions.find((session) => session.id === editingChatSessionId);
+    if (title && target && target.title !== title) {
+      props.onRenameSession(editingChatSessionId, title);
+    }
+    cancelChatRename();
+  };
+
   if (props.mode === "settings") {
     const settingsItems: Array<{ key: SettingsSection; label: string; icon: typeof Server }> = [
       { key: "provider", label: "Provider", icon: Server },
       { key: "chat", label: "Chat", icon: MessageSquare },
+      { key: "environment", label: "Environment", icon: Cpu },
       { key: "theme", label: "Theme", icon: Palette },
       { key: "data", label: "Data", icon: Database },
       { key: "advanced", label: "Advanced", icon: SlidersHorizontal }
@@ -123,6 +205,282 @@ export const Sidebar = (props: SidebarProps) => {
           </div>
         </div>
       </aside>
+    );
+  }
+
+  if (props.mode === "chat") {
+    const sortedSessions = props.sessions;
+
+    const contextMenuSession = chatContextMenu
+      ? sortedSessions.find((session) => session.id === chatContextMenu.sessionId) ?? null
+      : null;
+
+    const contextMenuStyle = (() => {
+      if (!chatContextMenu) {
+        return { left: 0, top: 0 };
+      }
+      const viewportWidth = typeof window === "undefined" ? chatContextMenu.x + 200 : window.innerWidth;
+      const viewportHeight =
+        typeof window === "undefined" ? chatContextMenu.y + 200 : window.innerHeight;
+      const menuWidth = 188;
+      const menuHeight = 208;
+      return {
+        left: Math.max(8, Math.min(chatContextMenu.x, viewportWidth - menuWidth - 8)),
+        top: Math.max(8, Math.min(chatContextMenu.y, viewportHeight - menuHeight - 8))
+      };
+    })();
+
+    return (
+      <>
+        <aside className="flex h-full flex-col overflow-hidden bg-card/50 px-3 pb-3 pt-4">
+          <div className="space-y-2 pb-4">
+            <div className="grid grid-cols-2 gap-1 rounded-[6px] border border-border/80 bg-card/70 p-1">
+              <Button
+                variant="ghost"
+                className="h-8 rounded-[4px] border border-border bg-accent/80 text-xs text-foreground shadow-[2px_2px_0_hsl(var(--border))]"
+                disabled
+              >
+                Chat
+              </Button>
+              <Button
+                variant="ghost"
+                className="h-8 rounded-[4px] border border-transparent text-xs text-foreground/80"
+                onClick={props.onEnterAgent}
+              >
+                Agent
+              </Button>
+            </div>
+            <Button
+              variant="ghost"
+              className="h-9 w-full justify-start gap-2 px-2 text-sm font-semibold text-foreground"
+              onClick={props.onCreateSession}
+            >
+              <PenLine className="h-4 w-4" />
+              New Chat
+            </Button>
+            <Button
+              variant="ghost"
+              className="h-9 w-full justify-start gap-2 px-2 text-sm text-foreground/80"
+            >
+              <Clock3 className="h-4 w-4" />
+              Automations
+            </Button>
+            <Button
+              variant="ghost"
+              className="h-9 w-full justify-start gap-2 px-2 text-sm text-foreground/80"
+            >
+              <Sparkles className="h-4 w-4" />
+              Skills
+            </Button>
+          </div>
+
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="mb-2 flex items-center justify-between px-1">
+              <p className="sketch-title text-[23px] uppercase leading-none text-primary">Chat</p>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 rounded-md"
+                onClick={props.onCreateSession}
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            <div className="min-h-0 space-y-1 overflow-auto pr-1">
+              {sortedSessions.map((session) => {
+                const active = session.id === props.activeSessionId;
+                const editing = session.id === editingChatSessionId;
+                const pinned = Boolean(session.isPinned);
+                return (
+                  <article
+                    key={session.id}
+                    className={cn(
+                      "group relative rounded-[4px] border bg-card/50 transition-colors",
+                      active
+                        ? "border-border bg-accent/65 shadow-[2px_2px_0_hsl(var(--border))]"
+                        : "border-transparent hover:border-border/60 hover:bg-card/85"
+                    )}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      cancelChatRename();
+                      setChatContextMenu({
+                        sessionId: session.id,
+                        x: event.clientX,
+                        y: event.clientY
+                      });
+                    }}
+                  >
+                    <span
+                      className={cn(
+                        "absolute left-0.5 top-1.5 h-6 w-0.5 rounded bg-transparent",
+                        active && "bg-primary/90"
+                      )}
+                    />
+                    <button
+                      type="button"
+                      className="w-full px-3 py-1.5 pr-24 text-left"
+                      onClick={() => {
+                        if (!editing) {
+                          props.onSelectSession(session.id);
+                        }
+                      }}
+                    >
+                      {editing ? (
+                        <input
+                          ref={editInputRef}
+                          value={editingChatTitle}
+                          onChange={(event) => setEditingChatTitle(event.target.value)}
+                          onClick={(event) => event.stopPropagation()}
+                          onBlur={commitChatRename}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              commitChatRename();
+                            }
+                            if (event.key === "Escape") {
+                              event.preventDefault();
+                              cancelChatRename();
+                            }
+                          }}
+                          className="h-6 w-full rounded-[4px] border border-border bg-background px-2 text-sm text-foreground outline-none ring-0 focus:border-primary"
+                        />
+                      ) : (
+                        <p
+                          className="truncate text-sm text-foreground"
+                          onDoubleClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            startChatRename(session);
+                          }}
+                        >
+                          {session.title}
+                        </p>
+                      )}
+                      <p className="text-[11px] text-muted-foreground">
+                        {pinned ? "已置顶 • " : ""}
+                        {formatRelativeTime(session.updatedAt)}
+                      </p>
+                    </button>
+                    <div className="absolute right-1 top-1 hidden items-center gap-1 rounded-[4px] bg-card p-0.5 group-hover:flex group-focus-within:flex">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className={cn("h-6 w-6 rounded-md", pinned && "text-primary")}
+                        onClick={() => props.onTogglePinSession(session.id)}
+                        aria-label={pinned ? "取消置顶会话" : "置顶会话"}
+                      >
+                        <Pin className={cn("h-3 w-3", pinned && "fill-current")} />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 rounded-md"
+                        onClick={() => startChatRename(session)}
+                        aria-label="重命名会话"
+                      >
+                        <PenLine className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 rounded-md"
+                        onClick={() => props.onExportSession(session.id)}
+                        aria-label="导出会话 JSON"
+                      >
+                        <Download className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 rounded-md text-destructive hover:text-destructive"
+                        onClick={() => props.onDeleteSession(session.id)}
+                        aria-label="删除会话"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="mt-3 border-t border-border/90 pt-2">
+            <Button
+              variant="ghost"
+              className="h-9 w-full justify-start gap-2 px-2 text-sm text-foreground/80"
+              onClick={props.onEnterSettings}
+            >
+              <Settings className="h-4 w-4" />
+              Settings
+            </Button>
+            <div className="mt-3 flex items-center gap-2 px-2 text-xs text-muted-foreground">
+              <Bot className="h-3.5 w-3.5" />
+              Local mode
+            </div>
+          </div>
+        </aside>
+        {chatContextMenu && contextMenuSession ? (
+          <div
+            ref={contextMenuRef}
+            className="fixed z-50 w-48 rounded-[6px] border border-border bg-card/95 p-1 shadow-[4px_4px_0_hsl(var(--border))]"
+            style={contextMenuStyle}
+          >
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded-[4px] px-2 py-1.5 text-left text-sm text-foreground/90 hover:bg-accent/70"
+              onClick={() => {
+                props.onTogglePinSession(contextMenuSession.id);
+                setChatContextMenu(null);
+              }}
+            >
+              <Pin className={cn("h-3.5 w-3.5", contextMenuSession.isPinned && "fill-current")} />
+              {contextMenuSession.isPinned ? "取消置顶" : "置顶会话"}
+            </button>
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded-[4px] px-2 py-1.5 text-left text-sm text-foreground/90 hover:bg-accent/70"
+              onClick={() => startChatRename(contextMenuSession)}
+            >
+              <PenLine className="h-3.5 w-3.5" />
+              重命名
+            </button>
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded-[4px] px-2 py-1.5 text-left text-sm text-foreground/90 hover:bg-accent/70"
+              onClick={() => {
+                props.onExportSession(contextMenuSession.id);
+                setChatContextMenu(null);
+              }}
+            >
+              <Download className="h-3.5 w-3.5" />
+              导出 JSON
+            </button>
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded-[4px] px-2 py-1.5 text-left text-sm text-foreground/90 hover:bg-accent/70"
+              onClick={() => {
+                props.onExportSessionMarkdown(contextMenuSession.id);
+                setChatContextMenu(null);
+              }}
+            >
+              <Download className="h-3.5 w-3.5" />
+              导出 Markdown
+            </button>
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded-[4px] px-2 py-1.5 text-left text-sm text-destructive hover:bg-accent/70"
+              onClick={() => {
+                props.onDeleteSession(contextMenuSession.id);
+                setChatContextMenu(null);
+              }}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              删除
+            </button>
+          </div>
+        ) : null}
+      </>
     );
   }
 
@@ -241,130 +599,5 @@ export const Sidebar = (props: SidebarProps) => {
     );
   }
 
-  return (
-    <aside className="flex h-full flex-col overflow-hidden bg-card/50 px-3 pb-3 pt-4">
-      <div className="space-y-2 pb-4">
-        <div className="grid grid-cols-2 gap-1 rounded-[6px] border border-border/80 bg-card/70 p-1">
-          <Button
-            variant="ghost"
-            className="h-8 rounded-[4px] border border-border bg-accent/80 text-xs text-foreground shadow-[2px_2px_0_hsl(var(--border))]"
-            disabled
-          >
-            Chat
-          </Button>
-          <Button
-            variant="ghost"
-            className="h-8 rounded-[4px] border border-transparent text-xs text-foreground/80"
-            onClick={props.onEnterAgent}
-          >
-            Agent
-          </Button>
-        </div>
-        <Button
-          variant="ghost"
-          className="h-9 w-full justify-start gap-2 px-2 text-sm font-semibold text-foreground"
-          onClick={props.onCreateSession}
-        >
-          <PenLine className="h-4 w-4" />
-          New Chat
-        </Button>
-        <Button
-          variant="ghost"
-          className="h-9 w-full justify-start gap-2 px-2 text-sm text-foreground/80"
-        >
-          <Clock3 className="h-4 w-4" />
-          Automations
-        </Button>
-        <Button
-          variant="ghost"
-          className="h-9 w-full justify-start gap-2 px-2 text-sm text-foreground/80"
-        >
-          <Sparkles className="h-4 w-4" />
-          Skills
-        </Button>
-      </div>
-
-      <div className="flex min-h-0 flex-1 flex-col">
-        <div className="mb-2 flex items-center justify-between px-1">
-          <p className="sketch-title text-[23px] uppercase leading-none text-primary">Chat</p>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6 rounded-md"
-            onClick={props.onCreateSession}
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </Button>
-        </div>
-        <div className="min-h-0 space-y-1 overflow-auto pr-1">
-          {props.sessions.map((session) => {
-            const active = session.id === props.activeSessionId;
-            return (
-              <article
-                key={session.id}
-                className={cn(
-                  "group relative rounded-[4px] border bg-card/50 transition-colors",
-                  active
-                    ? "border-border bg-accent/65 shadow-[2px_2px_0_hsl(var(--border))]"
-                    : "border-transparent hover:border-border/60 hover:bg-card/85"
-                )}
-              >
-                <span
-                  className={cn(
-                    "absolute left-0.5 top-1.5 h-6 w-0.5 rounded bg-transparent",
-                    active && "bg-primary/90"
-                  )}
-                />
-                <button
-                  type="button"
-                  className="w-full px-3 py-1.5 text-left"
-                  onClick={() => props.onSelectSession(session.id)}
-                >
-                  <p className="truncate text-sm text-foreground">{session.title}</p>
-                  <p className="text-[11px] text-muted-foreground">
-                    {formatRelativeTime(session.updatedAt)}
-                  </p>
-                </button>
-                <div className="absolute right-1 top-1 hidden items-center gap-1 rounded-[4px] bg-card p-0.5 group-hover:flex group-focus-within:flex">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 rounded-md"
-                    onClick={() => props.onRenameSession(session.id)}
-                    aria-label="Rename Chat"
-                  >
-                    <PenLine className="h-3 w-3" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 rounded-md text-destructive hover:text-destructive"
-                    onClick={() => props.onDeleteSession(session.id)}
-                    aria-label="Delete Chat"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
-                </div>
-              </article>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="mt-3 border-t border-border/90 pt-2">
-        <Button
-          variant="ghost"
-          className="h-9 w-full justify-start gap-2 px-2 text-sm text-foreground/80"
-          onClick={props.onEnterSettings}
-        >
-          <Settings className="h-4 w-4" />
-          Settings
-        </Button>
-        <div className="mt-3 flex items-center gap-2 px-2 text-xs text-muted-foreground">
-          <Bot className="h-3.5 w-3.5" />
-          Local mode
-        </div>
-      </div>
-    </aside>
-  );
+  return null;
 };
