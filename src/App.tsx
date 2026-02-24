@@ -75,7 +75,8 @@ import {
   type ChatSession,
   type ChatStreamRequest,
   type ConnectionTestResult,
-  type EnvironmentSnapshot
+  type EnvironmentSnapshot,
+  type PersonaIngestResult
 } from "./shared/contracts";
 
 type RemovedSession = {
@@ -109,6 +110,13 @@ type ActiveAgentRun = {
   unsubscribe: () => void;
 };
 
+type PersonaIngestFeedback = {
+  status: "loading" | "extracted" | "no_match" | "error" | "undoing" | "undone";
+  message: string;
+  operationId?: string;
+  undoable?: boolean;
+};
+
 const api = getMuApi();
 
 export const App = () => {
@@ -138,6 +146,7 @@ export const App = () => {
   const [isHydrated, setIsHydrated] = useState(false);
   const [removedSession, setRemovedSession] = useState<RemovedSession | null>(null);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
+  const [personaIngestFeedback, setPersonaIngestFeedback] = useState<PersonaIngestFeedback | null>(null);
   const [viewportWidth, setViewportWidth] = useState(getCurrentViewportWidth);
   const [isSidebarOpen, setIsSidebarOpen] = useState(
     () => getCurrentViewportWidth() >= SIDEBAR_AUTO_HIDE_WIDTH
@@ -153,6 +162,7 @@ export const App = () => {
   const agentEnvironmentWeatherSummaryDraftRef = useRef("");
   const wasCompactLayoutRef = useRef(getCurrentViewportWidth() < SIDEBAR_AUTO_HIDE_WIDTH);
   const chatDropDepthRef = useRef(0);
+  const personaIngestFeedbackTimeoutRef = useRef<number | null>(null);
   const [isChatDragOver, setIsChatDragOver] = useState(false);
 
   const isCompactLayout = viewportWidth < SIDEBAR_AUTO_HIDE_WIDTH;
@@ -163,6 +173,13 @@ export const App = () => {
       setIsChatDragOver(false);
     }
   }, [activeView]);
+
+  useEffect(
+    () => () => {
+      clearPersonaIngestFeedbackTimeout();
+    },
+    []
+  );
 
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId),
@@ -329,6 +346,34 @@ export const App = () => {
       previous.forEach(revokeAttachmentPreview);
       return [];
     });
+  };
+
+  const clearPersonaIngestFeedbackTimeout = () => {
+    if (personaIngestFeedbackTimeoutRef.current !== null) {
+      window.clearTimeout(personaIngestFeedbackTimeoutRef.current);
+      personaIngestFeedbackTimeoutRef.current = null;
+    }
+  };
+
+  const schedulePersonaIngestFeedbackHide = (delayMs = 5000) => {
+    clearPersonaIngestFeedbackTimeout();
+    personaIngestFeedbackTimeoutRef.current = window.setTimeout(() => {
+      setPersonaIngestFeedback(null);
+      personaIngestFeedbackTimeoutRef.current = null;
+    }, delayMs);
+  };
+
+  const toPersonaIngestSummary = (result: PersonaIngestResult) => {
+    if (result.reason !== "extracted") {
+      if (result.reason === "disabled") {
+        return "记忆提取已关闭。";
+      }
+      return "未提取（未检测到明确偏好或时间线索）。";
+    }
+    const preferenceCount =
+      result.extracted.preferencesAdded.length + result.extracted.preferencesUpdated.length;
+    const eventCount = result.extracted.eventsAdded.length + result.extracted.eventsUpdated.length;
+    return `已提取 ${preferenceCount} 条偏好、${eventCount} 条事件。`;
   };
 
   const finishActiveStream = () => {
@@ -909,6 +954,51 @@ export const App = () => {
     }));
   };
 
+  const dismissPersonaIngestFeedback = () => {
+    clearPersonaIngestFeedbackTimeout();
+    setPersonaIngestFeedback(null);
+  };
+
+  const undoPersonaIngestFeedback = async () => {
+    if (
+      !personaIngestFeedback ||
+      !personaIngestFeedback.operationId ||
+      !personaIngestFeedback.undoable
+    ) {
+      return;
+    }
+    clearPersonaIngestFeedbackTimeout();
+    setPersonaIngestFeedback({
+      ...personaIngestFeedback,
+      status: "undoing",
+      message: "正在撤销本轮记忆变更..."
+    });
+
+    try {
+      const result = await api.persona.undoIngest({
+        operationId: personaIngestFeedback.operationId
+      });
+      if (!result.ok) {
+        setPersonaIngestFeedback({
+          status: "error",
+          message: `撤销失败：${result.message}`
+        });
+      } else {
+        setPersonaIngestFeedback({
+          status: "undone",
+          message: "已撤销本轮记忆变更。"
+        });
+      }
+      schedulePersonaIngestFeedbackHide();
+    } catch (error) {
+      setPersonaIngestFeedback({
+        status: "error",
+        message: `撤销失败：${error instanceof Error ? error.message : "Unknown error."}`
+      });
+      schedulePersonaIngestFeedbackHide();
+    }
+  };
+
   const testConnection = async (next: AppSettings): Promise<ConnectionTestResult> =>
     api.settings.testConnection(next);
 
@@ -1142,17 +1232,39 @@ export const App = () => {
     const systemPrompt = settings.systemPrompt.trim();
 
     if (shouldIngestPersona) {
+      clearPersonaIngestFeedbackTimeout();
+      setPersonaIngestFeedback({
+        status: "loading",
+        message: "正在提取记忆..."
+      });
       void api.persona
         .ingestMessage({
           text: userMessage.content,
           createdAt: userMessage.createdAt
+        })
+        .then((result) => {
+          const status = result.reason === "extracted" ? "extracted" : "no_match";
+          setPersonaIngestFeedback({
+            status,
+            message: toPersonaIngestSummary(result),
+            operationId: result.operationId,
+            undoable: result.reason === "extracted" && result.undoable
+          });
+          schedulePersonaIngestFeedbackHide();
         })
         .catch((error) => {
           console.warn(
             "[persona][ingest] failed",
             error instanceof Error ? error.message : "unknown_error"
           );
+          setPersonaIngestFeedback({
+            status: "error",
+            message: `记忆提取失败：${error instanceof Error ? error.message : "Unknown error."}`
+          });
+          schedulePersonaIngestFeedbackHide();
         });
+    } else {
+      dismissPersonaIngestFeedback();
     }
 
     let environmentSystemContent: string | null = null;
@@ -1406,7 +1518,13 @@ export const App = () => {
       attachments: messageAttachments.length ? messageAttachments : undefined
     };
 
-    await sendFromBaseMessages(activeSession, activeSession.messages, userMessage, true, true);
+    await sendFromBaseMessages(
+      activeSession,
+      activeSession.messages,
+      userMessage,
+      true,
+      Boolean(activeSession.soulModeEnabled)
+    );
     clearDraftAttachments();
   };
 
@@ -1785,6 +1903,47 @@ export const App = () => {
 
               <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-[#f5f8fe] via-[#f5f8fe]/95 to-transparent px-2 pb-2 pt-4 dark:from-[#20293a] dark:via-[#20293a]/94 sm:px-3 sm:pb-3 sm:pt-6 md:px-6 md:pb-4 md:pt-7">
                 <div className="pointer-events-auto mx-auto w-full min-w-0 max-w-[980px]">
+                  {activeSession?.soulModeEnabled && personaIngestFeedback ? (
+                    <div
+                      className={`mb-2 flex items-center justify-between gap-2 rounded-[8px] border px-3 py-2 text-xs ${
+                        personaIngestFeedback.status === "error"
+                          ? "border-destructive/40 bg-destructive/10 text-destructive"
+                          : "border-border/80 bg-card/90 text-foreground"
+                      }`}
+                    >
+                      <p>{personaIngestFeedback.message}</p>
+                      <div className="flex items-center gap-1">
+                        {personaIngestFeedback.status === "extracted" &&
+                        personaIngestFeedback.undoable &&
+                        personaIngestFeedback.operationId ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-6 px-2 text-[11px]"
+                            onClick={() => {
+                              void undoPersonaIngestFeedback();
+                            }}
+                          >
+                            撤销本轮
+                          </Button>
+                        ) : null}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-2 text-[11px]"
+                          onClick={dismissPersonaIngestFeedback}
+                          disabled={
+                            personaIngestFeedback.status === "loading" ||
+                            personaIngestFeedback.status === "undoing"
+                          }
+                        >
+                          关闭
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
                   <AttachmentTray
                     attachments={draftAttachments}
                     onRemoveAttachment={removeAttachment}

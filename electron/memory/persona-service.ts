@@ -4,22 +4,27 @@ import path from "node:path";
 import type {
   PersonaEmotionTrend,
   PersonaIngestPayload,
+  PersonaIngestResult,
   PersonaInjectionPayload,
   PersonaPreference,
   PersonaProfile,
   PersonaRecentEvent,
   PersonaSnapshot,
-  PersonaSyncWarning
+  PersonaSyncWarning,
+  PersonaUndoIngestPayload,
+  PersonaUndoIngestResult
 } from "../../src/shared/contracts";
 
 const PERSONA_DIR_SEGMENTS = [".echo", "memory"] as const;
 const PERSONA_JSON_FILENAME = "persona.json";
 const PERSONA_MARKDOWN_FILENAME = "persona.md";
+const PERSONA_OPERATIONS_FILENAME = "persona-operations.json";
 const FALLBACK_STORE_DIR = "store";
 const AUTO_REFRESH_EVERY_TURNS = 10;
 const AUTO_REFRESH_MIN_INTERVAL_MS = 3 * 60 * 1000;
 const MAX_STABLE_PREFERENCES = 24;
 const MAX_RECENT_EVENTS = 12;
+const MAX_PERSONA_OPERATIONS = 100;
 const INJECTION_MAX_PREFERENCES = 2;
 const INJECTION_MAX_EVENTS = 1;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -29,9 +34,24 @@ type PersonaPaths = {
   dir: string;
   jsonPath: string;
   markdownPath: string;
+  operationsPath: string;
 };
 
 type SectionMap = Record<string, { lines: string[]; startLine: number }>;
+
+type PersonaEntityChange<T> = {
+  id: string;
+  before: T | null;
+  after: T | null;
+};
+
+type PersonaOperationRecord = {
+  operationId: string;
+  observedAt: string;
+  createdAt: string;
+  preferenceChanges: PersonaEntityChange<PersonaPreference>[];
+  eventChanges: PersonaEntityChange<PersonaRecentEvent>[];
+};
 
 const nowIso = () => new Date().toISOString();
 
@@ -284,7 +304,8 @@ const ensurePersonaPaths = async (): Promise<PersonaPaths> => {
     return {
       dir: preferredDir,
       jsonPath: path.join(preferredDir, PERSONA_JSON_FILENAME),
-      markdownPath: path.join(preferredDir, PERSONA_MARKDOWN_FILENAME)
+      markdownPath: path.join(preferredDir, PERSONA_MARKDOWN_FILENAME),
+      operationsPath: path.join(preferredDir, PERSONA_OPERATIONS_FILENAME)
     };
   } catch {
     const fallbackDir = path.join(app.getPath("userData"), FALLBACK_STORE_DIR, "memory");
@@ -292,7 +313,8 @@ const ensurePersonaPaths = async (): Promise<PersonaPaths> => {
     return {
       dir: fallbackDir,
       jsonPath: path.join(fallbackDir, PERSONA_JSON_FILENAME),
-      markdownPath: path.join(fallbackDir, PERSONA_MARKDOWN_FILENAME)
+      markdownPath: path.join(fallbackDir, PERSONA_MARKDOWN_FILENAME),
+      operationsPath: path.join(fallbackDir, PERSONA_OPERATIONS_FILENAME)
     };
   }
 };
@@ -308,6 +330,105 @@ const readProfileFromJson = async (jsonPath: string) => {
 
 const writeProfileJson = async (jsonPath: string, profile: PersonaProfile) => {
   await writeFile(jsonPath, JSON.stringify(profile, null, 2), "utf-8");
+};
+
+const clonePreference = (value: PersonaPreference): PersonaPreference => ({ ...value });
+const cloneRecentEvent = (value: PersonaRecentEvent): PersonaRecentEvent => ({ ...value });
+
+const sortAndLimitPreferences = (entries: PersonaPreference[]) =>
+  [...entries]
+    .sort((left, right) => {
+      const confidenceDelta = right.confidence - left.confidence;
+      if (confidenceDelta !== 0) {
+        return confidenceDelta;
+      }
+      return right.lastSeen.localeCompare(left.lastSeen);
+    })
+    .slice(0, MAX_STABLE_PREFERENCES);
+
+const sortAndLimitEvents = (entries: PersonaRecentEvent[]) =>
+  [...entries].sort((left, right) => right.date.localeCompare(left.date)).slice(0, MAX_RECENT_EVENTS);
+
+const normalizeOperationRecord = (value: unknown): PersonaOperationRecord | null => {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const source = value as Partial<PersonaOperationRecord>;
+  const operationId = toTrimmedText(source.operationId);
+  const observedAt = toTrimmedText(source.observedAt);
+  const createdAt = toTrimmedText(source.createdAt);
+  if (!operationId || !observedAt || !createdAt) {
+    return null;
+  }
+  const preferenceChanges = Array.isArray(source.preferenceChanges)
+    ? source.preferenceChanges
+        .map((entry) => {
+          if (!entry || typeof entry !== "object") {
+            return null;
+          }
+          const candidate = entry as Partial<PersonaEntityChange<PersonaPreference>>;
+          const id = toTrimmedText(candidate.id);
+          if (!id) {
+            return null;
+          }
+          return {
+            id,
+            before: candidate.before ? normalizePreference(candidate.before) : null,
+            after: candidate.after ? normalizePreference(candidate.after) : null
+          };
+        })
+        .filter((entry): entry is PersonaEntityChange<PersonaPreference> => Boolean(entry))
+    : [];
+  const eventChanges = Array.isArray(source.eventChanges)
+    ? source.eventChanges
+        .map((entry) => {
+          if (!entry || typeof entry !== "object") {
+            return null;
+          }
+          const candidate = entry as Partial<PersonaEntityChange<PersonaRecentEvent>>;
+          const id = toTrimmedText(candidate.id);
+          if (!id) {
+            return null;
+          }
+          return {
+            id,
+            before: candidate.before ? normalizeRecentEvent(candidate.before) : null,
+            after: candidate.after ? normalizeRecentEvent(candidate.after) : null
+          };
+        })
+        .filter((entry): entry is PersonaEntityChange<PersonaRecentEvent> => Boolean(entry))
+    : [];
+  return {
+    operationId,
+    observedAt,
+    createdAt,
+    preferenceChanges,
+    eventChanges
+  };
+};
+
+const readOperationRecords = async (operationsPath: string): Promise<PersonaOperationRecord[]> => {
+  try {
+    const raw = await readFile(operationsPath, "utf-8");
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed
+      .map(normalizeOperationRecord)
+      .filter((entry): entry is PersonaOperationRecord => Boolean(entry))
+      .slice(0, MAX_PERSONA_OPERATIONS);
+  } catch {
+    return [];
+  }
+};
+
+const writeOperationRecords = async (operationsPath: string, records: PersonaOperationRecord[]) => {
+  await writeFile(
+    operationsPath,
+    JSON.stringify(records.slice(0, MAX_PERSONA_OPERATIONS), null, 2),
+    "utf-8"
+  );
 };
 
 const buildPersonaMarkdown = (profile: PersonaProfile) => {
@@ -788,11 +909,25 @@ const extractEmotionScore = (text: string): -1 | 0 | 1 => {
   return positive > negative ? 1 : -1;
 };
 
-const upsertPreference = (profile: PersonaProfile, text: string, observedAt: string) => {
+const upsertPreference = (
+  profile: PersonaProfile,
+  text: string,
+  observedAt: string
+): {
+  stablePreferences: PersonaPreference[];
+  change:
+    | {
+        type: "added" | "updated";
+        before: PersonaPreference | null;
+        after: PersonaPreference;
+      }
+    | null;
+} => {
   const candidateId = normalizePreferenceId(text);
   const date = safeDate(observedAt);
   const next = [...profile.stablePreferences];
   const existingIndex = next.findIndex((entry) => entry.id === candidateId || entry.text === text);
+  const before = existingIndex >= 0 ? clonePreference(next[existingIndex]) : null;
 
   if (existingIndex >= 0) {
     const current = next[existingIndex];
@@ -813,21 +948,40 @@ const upsertPreference = (profile: PersonaProfile, text: string, observedAt: str
     });
   }
 
-  next.sort((left, right) => {
-    const confidenceDelta = right.confidence - left.confidence;
-    if (confidenceDelta !== 0) {
-      return confidenceDelta;
-    }
-    return right.lastSeen.localeCompare(left.lastSeen);
-  });
-  return next.slice(0, MAX_STABLE_PREFERENCES);
+  const stablePreferences = sortAndLimitPreferences(next);
+  const afterEntry =
+    stablePreferences.find((entry) => entry.id === candidateId || entry.text === text) ?? null;
+  return {
+    stablePreferences,
+    change: afterEntry
+      ? {
+          type: before ? "updated" : "added",
+          before,
+          after: clonePreference(afterEntry)
+        }
+      : null
+  };
 };
 
-const upsertEvent = (profile: PersonaProfile, text: string, observedAt: string) => {
+const upsertEvent = (
+  profile: PersonaProfile,
+  text: string,
+  observedAt: string
+): {
+  recentEvents: PersonaRecentEvent[];
+  change:
+    | {
+        type: "added" | "updated";
+        before: PersonaRecentEvent | null;
+        after: PersonaRecentEvent;
+      }
+    | null;
+} => {
   const eventDate = safeDate(observedAt);
   const eventId = normalizeEventId(text);
   const next = [...profile.recentEvents];
   const existingIndex = next.findIndex((entry) => entry.id === eventId || entry.text === text);
+  const before = existingIndex >= 0 ? cloneRecentEvent(next[existingIndex]) : null;
 
   if (existingIndex >= 0) {
     const current = next[existingIndex];
@@ -846,8 +1000,18 @@ const upsertEvent = (profile: PersonaProfile, text: string, observedAt: string) 
     });
   }
 
-  next.sort((left, right) => right.date.localeCompare(left.date));
-  return next.slice(0, MAX_RECENT_EVENTS);
+  const recentEvents = sortAndLimitEvents(next);
+  const afterEntry = recentEvents.find((entry) => entry.id === eventId || entry.text === text) ?? null;
+  return {
+    recentEvents,
+    change: afterEntry
+      ? {
+          type: before ? "updated" : "added",
+          before,
+          after: cloneRecentEvent(afterEntry)
+        }
+      : null
+  };
 };
 
 const deriveCommunicationStyle = (preferences: PersonaPreference[]) => {
@@ -936,6 +1100,11 @@ const ensureInitialFiles = async (paths: PersonaPaths, profile: PersonaProfile) 
     await readFile(paths.markdownPath, "utf-8");
   } catch {
     await writeProfileMarkdown(paths.markdownPath, profile);
+  }
+  try {
+    await readFile(paths.operationsPath, "utf-8");
+  } catch {
+    await writeOperationRecords(paths.operationsPath, []);
   }
 };
 
@@ -1097,13 +1266,40 @@ export const getPersonaInjectionPayload = async (): Promise<PersonaInjectionPayl
   };
 };
 
-export const ingestPersonaMessage = async (payload: PersonaIngestPayload): Promise<void> => {
-  const text = toTrimmedText(payload.text);
-  if (!text) {
-    return;
+const createEmptyIngestResult = (
+  operationId: string,
+  observedAt: string,
+  reason: PersonaIngestResult["reason"]
+): PersonaIngestResult => ({
+  operationId,
+  observedAt,
+  reason,
+  undoable: false,
+  extracted: {
+    preferencesAdded: [],
+    preferencesUpdated: [],
+    eventsAdded: [],
+    eventsUpdated: []
   }
+});
+
+export const ingestPersonaMessage = async (
+  payload: PersonaIngestPayload
+): Promise<PersonaIngestResult> => {
+  const text = toTrimmedText(payload.text);
+  const operationId = crypto.randomUUID();
   const observedAt = payload.createdAt?.trim() || nowIso();
+  if (!text) {
+    return createEmptyIngestResult(operationId, observedAt, "no_match");
+  }
   const { profile: syncedProfile, paths } = await readProfileWithSync();
+
+  const preferenceChanges = new Map<string, PersonaEntityChange<PersonaPreference>>();
+  const eventChanges = new Map<string, PersonaEntityChange<PersonaRecentEvent>>();
+  const preferencesAdded = new Set<string>();
+  const preferencesUpdated = new Set<string>();
+  const eventsAdded = new Set<string>();
+  const eventsUpdated = new Set<string>();
 
   let nextProfile = normalizeProfile({
     ...syncedProfile,
@@ -1116,18 +1312,44 @@ export const ingestPersonaMessage = async (payload: PersonaIngestPayload): Promi
 
   const preferenceCandidates = extractPreferenceCandidates(text);
   for (const candidate of preferenceCandidates) {
+    const { stablePreferences, change } = upsertPreference(nextProfile, candidate, observedAt);
     nextProfile = normalizeProfile({
       ...nextProfile,
-      stablePreferences: upsertPreference(nextProfile, candidate, observedAt)
+      stablePreferences
     });
+    if (change) {
+      preferenceChanges.set(change.after.id, {
+        id: change.after.id,
+        before: change.before ? clonePreference(change.before) : null,
+        after: clonePreference(change.after)
+      });
+      if (change.type === "added") {
+        preferencesAdded.add(change.after.text);
+      } else {
+        preferencesUpdated.add(change.after.text);
+      }
+    }
   }
 
   const eventCandidate = extractEventCandidate(text);
   if (eventCandidate) {
+    const { recentEvents, change } = upsertEvent(nextProfile, eventCandidate, observedAt);
     nextProfile = normalizeProfile({
       ...nextProfile,
-      recentEvents: upsertEvent(nextProfile, eventCandidate, observedAt)
+      recentEvents
     });
+    if (change) {
+      eventChanges.set(change.after.id, {
+        id: change.after.id,
+        before: change.before ? cloneRecentEvent(change.before) : null,
+        after: cloneRecentEvent(change.after)
+      });
+      if (change.type === "added") {
+        eventsAdded.add(change.after.text);
+      } else {
+        eventsUpdated.add(change.after.text);
+      }
+    }
   }
 
   const emotionScore = extractEmotionScore(text);
@@ -1153,8 +1375,139 @@ export const ingestPersonaMessage = async (payload: PersonaIngestPayload): Promi
     nextProfile = refreshDerivedFields(nextProfile);
     await writeProfileJson(paths.jsonPath, nextProfile);
     await writeProfileMarkdown(paths.markdownPath, nextProfile);
-    return;
+  } else {
+    await writeProfileJson(paths.jsonPath, nextProfile);
   }
 
-  await writeProfileJson(paths.jsonPath, nextProfile);
+  const extracted: PersonaIngestResult["extracted"] = {
+    preferencesAdded: Array.from(preferencesAdded),
+    preferencesUpdated: Array.from(preferencesUpdated),
+    eventsAdded: Array.from(eventsAdded),
+    eventsUpdated: Array.from(eventsUpdated)
+  };
+  const hasExtracted =
+    extracted.preferencesAdded.length > 0 ||
+    extracted.preferencesUpdated.length > 0 ||
+    extracted.eventsAdded.length > 0 ||
+    extracted.eventsUpdated.length > 0;
+
+  if (!hasExtracted) {
+    return {
+      ...createEmptyIngestResult(operationId, observedAt, "no_match"),
+      extracted
+    };
+  }
+
+  let undoable = false;
+  try {
+    const operation: PersonaOperationRecord = {
+      operationId,
+      observedAt,
+      createdAt: nowIso(),
+      preferenceChanges: Array.from(preferenceChanges.values()),
+      eventChanges: Array.from(eventChanges.values())
+    };
+    const existing = await readOperationRecords(paths.operationsPath);
+    const merged = [operation, ...existing.filter((entry) => entry.operationId !== operationId)];
+    await writeOperationRecords(paths.operationsPath, merged);
+    undoable = true;
+  } catch {
+    undoable = false;
+  }
+
+  return {
+    operationId,
+    observedAt,
+    reason: "extracted",
+    undoable,
+    extracted
+  };
+};
+
+export const undoPersonaIngest = async (
+  payload: PersonaUndoIngestPayload
+): Promise<PersonaUndoIngestResult> => {
+  const operationId = payload.operationId.trim();
+  if (!operationId) {
+    return {
+      ok: false,
+      reverted: { preferences: 0, events: 0 },
+      message: "Missing operation id."
+    };
+  }
+
+  const { profile: syncedProfile, paths } = await readProfileWithSync();
+  const operations = await readOperationRecords(paths.operationsPath);
+  const operationIndex = operations.findIndex((entry) => entry.operationId === operationId);
+  if (operationIndex < 0) {
+    return {
+      ok: false,
+      reverted: { preferences: 0, events: 0 },
+      message: "This ingest operation is no longer available."
+    };
+  }
+
+  const operation = operations[operationIndex];
+  const nextPreferences = [...syncedProfile.stablePreferences];
+  const nextEvents = [...syncedProfile.recentEvents];
+  let revertedPreferences = 0;
+  let revertedEvents = 0;
+
+  for (const change of operation.preferenceChanges) {
+    const currentIndex = nextPreferences.findIndex((entry) => entry.id === change.id);
+    if (change.before) {
+      const restored = clonePreference(change.before);
+      if (currentIndex >= 0) {
+        nextPreferences[currentIndex] = restored;
+      } else {
+        nextPreferences.push(restored);
+      }
+      revertedPreferences += 1;
+    } else if (currentIndex >= 0) {
+      nextPreferences.splice(currentIndex, 1);
+      revertedPreferences += 1;
+    }
+  }
+
+  for (const change of operation.eventChanges) {
+    const currentIndex = nextEvents.findIndex((entry) => entry.id === change.id);
+    if (change.before) {
+      const restored = cloneRecentEvent(change.before);
+      if (currentIndex >= 0) {
+        nextEvents[currentIndex] = restored;
+      } else {
+        nextEvents.push(restored);
+      }
+      revertedEvents += 1;
+    } else if (currentIndex >= 0) {
+      nextEvents.splice(currentIndex, 1);
+      revertedEvents += 1;
+    }
+  }
+
+  if (revertedPreferences > 0 || revertedEvents > 0) {
+    const nextProfile = normalizeProfile({
+      ...syncedProfile,
+      updatedAt: nowIso(),
+      stablePreferences: sortAndLimitPreferences(nextPreferences),
+      recentEvents: sortAndLimitEvents(nextEvents)
+    });
+    await writeProfileJson(paths.jsonPath, nextProfile);
+    await writeProfileMarkdown(paths.markdownPath, nextProfile);
+  }
+
+  const remaining = operations.filter((entry) => entry.operationId !== operationId);
+  await writeOperationRecords(paths.operationsPath, remaining);
+
+  return {
+    ok: revertedPreferences > 0 || revertedEvents > 0,
+    reverted: {
+      preferences: revertedPreferences,
+      events: revertedEvents
+    },
+    message:
+      revertedPreferences > 0 || revertedEvents > 0
+        ? "Reverted memory updates from this send."
+        : "No memory updates were reverted."
+  };
 };

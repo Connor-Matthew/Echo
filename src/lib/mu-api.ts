@@ -13,7 +13,10 @@ import {
   type EnvironmentWeatherRequest,
   type EnvironmentWeatherSnapshot,
   type PersonaIngestPayload,
+  type PersonaIngestResult,
   type PersonaInjectionPayload,
+  type PersonaUndoIngestPayload,
+  type PersonaUndoIngestResult,
   type PersonaSnapshot,
   type ModelListResult
 } from "../shared/contracts";
@@ -45,7 +48,8 @@ export type MuApi = {
     getMarkdown: () => Promise<string>;
     saveMarkdown: (markdown: string) => Promise<PersonaSnapshot>;
     getInjectionPayload: () => Promise<PersonaInjectionPayload>;
-    ingestMessage: (payload: PersonaIngestPayload) => Promise<void>;
+    ingestMessage: (payload: PersonaIngestPayload) => Promise<PersonaIngestResult>;
+    undoIngest: (payload: PersonaUndoIngestPayload) => Promise<PersonaUndoIngestResult>;
   };
   chat: {
     startStream: (payload: ChatStreamRequest) => Promise<{ streamId: string }>;
@@ -913,8 +917,21 @@ const createBrowserFallbackApi = (): MuApi => {
       },
       ingestMessage: async (payload) => {
         const text = payload.text.trim();
+        const observedAt = payload.createdAt?.trim() || nowIso();
+        const operationId = crypto.randomUUID();
         if (!text) {
-          return;
+          return {
+            operationId,
+            observedAt,
+            reason: "no_match" as const,
+            undoable: false,
+            extracted: {
+              preferencesAdded: [],
+              preferencesUpdated: [],
+              eventsAdded: [],
+              eventsUpdated: []
+            }
+          };
         }
         const snapshot = readFallbackPersonaSnapshot();
         const next: PersonaSnapshot = {
@@ -925,12 +942,32 @@ const createBrowserFallbackApi = (): MuApi => {
             counters: {
               ...snapshot.profile.counters,
               ingestedUserMessages: snapshot.profile.counters.ingestedUserMessages + 1,
-              lastIngestedAt: payload.createdAt?.trim() || nowIso()
+              lastIngestedAt: observedAt
             }
           }
         };
         writeFallbackPersonaSnapshot(next);
-      }
+        return {
+          operationId,
+          observedAt,
+          reason: "no_match" as const,
+          undoable: false,
+          extracted: {
+            preferencesAdded: [],
+            preferencesUpdated: [],
+            eventsAdded: [],
+            eventsUpdated: []
+          }
+        };
+      },
+      undoIngest: async () => ({
+        ok: false,
+        reverted: {
+          preferences: 0,
+          events: 0
+        },
+        message: "Undo is only available in the Electron desktop runtime."
+      })
     },
     chat: {
       startStream: async ({ settings, messages }) => {

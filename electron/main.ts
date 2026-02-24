@@ -14,6 +14,7 @@ import {
   getPersonaMarkdownDocument,
   getPersonaSnapshot,
   ingestPersonaMessage,
+  undoPersonaIngest,
   savePersonaMarkdownDocument
 } from "./memory/persona-service";
 import {
@@ -29,7 +30,10 @@ import {
   type ConnectionTestResult,
   type EnvironmentWeatherRequest,
   type PersonaIngestPayload,
+  type PersonaIngestResult,
   type PersonaInjectionPayload,
+  type PersonaUndoIngestPayload,
+  type PersonaUndoIngestResult,
   type PersonaSnapshot,
   type ModelListResult,
   type StreamEnvelope
@@ -1529,9 +1533,17 @@ const registerIpcHandlers = () => {
     async (): Promise<PersonaInjectionPayload> => getPersonaInjectionPayload()
   );
 
-  ipcMain.handle("persona:ingestMessage", async (_, payload: PersonaIngestPayload) => {
-    await ingestPersonaMessage(payload);
-  });
+  ipcMain.handle(
+    "persona:ingestMessage",
+    async (_, payload: PersonaIngestPayload): Promise<PersonaIngestResult> =>
+      ingestPersonaMessage(payload)
+  );
+
+  ipcMain.handle(
+    "persona:undoIngest",
+    async (_, payload: PersonaUndoIngestPayload): Promise<PersonaUndoIngestResult> =>
+      undoPersonaIngest(payload)
+  );
 
   ipcMain.handle(
     "chat:startStream",

@@ -167,6 +167,32 @@ export type PersonaIngestPayload = {
   createdAt?: string;
 };
 
+export type PersonaIngestResult = {
+  operationId: string;
+  observedAt: string;
+  reason: "extracted" | "no_match" | "disabled";
+  undoable: boolean;
+  extracted: {
+    preferencesAdded: string[];
+    preferencesUpdated: string[];
+    eventsAdded: string[];
+    eventsUpdated: string[];
+  };
+};
+
+export type PersonaUndoIngestPayload = {
+  operationId: string;
+};
+
+export type PersonaUndoIngestResult = {
+  ok: boolean;
+  reverted: {
+    preferences: number;
+    events: number;
+  };
+  message: string;
+};
+
 export type EnvironmentSettings = {
   enabled: boolean;
   city: string;

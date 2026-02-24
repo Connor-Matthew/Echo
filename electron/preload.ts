@@ -26,7 +26,8 @@ const api: MuApi = {
     getMarkdown: () => ipcRenderer.invoke("persona:getMarkdown"),
     saveMarkdown: (markdown) => ipcRenderer.invoke("persona:saveMarkdown", markdown),
     getInjectionPayload: () => ipcRenderer.invoke("persona:getInjectionPayload"),
-    ingestMessage: (payload) => ipcRenderer.invoke("persona:ingestMessage", payload)
+    ingestMessage: (payload) => ipcRenderer.invoke("persona:ingestMessage", payload),
+    undoIngest: (payload) => ipcRenderer.invoke("persona:undoIngest", payload)
   },
   chat: {
     startStream: (payload) => ipcRenderer.invoke("chat:startStream", payload),
