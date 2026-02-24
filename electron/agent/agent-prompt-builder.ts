@@ -1,5 +1,9 @@
 import type { AgentMessage, AgentRunSettingsSnapshot } from "../../src/shared/agent-contracts";
 import type { EnvironmentSnapshot } from "../../src/shared/contracts";
+import {
+  formatEnvironmentAwarenessBlock,
+  formatEnvironmentUsageGuidanceBlock
+} from "../../src/shared/environment-awareness";
 
 type BuildAgentPromptInput = {
   settings: AgentRunSettingsSnapshot;
@@ -61,9 +65,15 @@ export const buildAgentPrompt = ({
   const environmentBlock = environmentSnapshot
     ? `environment_snapshot_json:\n${formatEnvironmentSnapshot(environmentSnapshot)}`
     : "environment_snapshot_json: null";
-  const runtimeContextBlock = `<runtime_context>\ncurrent_time: ${now}\nworking_directory: ${cwd}\nprovider: ${settings.providerName}\nmodel: ${settings.model}\n${environmentBlock}\n</runtime_context>`;
+  const environmentAwarenessBlock = environmentSnapshot
+    ? formatEnvironmentAwarenessBlock(environmentSnapshot)
+    : "environment_awareness: null";
+  const environmentGuidanceBlock = formatEnvironmentUsageGuidanceBlock();
+  const runtimeContextBlock = `<runtime_context>\ncurrent_time: ${now}\nworking_directory: ${cwd}\nprovider: ${settings.providerName}\nmodel: ${settings.model}\n${environmentBlock}\n${environmentAwarenessBlock}\n${environmentGuidanceBlock}\n</runtime_context>`;
 
-  console.info(`[agent][environment][injected]\n${environmentBlock}`);
+  console.info(
+    `[agent][environment][injected]\n${environmentBlock}\n${environmentAwarenessBlock}\n${environmentGuidanceBlock}`
+  );
 
   const segments = [buildSystemPrompt(settings), runtimeContextBlock];
 

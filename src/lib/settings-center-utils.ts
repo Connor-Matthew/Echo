@@ -13,6 +13,7 @@ import type {
 export type SettingsValidationSection =
   | "provider"
   | "chat"
+  | "memory"
   | "soul"
   | "environment"
   | "theme"
@@ -447,6 +448,39 @@ export const validateSettingsForSection = (
     return null;
   }
 
+  if (section === "memory") {
+    if (!draft.memos.enabled) {
+      return null;
+    }
+    if (!draft.memos.baseUrl.trim() || !isValidHttpUrl(draft.memos.baseUrl.trim())) {
+      return "MemOS Base URL is invalid.";
+    }
+    if (!draft.memos.apiKey.trim()) {
+      return "MemOS API key is required.";
+    }
+    if (!draft.memos.userId.trim()) {
+      return "MemOS user ID is required.";
+    }
+    if (!Number.isInteger(draft.memos.topK) || draft.memos.topK < 1 || draft.memos.topK > 20) {
+      return "MemOS Top K must be 1-20.";
+    }
+    if (
+      !Number.isInteger(draft.memos.searchTimeoutMs) ||
+      draft.memos.searchTimeoutMs < 1000 ||
+      draft.memos.searchTimeoutMs > 15000
+    ) {
+      return "MemOS search timeout must be 1000-15000 ms.";
+    }
+    if (
+      !Number.isInteger(draft.memos.addTimeoutMs) ||
+      draft.memos.addTimeoutMs < 1000 ||
+      draft.memos.addTimeoutMs > 15000
+    ) {
+      return "MemOS add timeout must be 1000-15000 ms.";
+    }
+    return null;
+  }
+
   if (section === "environment") {
     if (draft.environment.temperatureUnit !== "c" && draft.environment.temperatureUnit !== "f") {
       return "Environment temperature unit must be C or F.";
@@ -502,7 +536,8 @@ export const areSettingsEqual = (left: AppSettings, right: AppSettings) =>
   left.requestTimeoutMs === right.requestTimeoutMs &&
   left.retryCount === right.retryCount &&
   left.sseDebug === right.sseDebug &&
-  JSON.stringify(left.environment) === JSON.stringify(right.environment);
+  JSON.stringify(left.environment) === JSON.stringify(right.environment) &&
+  JSON.stringify(left.memos) === JSON.stringify(right.memos);
 
 export const isValidImportedSessions = (value: unknown): value is ChatSession[] =>
   Array.isArray(value) &&

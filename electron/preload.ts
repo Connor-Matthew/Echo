@@ -29,6 +29,11 @@ const api: MuApi = {
     ingestMessage: (payload) => ipcRenderer.invoke("persona:ingestMessage", payload),
     undoIngest: (payload) => ipcRenderer.invoke("persona:undoIngest", payload)
   },
+  memos: {
+    testConnection: (settings) => ipcRenderer.invoke("memos:testConnection", settings),
+    searchMemory: (payload) => ipcRenderer.invoke("memos:searchMemory", payload),
+    addMessage: (payload) => ipcRenderer.invoke("memos:addMessage", payload)
+  },
   chat: {
     startStream: (payload) => ipcRenderer.invoke("chat:startStream", payload),
     stopStream: (streamId) => ipcRenderer.invoke("chat:stopStream", streamId),

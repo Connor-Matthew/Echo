@@ -25,6 +25,7 @@ import { Button } from "./ui/button";
 export type SettingsSection =
   | "provider"
   | "chat"
+  | "memory"
   | "soul"
   | "environment"
   | "theme"
@@ -157,6 +158,7 @@ export const Sidebar = (props: SidebarProps) => {
     const settingsItems: Array<{ key: SettingsSection; label: string; icon: typeof Server }> = [
       { key: "provider", label: "Provider", icon: Server },
       { key: "chat", label: "Chat", icon: MessageSquare },
+      { key: "memory", label: "Memory", icon: Database },
       { key: "soul", label: "Soul", icon: Sparkles },
       { key: "environment", label: "Environment", icon: Cpu },
       { key: "theme", label: "Theme", icon: Palette },

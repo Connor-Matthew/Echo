@@ -12,6 +12,10 @@ import {
   type EnvironmentDeviceStatus,
   type EnvironmentWeatherRequest,
   type EnvironmentWeatherSnapshot,
+  type MemosAddPayload,
+  type MemosAddResult,
+  type MemosSearchPayload,
+  type MemosSearchResult,
   type PersonaIngestPayload,
   type PersonaIngestResult,
   type PersonaInjectionPayload,
@@ -50,6 +54,11 @@ export type MuApi = {
     getInjectionPayload: () => Promise<PersonaInjectionPayload>;
     ingestMessage: (payload: PersonaIngestPayload) => Promise<PersonaIngestResult>;
     undoIngest: (payload: PersonaUndoIngestPayload) => Promise<PersonaUndoIngestResult>;
+  };
+  memos: {
+    testConnection: (settings: AppSettings) => Promise<ConnectionTestResult>;
+    searchMemory: (payload: MemosSearchPayload) => Promise<MemosSearchResult>;
+    addMessage: (payload: MemosAddPayload) => Promise<MemosAddResult>;
   };
   chat: {
     startStream: (payload: ChatStreamRequest) => Promise<{ streamId: string }>;
@@ -969,6 +978,21 @@ const createBrowserFallbackApi = (): MuApi => {
         message: "Undo is only available in the Electron desktop runtime."
       })
     },
+    memos: {
+      testConnection: async () => ({
+        ok: false,
+        message: "MemOS integration is only available in the Electron desktop runtime."
+      }),
+      searchMemory: async () => ({
+        ok: false,
+        message: "MemOS integration is only available in the Electron desktop runtime.",
+        memories: []
+      }),
+      addMessage: async () => ({
+        ok: false,
+        message: "MemOS integration is only available in the Electron desktop runtime."
+      })
+    },
     chat: {
       startStream: async ({ settings, messages }) => {
         if (settings.providerType === "acp" || settings.providerType === "claude-agent") {
@@ -1347,6 +1371,7 @@ export const getMuApi = (): MuApi => {
       sessions: runtimeApi.sessions ?? fallbackApi.sessions,
       env: runtimeApi.env ?? fallbackApi.env,
       persona: runtimeApi.persona ?? fallbackApi.persona,
+      memos: runtimeApi.memos ?? fallbackApi.memos,
       chat: runtimeApi.chat ?? fallbackApi.chat,
       agent: runtimeApi.agent ?? fallbackApi.agent
     };

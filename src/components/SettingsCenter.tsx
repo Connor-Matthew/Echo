@@ -64,6 +64,7 @@ type SettingsCenterProps = {
   settings: AppSettings;
   onSave: (settings: AppSettings) => Promise<void>;
   onTest: (settings: AppSettings) => Promise<ConnectionTestResult>;
+  onTestMemos: (settings: AppSettings) => Promise<ConnectionTestResult>;
   onListModels: (settings: AppSettings) => Promise<ModelListResult>;
   onGetPersonaSnapshot: () => Promise<PersonaSnapshot>;
   onGetPersonaMarkdown: () => Promise<string>;
@@ -79,6 +80,7 @@ export const SettingsCenter = ({
   settings,
   onSave,
   onTest,
+  onTestMemos,
   onListModels,
   onGetPersonaSnapshot,
   onGetPersonaMarkdown,
@@ -92,6 +94,8 @@ export const SettingsCenter = ({
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
+  const [isTestingMemos, setIsTestingMemos] = useState(false);
+  const [memosTestResult, setMemosTestResult] = useState<ConnectionTestResult | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [dataMessage, setDataMessage] = useState<string | null>(null);
   const [providerMessage, setProviderMessage] = useState<string | null>(null);
@@ -129,6 +133,8 @@ export const SettingsCenter = ({
     setModelContextWindowDraft("");
     setPersonaError(null);
     setPersonaDocumentMessage(null);
+    setMemosTestResult(null);
+    setIsTestingMemos(false);
   }, [settings, section]);
 
   const isDirty = useMemo(() => !areSettingsEqual(draft, settings), [draft, settings]);
@@ -228,6 +234,21 @@ export const SettingsCenter = ({
         [field]: value
       }
     }));
+  };
+
+  const updateMemosField = <K extends keyof AppSettings["memos"]>(
+    field: K,
+    value: AppSettings["memos"][K]
+  ) => {
+    setDraft((previous) => ({
+      ...previous,
+      memos: {
+        ...previous.memos,
+        [field]: value
+      }
+    }));
+    setMemosTestResult(null);
+    setSaveError(null);
   };
 
   const updateActiveProviderField = (
@@ -578,6 +599,16 @@ export const SettingsCenter = ({
       setTestResult(result);
     } finally {
       setIsTesting(false);
+    }
+  };
+
+  const testMemosConnection = async () => {
+    setIsTestingMemos(true);
+    try {
+      const result = await onTestMemos(normalizeDraft(draft));
+      setMemosTestResult(result);
+    } finally {
+      setIsTestingMemos(false);
     }
   };
 
@@ -1578,6 +1609,209 @@ export const SettingsCenter = ({
                     {isPersonaLoading ? "Loading soul profile..." : "No soul profile data available."}
                   </p>
                 )}
+              </div>
+
+              {saveError ? <p className="text-sm text-destructive">{saveError}</p> : null}
+              <div className="flex items-center justify-end">
+                <Button onClick={save} disabled={isSaving || !isDirty}>
+                  {isSaving ? "Saving..." : "Save"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {section === "memory" ? (
+          <Card className="border-border bg-card/80">
+            <CardHeader>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Database className="h-4 w-4" />
+                <span className="text-xs font-medium uppercase tracking-[0.16em]">Memory</span>
+              </div>
+              <CardTitle className="text-2xl">记忆</CardTitle>
+              <CardDescription>
+                启用后 Chat 和 Agent 模式都会跨会话记住重要信息。
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <button
+                type="button"
+                className={cn(
+                  "flex w-full items-center justify-between rounded-[6px] border px-4 py-3 text-left transition-colors",
+                  draft.memos.enabled
+                    ? "border-border bg-accent/60"
+                    : "border-border/70 bg-card hover:bg-secondary/65"
+                )}
+                onClick={() => updateMemosField("enabled", !draft.memos.enabled)}
+              >
+                <div>
+                  <p className="text-sm font-semibold text-foreground">启用记忆功能</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    开启后将自动检索相关记忆并在回复完成后写回记忆库。
+                  </p>
+                </div>
+                <span className="text-xs font-medium text-muted-foreground">
+                  {draft.memos.enabled ? "On" : "Off"}
+                </span>
+              </button>
+
+              <div className="rounded-[8px] border border-border/75 bg-muted/35 px-4 py-4">
+                <p className="text-sm leading-7 text-muted-foreground">
+                  记忆功能由 <span className="font-semibold text-foreground">MemOS Cloud</span>{" "}
+                  提供，启用后可跨会话保存偏好、决策和项目上下文。
+                </p>
+                <p className="mt-3 text-sm font-semibold text-foreground">配置步骤：</p>
+                <ol className="mt-2 space-y-1 text-sm text-muted-foreground">
+                  <li>
+                    1. 访问{" "}
+                    <a
+                      href="https://memos-dashboard.openmem.net/cn/quickstart/"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-foreground underline underline-offset-4"
+                    >
+                      MemOS Cloud 控制台
+                    </a>{" "}
+                    注册账号
+                  </li>
+                  <li>2. 在 API Keys 页面生成一个 API Key</li>
+                  <li>3. 填入下方配置并点击测试连接</li>
+                </ol>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-1.5">
+                  <label htmlFor="memosBaseUrl" className="text-sm text-muted-foreground">
+                    Base URL
+                  </label>
+                  <Input
+                    id="memosBaseUrl"
+                    value={draft.memos.baseUrl}
+                    onChange={(event) => updateMemosField("baseUrl", event.target.value)}
+                    placeholder="https://memos.memtensor.cn/api/openmem/v1"
+                    disabled={!draft.memos.enabled}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label htmlFor="memosUserId" className="text-sm text-muted-foreground">
+                    User ID
+                  </label>
+                  <Input
+                    id="memosUserId"
+                    value={draft.memos.userId}
+                    onChange={(event) => updateMemosField("userId", event.target.value)}
+                    placeholder="echo-user-001"
+                    disabled={!draft.memos.enabled}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label htmlFor="memosApiKey" className="text-sm text-muted-foreground">
+                  API Key
+                </label>
+                <Input
+                  id="memosApiKey"
+                  type="password"
+                  value={draft.memos.apiKey}
+                  onChange={(event) => updateMemosField("apiKey", event.target.value)}
+                  placeholder="sk-..."
+                  disabled={!draft.memos.enabled}
+                />
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="space-y-1.5">
+                  <label htmlFor="memosTopK" className="text-sm text-muted-foreground">
+                    Top K (1 - 20)
+                  </label>
+                  <Input
+                    id="memosTopK"
+                    type="number"
+                    min={1}
+                    max={20}
+                    step={1}
+                    value={draft.memos.topK}
+                    onChange={(event) =>
+                      updateMemosField("topK", Number.parseInt(event.target.value, 10) || 1)
+                    }
+                    onBlur={() => updateMemosField("topK", Math.round(clamp(draft.memos.topK, 1, 20)))}
+                    disabled={!draft.memos.enabled}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label htmlFor="memosSearchTimeoutMs" className="text-sm text-muted-foreground">
+                    Search timeout (ms)
+                  </label>
+                  <Input
+                    id="memosSearchTimeoutMs"
+                    type="number"
+                    min={1000}
+                    max={15000}
+                    step={100}
+                    value={draft.memos.searchTimeoutMs}
+                    onChange={(event) =>
+                      updateMemosField("searchTimeoutMs", Number.parseInt(event.target.value, 10) || 1000)
+                    }
+                    onBlur={() =>
+                      updateMemosField(
+                        "searchTimeoutMs",
+                        Math.round(clamp(draft.memos.searchTimeoutMs, 1000, 15000))
+                      )
+                    }
+                    disabled={!draft.memos.enabled}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label htmlFor="memosAddTimeoutMs" className="text-sm text-muted-foreground">
+                    Add timeout (ms)
+                  </label>
+                  <Input
+                    id="memosAddTimeoutMs"
+                    type="number"
+                    min={1000}
+                    max={15000}
+                    step={100}
+                    value={draft.memos.addTimeoutMs}
+                    onChange={(event) =>
+                      updateMemosField("addTimeoutMs", Number.parseInt(event.target.value, 10) || 1000)
+                    }
+                    onBlur={() =>
+                      updateMemosField(
+                        "addTimeoutMs",
+                        Math.round(clamp(draft.memos.addTimeoutMs, 1000, 15000))
+                      )
+                    }
+                    disabled={!draft.memos.enabled}
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-2">
+                {memosTestResult ? (
+                  <p
+                    className={cn(
+                      "text-sm",
+                      memosTestResult.ok ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"
+                    )}
+                  >
+                    {memosTestResult.message}
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    点击测试连接来验证当前记忆配置是否可用。
+                  </p>
+                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    void testMemosConnection();
+                  }}
+                  disabled={isTestingMemos || !draft.memos.enabled}
+                >
+                  {isTestingMemos ? "Testing..." : "测试连接"}
+                </Button>
               </div>
 
               {saveError ? <p className="text-sm text-destructive">{saveError}</p> : null}

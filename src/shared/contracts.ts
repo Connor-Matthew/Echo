@@ -278,6 +278,16 @@ export type EnvironmentWeatherRequest = {
   cacheTtlMs?: number;
 };
 
+export type MemosSettings = {
+  enabled: boolean;
+  baseUrl: string;
+  apiKey: string;
+  userId: string;
+  topK: number;
+  searchTimeoutMs: number;
+  addTimeoutMs: number;
+};
+
 export type AppSettings = {
   baseUrl: string;
   apiKey: string;
@@ -298,6 +308,31 @@ export type AppSettings = {
   retryCount: number;
   sseDebug: boolean;
   environment: EnvironmentSettings;
+  memos: MemosSettings;
+};
+
+export type MemosSearchPayload = {
+  settings: AppSettings;
+  query: string;
+  conversationId: string;
+};
+
+export type MemosSearchResult = {
+  ok: boolean;
+  message: string;
+  memories: string[];
+};
+
+export type MemosAddPayload = {
+  settings: AppSettings;
+  conversationId: string;
+  userMessage: string;
+  assistantMessage: string;
+};
+
+export type MemosAddResult = {
+  ok: boolean;
+  message: string;
 };
 
 export type ConnectionTestResult = {
@@ -356,6 +391,16 @@ export const DEFAULT_ENVIRONMENT_SETTINGS: EnvironmentSettings = {
   sendTimeoutMs: 600
 };
 
+export const DEFAULT_MEMOS_SETTINGS: MemosSettings = {
+  enabled: false,
+  baseUrl: "https://memos.memtensor.cn/api/openmem/v1",
+  apiKey: "",
+  userId: "",
+  topK: 3,
+  searchTimeoutMs: 6000,
+  addTimeoutMs: 6000
+};
+
 export const DEFAULT_SETTINGS: AppSettings = {
   baseUrl: "",
   apiKey: "",
@@ -375,7 +420,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   requestTimeoutMs: 60000,
   retryCount: 1,
   sseDebug: false,
-  environment: DEFAULT_ENVIRONMENT_SETTINGS
+  environment: DEFAULT_ENVIRONMENT_SETTINGS,
+  memos: DEFAULT_MEMOS_SETTINGS
 };
 
 const normalizeProviderType = (providerType: unknown): ProviderType => {
@@ -531,10 +577,32 @@ const normalizeEnvironmentSettings = (value: unknown): EnvironmentSettings => {
   };
 };
 
+const normalizeMemosSettings = (value: unknown): MemosSettings => {
+  const source = value && typeof value === "object" ? (value as Partial<MemosSettings>) : undefined;
+  return {
+    enabled: source?.enabled === true,
+    baseUrl:
+      typeof source?.baseUrl === "string" && source.baseUrl.trim()
+        ? source.baseUrl.trim().replace(/\/+$/, "")
+        : DEFAULT_MEMOS_SETTINGS.baseUrl,
+    apiKey: typeof source?.apiKey === "string" ? source.apiKey.trim() : "",
+    userId: typeof source?.userId === "string" ? source.userId.trim() : "",
+    topK: clampInteger(source?.topK, 1, 20, DEFAULT_MEMOS_SETTINGS.topK),
+    searchTimeoutMs: clampInteger(
+      source?.searchTimeoutMs,
+      1000,
+      15000,
+      DEFAULT_MEMOS_SETTINGS.searchTimeoutMs
+    ),
+    addTimeoutMs: clampInteger(source?.addTimeoutMs, 1000, 15000, DEFAULT_MEMOS_SETTINGS.addTimeoutMs)
+  };
+};
+
 export const normalizeSettings = (saved: Partial<AppSettings>): AppSettings => {
   const merged = { ...DEFAULT_SETTINGS, ...saved };
   const rawChatContextWindow = (saved as { chatContextWindow?: unknown }).chatContextWindow;
   const rawEnvironment = (saved as { environment?: unknown }).environment;
+  const rawMemos = (saved as { memos?: unknown }).memos;
   const rawDefaultSoulModeEnabled = (saved as { defaultSoulModeEnabled?: unknown })
     .defaultSoulModeEnabled;
   const rawProviders = Array.isArray(saved.providers) ? saved.providers : [];
@@ -577,6 +645,7 @@ export const normalizeSettings = (saved: Partial<AppSettings>): AppSettings => {
         ? rawDefaultSoulModeEnabled
         : DEFAULT_SETTINGS.defaultSoulModeEnabled,
     chatContextWindow: normalizeChatContextWindow(rawChatContextWindow),
-    environment: normalizeEnvironmentSettings(rawEnvironment)
+    environment: normalizeEnvironmentSettings(rawEnvironment),
+    memos: normalizeMemosSettings(rawMemos)
   };
 };

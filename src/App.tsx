@@ -66,6 +66,10 @@ import {
   type AgentSessionMeta
 } from "./shared/agent-contracts";
 import {
+  formatEnvironmentAwarenessBlock,
+  formatEnvironmentUsageGuidanceBlock
+} from "./shared/environment-awareness";
+import {
   DEFAULT_SETTINGS,
   normalizeSettings,
   type AppSettings,
@@ -99,6 +103,7 @@ type ActiveStream = {
   flushTimeoutId: number | null;
   flushPending: () => void;
   unsubscribe: () => void;
+  stoppedByUser: boolean;
 };
 
 type AppView = "chat" | "agent" | "settings";
@@ -551,7 +556,11 @@ export const App = () => {
       weather
     };
     chatEnvironmentSnapshotRef.current = snapshot;
-    const content = `environment_snapshot_json:\n${JSON.stringify(snapshot, null, 2)}`;
+    const content = [
+      `environment_snapshot_json:\n${JSON.stringify(snapshot, null, 2)}`,
+      formatEnvironmentAwarenessBlock(snapshot),
+      formatEnvironmentUsageGuidanceBlock()
+    ].join("\n");
     console.info(`[chat][environment][injected]\n${content}`);
     return content;
   }, [
@@ -853,6 +862,7 @@ export const App = () => {
     if (!activeStream) {
       return;
     }
+    activeStream.stoppedByUser = true;
     try {
       await api.chat.stopStream(activeStream.streamId);
     } finally {
@@ -1001,6 +1011,8 @@ export const App = () => {
 
   const testConnection = async (next: AppSettings): Promise<ConnectionTestResult> =>
     api.settings.testConnection(next);
+  const testMemosConnection = async (next: AppSettings): Promise<ConnectionTestResult> =>
+    api.memos.testConnection(next);
 
   const listModels = async (next: AppSettings) => api.settings.listModels(next);
   const getPersonaSnapshot = useCallback(() => api.persona.getSnapshot(), []);
@@ -1295,6 +1307,28 @@ export const App = () => {
       }
     }
 
+    let memosMemoryContent: string | null = null;
+    if (settings.memos.enabled && userMessage.content.trim()) {
+      try {
+        const result = await api.memos.searchMemory({
+          settings,
+          query: userMessage.content,
+          conversationId: "echo-global-memory"
+        });
+        if (result.ok && result.memories.length) {
+          const memoryLines = result.memories
+            .slice(0, settings.memos.topK)
+            .map((item) => `- ${item}`);
+          memosMemoryContent = ["<memos_memory>", ...memoryLines, "</memos_memory>"].join("\n");
+        } else if (!result.ok) {
+          console.warn("[memos][search] failed", result.message);
+        }
+      } catch (error) {
+        console.warn("[memos][search] failed", error instanceof Error ? error.message : "unknown_error");
+        memosMemoryContent = null;
+      }
+    }
+
     const systemMessages: ChatStreamRequest["messages"] = [
       ...(systemPrompt ? [{ role: "system" as const, content: systemPrompt }] : []),
       ...(environmentSystemContent
@@ -1302,6 +1336,9 @@ export const App = () => {
         : []),
       ...(soulMemoryContent
         ? [{ role: "system" as const, content: soulMemoryContent }]
+        : []),
+      ...(memosMemoryContent
+        ? [{ role: "system" as const, content: memosMemoryContent }]
         : [])
     ];
     const messagesWithSystem = [...systemMessages, ...completionMessages];
@@ -1321,6 +1358,7 @@ export const App = () => {
     setDraft("");
     setIsGenerating(true);
     const streamModelUsageKey = toModelUsageKey(settings.activeProviderId, settings.model);
+    let assistantResponseText = "";
 
     try {
       const { streamId } = await api.chat.startStream({
@@ -1341,7 +1379,8 @@ export const App = () => {
         pendingReasoningDelta: "",
         flushTimeoutId: null,
         flushPending: () => {},
-        unsubscribe: () => {}
+        unsubscribe: () => {},
+        stoppedByUser: false
       };
 
       const applyEstimatedUsageFallback = () => {
@@ -1411,6 +1450,7 @@ export const App = () => {
         if (event.type === "delta") {
           streamState.estimatedOutputTokens += estimateTokensFromText(event.delta);
           streamState.pendingDelta += event.delta;
+          assistantResponseText += event.delta;
           if (streamState.flushTimeoutId === null) {
             streamState.flushTimeoutId = window.setTimeout(() => {
               streamState.flushTimeoutId = null;
@@ -1462,6 +1502,26 @@ export const App = () => {
         flushPendingDelta();
         applyEstimatedUsageFallback();
         removeAssistantPlaceholderIfEmpty(streamState.sessionId, streamState.assistantMessageId);
+        if (!streamState.stoppedByUser && settings.memos.enabled) {
+          void api.memos
+            .addMessage({
+              settings,
+              conversationId: "echo-global-memory",
+              userMessage: userMessage.content,
+              assistantMessage: assistantResponseText
+            })
+            .then((result) => {
+              if (!result.ok) {
+                console.warn("[memos][add] failed", result.message);
+              }
+            })
+            .catch((error) => {
+              console.warn(
+                "[memos][add] failed",
+                error instanceof Error ? error.message : "unknown_error"
+              );
+            });
+        }
         finishActiveStream();
       });
 
@@ -1551,11 +1611,13 @@ export const App = () => {
       return;
     }
 
-    const runSettings = agentSettingsSnapshot;
-    if (!runSettings) {
+    const baseRunSettings = agentSettingsSnapshot;
+    if (!baseRunSettings) {
       setAgentErrorBanner("请先在 Settings 选择 Claude Agent SDK provider。");
       return;
     }
+    const sessionId = activeAgentSession.id;
+    let runSettings = baseRunSettings;
 
     let environmentSnapshot: EnvironmentSnapshot | undefined;
     if (settings.environment.enabled) {
@@ -1566,9 +1628,38 @@ export const App = () => {
       }
     }
 
+    if (settings.memos.enabled) {
+      try {
+        const result = await api.memos.searchMemory({
+          settings,
+          query: input,
+          conversationId: "echo-global-memory"
+        });
+        if (result.ok && result.memories.length) {
+          const memosMemoryBlock = [
+            "<memos_memory>",
+            ...result.memories.slice(0, settings.memos.topK).map((item) => `- ${item}`),
+            "</memos_memory>"
+          ].join("\n");
+          runSettings = {
+            ...baseRunSettings,
+            systemPrompt: [baseRunSettings.systemPrompt.trim(), memosMemoryBlock]
+              .filter(Boolean)
+              .join("\n\n")
+          };
+        } else if (!result.ok) {
+          console.warn("[memos][search][agent] failed", result.message);
+        }
+      } catch (error) {
+        console.warn(
+          "[memos][search][agent] failed",
+          error instanceof Error ? error.message : "unknown_error"
+        );
+      }
+    }
+
     setAgentErrorBanner(null);
 
-    const sessionId = activeAgentSession.id;
     const userMessage: AgentMessage = {
       id: createId(),
       sessionId,
@@ -1605,6 +1696,8 @@ export const App = () => {
     setIsAgentRunning(true);
 
     try {
+      let streamedAssistantText = "";
+      let stoppedByUser = false;
       const { runId } = await api.agent.sendMessage({
         sessionId,
         input,
@@ -1612,7 +1705,7 @@ export const App = () => {
         environmentSnapshot
       });
 
-      const handleEnvelope = createAgentStreamEnvelopeHandler({
+      const baseHandleEnvelope = createAgentStreamEnvelopeHandler({
         sessionId,
         assistantMessageId: assistantMessage.id,
         upsertAgentMessages,
@@ -1621,6 +1714,44 @@ export const App = () => {
         finishAgentRun,
         loadAgentMessages
       });
+      const handleEnvelope = (payload: Parameters<typeof baseHandleEnvelope>[0]) => {
+        const streamEvent = payload.event;
+        if (streamEvent.type === "text_delta") {
+          streamedAssistantText = `${streamedAssistantText}${streamEvent.text}`;
+        } else if (streamEvent.type === "text_complete") {
+          if (!streamedAssistantText.endsWith(streamEvent.text)) {
+            streamedAssistantText = `${streamedAssistantText}${streamEvent.text}`;
+          }
+        } else if (
+          streamEvent.type === "task_progress" &&
+          streamEvent.message.toLowerCase().includes("stopped by user")
+        ) {
+          stoppedByUser = true;
+        } else if (streamEvent.type === "complete" && settings.memos.enabled && !stoppedByUser) {
+          const assistantText = streamedAssistantText.trim();
+          if (assistantText) {
+            void api.memos
+              .addMessage({
+                settings,
+                conversationId: "echo-global-memory",
+                userMessage: input,
+                assistantMessage: assistantText
+              })
+              .then((result) => {
+                if (!result.ok) {
+                  console.warn("[memos][add][agent] failed", result.message);
+                }
+              })
+              .catch((error) => {
+                console.warn(
+                  "[memos][add][agent] failed",
+                  error instanceof Error ? error.message : "unknown_error"
+                );
+              });
+          }
+        }
+        baseHandleEnvelope(payload);
+      };
 
       const unsubscribe = api.agent.onStreamEvent(runId, handleEnvelope);
       activeAgentRunRef.current = {
@@ -2211,6 +2342,7 @@ export const App = () => {
                 settings={settings}
                 onSave={saveSettings}
                 onTest={testConnection}
+                onTestMemos={testMemosConnection}
                 onListModels={listModels}
                 onGetPersonaSnapshot={getPersonaSnapshot}
                 onGetPersonaMarkdown={getPersonaMarkdown}
