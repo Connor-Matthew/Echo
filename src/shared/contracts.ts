@@ -32,6 +32,18 @@ export type ChatSessionUsage = {
   updatedAt: string;
 };
 
+export type McpServerOverride = {
+  enabled: boolean;
+};
+
+export type UserMcpServer = {
+  id: string;
+  name: string;
+  transportType: "stdio" | "streamable_http";
+  endpoint: string;
+  enabled: boolean;
+};
+
 export type StoredProvider = {
   id: string;
   name: string;
@@ -41,6 +53,7 @@ export type StoredProvider = {
   savedModels: string[];
   modelCapabilities: Record<string, ModelCapabilities>;
   modelContextWindows: Record<string, number>;
+  mcpServerOverrides: Record<string, McpServerOverride>;
   providerType: ProviderType;
   enabled: boolean;
   isPinned: boolean;
@@ -48,14 +61,51 @@ export type StoredProvider = {
 
 export type MessageRole = "system" | "user" | "assistant";
 
+export type ToolCall = {
+  id: string;
+  serverName: string;
+  toolName: string;
+  status: "pending" | "success" | "error";
+  message: string;
+  contentOffset?: number;
+};
+
+export type SkillParam = {
+  key: string;
+  label: string;
+  defaultValue: string;
+};
+
+export type Skill = {
+  id: string;
+  name: string;
+  command: string;
+  description: string;
+  icon: string;
+  userPromptTemplate: string;
+  systemPromptOverride?: string;
+  params: SkillParam[];
+  isBuiltin: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AppliedSkillMeta = {
+  icon: string;
+  name: string;
+  command: string;
+};
+
 export type ChatMessage = {
   id: string;
   role: MessageRole;
   content: string;
   reasoningContent?: string;
+  toolCalls?: ToolCall[];
   usage?: ChatMessageUsage;
   createdAt: string;
   attachments?: ChatAttachment[];
+  appliedSkill?: AppliedSkillMeta;
 };
 
 export type ChatMessageUsage = {
@@ -85,7 +135,7 @@ export type ChatSession = {
   createdAt: string;
   updatedAt: string;
   isPinned?: boolean;
-  soulModeEnabled?: boolean;
+  enabledMcpServers?: string[];
   messages: ChatMessage[];
   usageByModel?: Record<string, ChatSessionUsage>;
 };
@@ -299,7 +349,6 @@ export type AppSettings = {
   systemPrompt: string;
   temperature: number;
   maxTokens: number;
-  defaultSoulModeEnabled: boolean;
   chatContextWindow: ChatContextWindow;
   sendWithEnter: boolean;
   fontScale: FontScale;
@@ -309,6 +358,7 @@ export type AppSettings = {
   sseDebug: boolean;
   environment: EnvironmentSettings;
   memos: MemosSettings;
+  mcpServers: UserMcpServer[];
 };
 
 export type MemosSearchPayload = {
@@ -346,6 +396,39 @@ export type ModelListResult = {
   models: string[];
 };
 
+export type McpAuthStatus = "unsupported" | "notLoggedIn" | "bearerToken" | "oAuth" | "unknown";
+
+export type McpServerConfig = {
+  name: string;
+  enabled: boolean;
+  disabledReason: string | null;
+  authStatus: McpAuthStatus;
+  transportType: "stdio" | "streamable_http" | "unknown";
+  endpoint: string;
+  startupTimeoutSec: number | null;
+  toolTimeoutSec: number | null;
+};
+
+export type McpServerListResult = {
+  ok: boolean;
+  message: string;
+  servers: McpServerConfig[];
+};
+
+export type McpServerStatus = {
+  name: string;
+  authStatus: McpAuthStatus;
+  toolCount: number;
+  resourceCount: number;
+  resourceTemplateCount: number;
+};
+
+export type McpServerStatusListResult = {
+  ok: boolean;
+  message: string;
+  servers: McpServerStatus[];
+};
+
 export type CompletionMessage = {
   role: MessageRole;
   content: string;
@@ -355,11 +438,13 @@ export type CompletionMessage = {
 export type ChatStreamRequest = {
   settings: AppSettings;
   messages: CompletionMessage[];
+  enabledMcpServerIds?: string[];
 };
 
 export type ChatStreamEvent =
   | { type: "delta"; delta: string }
   | { type: "reasoning"; delta: string }
+  | { type: "status"; source: "mcp"; toolCall: ToolCall }
   | { type: "usage"; usage: ChatUsage }
   | { type: "done" }
   | { type: "error"; message: string };
@@ -378,6 +463,7 @@ const DEFAULT_PROVIDER: StoredProvider = {
   savedModels: [],
   modelCapabilities: {},
   modelContextWindows: {},
+  mcpServerOverrides: {},
   providerType: "openai",
   enabled: true,
   isPinned: false
@@ -412,7 +498,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   systemPrompt: "You are a precise and pragmatic coding assistant.",
   temperature: 0.4,
   maxTokens: 2048,
-  defaultSoulModeEnabled: false,
   chatContextWindow: "infinite",
   sendWithEnter: true,
   fontScale: "md",
@@ -421,7 +506,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   retryCount: 1,
   sseDebug: false,
   environment: DEFAULT_ENVIRONMENT_SETTINGS,
-  memos: DEFAULT_MEMOS_SETTINGS
+  memos: DEFAULT_MEMOS_SETTINGS,
+  mcpServers: []
 };
 
 const normalizeProviderType = (providerType: unknown): ProviderType => {
@@ -494,6 +580,25 @@ const sanitizeProvider = (
       })
       .filter((entry): entry is [string, number] => Boolean(entry))
   );
+  const rawMcpServerOverrides =
+    candidate?.mcpServerOverrides && typeof candidate.mcpServerOverrides === "object"
+      ? candidate.mcpServerOverrides
+      : {};
+  const normalizedMcpServerOverrides = Object.fromEntries(
+    Object.entries(rawMcpServerOverrides)
+      .map(([serverName, override]) => {
+        const key = serverName.trim();
+        if (!key || !override || typeof override !== "object") {
+          return null;
+        }
+        const enabled = (override as { enabled?: unknown }).enabled;
+        if (typeof enabled !== "boolean") {
+          return null;
+        }
+        return [key, { enabled }] as const;
+      })
+      .filter((entry): entry is [string, McpServerOverride] => Boolean(entry))
+  );
 
   return {
     id: candidate?.id?.trim() || `provider-${fallbackIndex + 1}`,
@@ -504,6 +609,7 @@ const sanitizeProvider = (
     savedModels: dedupedSavedModels,
     modelCapabilities: normalizedCapabilities,
     modelContextWindows: normalizedContextWindows,
+    mcpServerOverrides: normalizedMcpServerOverrides,
     providerType: normalizeProviderType(candidate?.providerType),
     enabled: candidate?.enabled !== false,
     isPinned: Boolean(candidate?.isPinned)
@@ -598,13 +704,34 @@ const normalizeMemosSettings = (value: unknown): MemosSettings => {
   };
 };
 
+const normalizeMcpServers = (value: unknown): UserMcpServer[] => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item): UserMcpServer | null => {
+      if (!item || typeof item !== "object") return null;
+      const s = item as Record<string, unknown>;
+      const name = typeof s.name === "string" && s.name.trim() ? s.name.trim() : "";
+      if (!name) return null;
+      const transportType = s.transportType === "streamable_http" ? "streamable_http" : "stdio";
+      const endpoint = typeof s.endpoint === "string" ? s.endpoint.trim() : "";
+      const fallbackId = `${name}:${transportType}:${endpoint}`.toLowerCase();
+      const id = typeof s.id === "string" && s.id.trim() ? s.id.trim() : fallbackId;
+      return {
+        id,
+        name,
+        transportType,
+        endpoint,
+        enabled: s.enabled !== false
+      };
+    })
+    .filter((s): s is UserMcpServer => s !== null);
+};
+
 export const normalizeSettings = (saved: Partial<AppSettings>): AppSettings => {
   const merged = { ...DEFAULT_SETTINGS, ...saved };
   const rawChatContextWindow = (saved as { chatContextWindow?: unknown }).chatContextWindow;
   const rawEnvironment = (saved as { environment?: unknown }).environment;
   const rawMemos = (saved as { memos?: unknown }).memos;
-  const rawDefaultSoulModeEnabled = (saved as { defaultSoulModeEnabled?: unknown })
-    .defaultSoulModeEnabled;
   const rawProviders = Array.isArray(saved.providers) ? saved.providers : [];
   const providersFromLegacy: StoredProvider[] = [
     {
@@ -616,6 +743,7 @@ export const normalizeSettings = (saved: Partial<AppSettings>): AppSettings => {
       savedModels: merged.model.trim() ? [merged.model.trim()] : [],
       modelCapabilities: {},
       modelContextWindows: {},
+      mcpServerOverrides: {},
       providerType: normalizeProviderType(merged.providerType),
       enabled: true,
       isPinned: false
@@ -640,12 +768,9 @@ export const normalizeSettings = (saved: Partial<AppSettings>): AppSettings => {
     apiKey: activeProvider.apiKey,
     model: activeProvider.model,
     providerType: activeProvider.providerType,
-    defaultSoulModeEnabled:
-      typeof rawDefaultSoulModeEnabled === "boolean"
-        ? rawDefaultSoulModeEnabled
-        : DEFAULT_SETTINGS.defaultSoulModeEnabled,
     chatContextWindow: normalizeChatContextWindow(rawChatContextWindow),
     environment: normalizeEnvironmentSettings(rawEnvironment),
-    memos: normalizeMemosSettings(rawMemos)
+    memos: normalizeMemosSettings(rawMemos),
+    mcpServers: normalizeMcpServers(saved.mcpServers)
   };
 };

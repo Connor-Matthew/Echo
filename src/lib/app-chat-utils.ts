@@ -6,7 +6,8 @@ import type {
   ChatStreamRequest,
   ChatUsage,
   EnvironmentSnapshot,
-  EnvironmentWeatherSnapshot
+  EnvironmentWeatherSnapshot,
+  ToolCall
 } from "../shared/contracts";
 
 const COMPOSER_MODEL_DELIMITER = "::";
@@ -32,8 +33,8 @@ const TEXT_ATTACHMENT_MIME_TYPES = new Set([
 const AUDIO_ATTACHMENT_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".ogg", ".flac", ".aac"]);
 const VIDEO_ATTACHMENT_EXTENSIONS = new Set([".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"]);
 export const SIDEBAR_AUTO_HIDE_WIDTH = 800;
-export const SIDEBAR_MIN_WIDTH = 228;
-export const SIDEBAR_MAX_WIDTH = 322;
+export const SIDEBAR_MIN_WIDTH = 248;
+export const SIDEBAR_MAX_WIDTH = 292;
 export const SIDEBAR_FULL_WIDTH_AT = 1400;
 
 export type StreamUsageSnapshot = {
@@ -99,10 +100,37 @@ export const hasAttachmentPayload = (attachment: ChatAttachment) => {
   return true;
 };
 
+const normalizeToolCall = (raw: unknown): ToolCall | null => {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.id !== "string" || typeof r.serverName !== "string" || typeof r.toolName !== "string") return null;
+  const status = r.status === "pending" || r.status === "success" || r.status === "error" ? r.status : "success";
+  const contentOffset =
+    typeof r.contentOffset === "number" && Number.isFinite(r.contentOffset)
+      ? Math.max(0, Math.floor(r.contentOffset))
+      : undefined;
+  return {
+    id: r.id,
+    serverName: r.serverName,
+    toolName: r.toolName,
+    status,
+    message: typeof r.message === "string" ? r.message : "",
+    contentOffset
+  };
+};
+
 const normalizeSession = (session: ChatSession): ChatSession => ({
   ...session,
   isPinned: Boolean(session.isPinned),
-  soulModeEnabled: Boolean(session.soulModeEnabled)
+  enabledMcpServers: Array.isArray(session.enabledMcpServers)
+    ? session.enabledMcpServers.filter((id): id is string => typeof id === "string" && Boolean(id))
+    : undefined,
+  messages: session.messages.map((message) => ({
+    ...message,
+    toolCalls: Array.isArray(message.toolCalls)
+      ? message.toolCalls.map(normalizeToolCall).filter((t): t is ToolCall => t !== null)
+      : undefined
+  }))
 });
 
 export const createId = () =>
@@ -324,7 +352,7 @@ export const revokeAttachmentPreview = (attachment: { previewUrl?: string }) => 
   }
 };
 
-export const createSession = (title = "New Chat", soulModeEnabled = false): ChatSession => {
+export const createSession = (title = "New Chat"): ChatSession => {
   const now = nowIso();
   return {
     id: createId(),
@@ -332,7 +360,6 @@ export const createSession = (title = "New Chat", soulModeEnabled = false): Chat
     createdAt: now,
     updatedAt: now,
     isPinned: false,
-    soulModeEnabled,
     messages: [],
     usageByModel: {}
   };
@@ -406,7 +433,6 @@ export const sessionToMarkdown = (session: ChatSession) => {
     `- 会话 ID: ${session.id}`,
     `- 创建时间: ${createdAt}`,
     `- 更新时间: ${updatedAt}`,
-    `- 灵魂模式: ${session.soulModeEnabled ? "开启" : "关闭"}`,
     "",
     "## 对话记录",
     ""
@@ -430,6 +456,16 @@ export const sessionToMarkdown = (session: ChatSession) => {
       lines.push("#### 推理内容");
       lines.push("");
       lines.push(message.reasoningContent);
+      lines.push("");
+    }
+
+    if (message.toolCalls?.length) {
+      lines.push("#### 工具调用");
+      lines.push("");
+      message.toolCalls.forEach((tc) => {
+        const statusLabel = tc.status === "success" ? "✓" : tc.status === "error" ? "✗" : "…";
+        lines.push(`- ${statusLabel} [${tc.serverName}] ${tc.toolName}${tc.message ? `: ${tc.message}` : ""}`);
+      });
       lines.push("");
     }
 

@@ -58,6 +58,9 @@
       "package.json"
     ],
     "asar": true,
+    "asarUnpack": [
+      "node_modules/@anthropic-ai/claude-agent-sdk/**"
+    ],
     "mac": {
       "icon": "tabler_brand-nuxt.png",
       "category": "public.app-category.productivity",

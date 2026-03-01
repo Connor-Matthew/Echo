@@ -8,10 +8,18 @@ const IMAGE_HINTS = [
   "vision",
   "vl",
   "4o",
+  "4.1",
   "gemini",
+  "gemini-2.5",
   "claude-3",
+  "claude-3.7",
+  "claude-4",
+  "claude-sonnet-4",
+  "claude-opus-4",
   "grok-vision",
   "qwen-vl",
+  "qwen2.5-vl",
+  "qwen3-vl",
   "llava"
 ];
 const AUDIO_HINTS = [
@@ -36,7 +44,15 @@ const REASONING_HINTS = [
   "o3",
   "o4",
   "r1",
-  "deepseek-reasoner"
+  "deepseek-reasoner",
+  "claude-3.7",
+  "claude-4",
+  "claude-sonnet-4",
+  "claude-opus-4",
+  "qwq",
+  "qwen3",
+  "grok-3",
+  "gemini-2.5-pro"
 ];
 
 const hasAnyHint = (source: string, hints: string[]) => hints.some((hint) => source.includes(hint));
@@ -61,8 +77,7 @@ export const inferModelCapabilities = (
 
   const imageInput =
     hasAnyHint(probe, IMAGE_HINTS) ||
-    ((providerType === "anthropic" || providerType === "claude-agent") &&
-      probe.includes("claude-3")) ||
+    ((providerType === "anthropic" || providerType === "claude-agent") && probe.includes("claude")) ||
     probe.includes("gpt-5");
   const audioInput = hasAnyHint(probe, AUDIO_HINTS);
   const videoInput = hasAnyHint(probe, VIDEO_HINTS);

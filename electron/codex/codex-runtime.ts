@@ -151,6 +151,383 @@ export const runCodexCommand = async (
     });
   });
 
+export type CodexMcpAuthStatus =
+  | "unsupported"
+  | "notLoggedIn"
+  | "bearerToken"
+  | "oAuth"
+  | "unknown";
+
+export type CodexMcpServerConfig = {
+  name: string;
+  enabled: boolean;
+  disabledReason: string | null;
+  authStatus: CodexMcpAuthStatus;
+  transportType: "stdio" | "streamable_http" | "unknown";
+  endpoint: string;
+  startupTimeoutSec: number | null;
+  toolTimeoutSec: number | null;
+};
+
+export type CodexMcpServerStatus = {
+  name: string;
+  authStatus: CodexMcpAuthStatus;
+  toolCount: number;
+  resourceCount: number;
+  resourceTemplateCount: number;
+};
+
+const toMcpAuthStatus = (value: unknown): CodexMcpAuthStatus =>
+  value === "unsupported" || value === "notLoggedIn" || value === "bearerToken" || value === "oAuth"
+    ? value
+    : "unknown";
+
+const toNullableNumber = (value: unknown) =>
+  typeof value === "number" && Number.isFinite(value) ? value : null;
+
+const parseCodexMcpConfigEntry = (entry: unknown): CodexMcpServerConfig | null => {
+  if (!entry || typeof entry !== "object") {
+    return null;
+  }
+
+  const source = entry as {
+    name?: unknown;
+    enabled?: unknown;
+    disabled_reason?: unknown;
+    auth_status?: unknown;
+    startup_timeout_sec?: unknown;
+    tool_timeout_sec?: unknown;
+    transport?: {
+      type?: unknown;
+      url?: unknown;
+      command?: unknown;
+      args?: unknown;
+    };
+  };
+
+  const name = typeof source.name === "string" ? source.name.trim() : "";
+  if (!name) {
+    return null;
+  }
+
+  const transportTypeRaw =
+    source.transport && typeof source.transport === "object" ? source.transport.type : null;
+  const transportType =
+    transportTypeRaw === "stdio" || transportTypeRaw === "streamable_http" ? transportTypeRaw : "unknown";
+
+  let endpoint = "";
+  if (transportType === "streamable_http") {
+    endpoint = typeof source.transport?.url === "string" ? source.transport.url : "";
+  } else if (transportType === "stdio") {
+    const command = typeof source.transport?.command === "string" ? source.transport.command : "";
+    const args = Array.isArray(source.transport?.args)
+      ? source.transport?.args
+          .map((arg) => (typeof arg === "string" ? arg.trim() : ""))
+          .filter(Boolean)
+      : [];
+    endpoint = [command, ...args].filter(Boolean).join(" ");
+  }
+
+  return {
+    name,
+    enabled: source.enabled !== false,
+    disabledReason: typeof source.disabled_reason === "string" ? source.disabled_reason : null,
+    authStatus: toMcpAuthStatus(source.auth_status),
+    transportType,
+    endpoint,
+    startupTimeoutSec: toNullableNumber(source.startup_timeout_sec),
+    toolTimeoutSec: toNullableNumber(source.tool_timeout_sec)
+  };
+};
+
+export const listCodexMcpServers = async (
+  timeoutMs = CODEX_RUNTIME_CHECK_TIMEOUT_MS
+): Promise<CodexMcpServerConfig[]> =>
+  new Promise((resolve, reject) => {
+    let settled = false;
+    const child = spawnCodex(["mcp", "list", "--json"]);
+    let stdout = "";
+    let stderr = "";
+
+    const settleResolve = (servers: CodexMcpServerConfig[]) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve(servers);
+    };
+
+    const settleReject = (error: Error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      reject(error);
+    };
+
+    const timer = setTimeout(() => {
+      if (!child.killed) {
+        child.kill("SIGTERM");
+      }
+      settleReject(new Error("Codex MCP list timed out."));
+    }, timeoutMs);
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdout = `${stdout}${chunk.toString("utf-8")}`;
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr = `${stderr}${chunk.toString("utf-8")}`.slice(-4000);
+    });
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      settleReject(new Error(`Failed to launch codex mcp list: ${error.message}`));
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        const detail = (stderr.trim() || stdout.trim() || `Exit ${code ?? "unknown"}`).slice(0, 240);
+        settleReject(new Error(`codex mcp list failed: ${detail}`));
+        return;
+      }
+
+      try {
+        const parsed = JSON.parse(stdout) as unknown;
+        const items = Array.isArray(parsed) ? parsed : [];
+        const servers = items
+          .map((item) => parseCodexMcpConfigEntry(item))
+          .filter((item): item is CodexMcpServerConfig => Boolean(item))
+          .sort((a, b) => a.name.localeCompare(b.name));
+        settleResolve(servers);
+      } catch (error) {
+        settleReject(
+          new Error(
+            `Failed to parse codex mcp list JSON: ${
+              error instanceof Error ? error.message : "Unknown parse error."
+            }`
+          )
+        );
+      }
+    });
+  });
+
+const collectMcpStatusesFromResult = (
+  result: Record<string, unknown>,
+  sink: Map<string, CodexMcpServerStatus>
+) => {
+  const data = Array.isArray(result.data) ? result.data : [];
+  for (const entry of data) {
+    if (!entry || typeof entry !== "object") {
+      continue;
+    }
+    const source = entry as {
+      name?: unknown;
+      authStatus?: unknown;
+      tools?: unknown;
+      resources?: unknown;
+      resourceTemplates?: unknown;
+    };
+    const name = typeof source.name === "string" ? source.name.trim() : "";
+    if (!name) {
+      continue;
+    }
+    const tools =
+      source.tools && typeof source.tools === "object" ? Object.keys(source.tools).length : 0;
+    const resources = Array.isArray(source.resources) ? source.resources.length : 0;
+    const resourceTemplates = Array.isArray(source.resourceTemplates)
+      ? source.resourceTemplates.length
+      : 0;
+    sink.set(name, {
+      name,
+      authStatus: toMcpAuthStatus(source.authStatus),
+      toolCount: tools,
+      resourceCount: resources,
+      resourceTemplateCount: resourceTemplates
+    });
+  }
+};
+
+const requestCodexMcpStatuses = async (options: {
+  appVersion: string;
+  timeoutMs?: number;
+  createId?: () => string;
+  reloadBeforeList?: boolean;
+}): Promise<CodexMcpServerStatus[]> =>
+  new Promise((resolve, reject) => {
+    const child = spawnCodex(["app-server", "--listen", "stdio://"]);
+    const timeoutMs = options.timeoutMs ?? CODEX_RUNTIME_CHECK_TIMEOUT_MS;
+    const createId = options.createId ?? (() => crypto.randomUUID());
+    let settled = false;
+    let stderr = "";
+    let stdoutBuffer = "";
+    const initializeId = createId();
+    const reloadId = options.reloadBeforeList ? createId() : "";
+    const listRequestIds = new Set<string>();
+    const mcpStatuses = new Map<string, CodexMcpServerStatus>();
+
+    const settleResolve = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (!child.killed) {
+        child.kill("SIGTERM");
+      }
+      resolve(Array.from(mcpStatuses.values()).sort((a, b) => a.name.localeCompare(b.name)));
+    };
+
+    const settleReject = (error: Error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (!child.killed) {
+        child.kill("SIGTERM");
+      }
+      reject(error);
+    };
+
+    const writeRpc = (envelope: unknown) => {
+      if (!child.stdin.writable) {
+        return;
+      }
+      try {
+        child.stdin.write(`${JSON.stringify(envelope)}\n`);
+      } catch {
+        // Child lifecycle handlers surface the final error.
+      }
+    };
+
+    const requestNextPage = (cursor: string | null) => {
+      const requestId = createId();
+      listRequestIds.add(requestId);
+      writeRpc({
+        method: "mcpServerStatus/list",
+        id: requestId,
+        params: {
+          cursor,
+          limit: 200
+        }
+      });
+    };
+
+    const timer = setTimeout(() => {
+      settleReject(new Error("Codex mcpServerStatus/list timed out."));
+    }, timeoutMs);
+
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr = `${stderr}${chunk.toString("utf-8")}`.slice(-4000);
+    });
+
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      settleReject(new Error(`Failed to start codex app-server: ${error.message}`));
+    });
+
+    child.on("close", (code) => {
+      if (settled) {
+        return;
+      }
+      clearTimeout(timer);
+      const detail = stderr.trim().slice(0, 240);
+      const suffix = detail ? `: ${detail}` : "";
+      settleReject(new Error(`Codex app-server exited (${code ?? "unknown"})${suffix}`));
+    });
+
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdoutBuffer += chunk.toString("utf-8");
+      const lines = stdoutBuffer.split(/\r?\n/);
+      stdoutBuffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          continue;
+        }
+
+        let parsed: {
+          id?: string;
+          result?: Record<string, unknown>;
+          error?: { message?: string };
+        };
+
+        try {
+          parsed = JSON.parse(trimmed) as typeof parsed;
+        } catch {
+          continue;
+        }
+
+        if (parsed.error?.message) {
+          clearTimeout(timer);
+          settleReject(new Error(parsed.error.message));
+          return;
+        }
+
+        if (parsed.id === initializeId) {
+          writeRpc({ method: "initialized" });
+          if (options.reloadBeforeList) {
+            writeRpc({ method: "config/mcpServer/reload", id: reloadId });
+          } else {
+            requestNextPage(null);
+          }
+          continue;
+        }
+
+        if (parsed.id === reloadId) {
+          requestNextPage(null);
+          continue;
+        }
+
+        if (parsed.id && listRequestIds.has(parsed.id)) {
+          listRequestIds.delete(parsed.id);
+          collectMcpStatusesFromResult(parsed.result ?? {}, mcpStatuses);
+          const nextCursor =
+            typeof parsed.result?.nextCursor === "string" && parsed.result.nextCursor.trim()
+              ? parsed.result.nextCursor
+              : null;
+          if (nextCursor) {
+            requestNextPage(nextCursor);
+            continue;
+          }
+          if (!listRequestIds.size) {
+            clearTimeout(timer);
+            settleResolve();
+            return;
+          }
+        }
+      }
+    });
+
+    writeRpc({
+      method: "initialize",
+      id: initializeId,
+      params: {
+        clientInfo: {
+          name: "echo-desktop",
+          title: "Echo Desktop",
+          version: options.appVersion
+        },
+        capabilities: {
+          experimentalApi: true,
+          optOutNotificationMethods: null
+        }
+      }
+    });
+  });
+
+export const listCodexMcpServerStatuses = async (options: {
+  appVersion: string;
+  timeoutMs?: number;
+  createId?: () => string;
+}): Promise<CodexMcpServerStatus[]> =>
+  requestCodexMcpStatuses({ ...options, reloadBeforeList: false });
+
+export const reloadCodexMcpServers = async (options: {
+  appVersion: string;
+  timeoutMs?: number;
+  createId?: () => string;
+}): Promise<CodexMcpServerStatus[]> =>
+  requestCodexMcpStatuses({ ...options, reloadBeforeList: true });
+
 export const listCodexAcpModels = async (options: {
   appVersion: string;
   timeoutMs?: number;

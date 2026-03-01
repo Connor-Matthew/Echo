@@ -86,7 +86,13 @@ export const removeAssistantPlaceholderIfEmpty = (
   nowIso: () => string
 ): ChatSession => {
   const target = session.messages.find((message) => message.id === messageId);
-  if (!target || target.role !== "assistant" || target.content.trim() || target.reasoningContent?.trim()) {
+  if (
+    !target ||
+    target.role !== "assistant" ||
+    target.content.trim() ||
+    target.reasoningContent?.trim() ||
+    (target.toolCalls?.length ?? 0) > 0
+  ) {
     return session;
   }
   return {

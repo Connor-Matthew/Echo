@@ -1,22 +1,49 @@
+import { ChatView } from "./ChatView";
 import type { AgentMessage } from "../shared/agent-contracts";
+import type { ChatMessage } from "../shared/contracts";
+
+type PermissionRequest = {
+  runId: string;
+  sessionId: string;
+  requestId: string;
+  toolName?: string;
+  reason?: string;
+  blockedPath?: string;
+  supportsAlwaysAllow?: boolean;
+  resolving?: boolean;
+};
 
 type AgentViewProps = {
+  sessionId: string;
   messages: AgentMessage[];
   isRunning: boolean;
+  permissionRequest?: PermissionRequest | null;
+  onResolvePermission?: (
+    request: PermissionRequest,
+    decision: "approved" | "denied",
+    applySuggestions: boolean
+  ) => void;
 };
 
-const roleLabelByType: Record<AgentMessage["role"], string> = {
-  user: "USER",
-  assistant: "AGENT",
-  system: "SYSTEM"
-};
+const toChatMessages = (messages: AgentMessage[]): ChatMessage[] =>
+  messages.map((message) => ({
+    id: message.id,
+    role: message.role === "user" ? "user" : "assistant",
+    content:
+      message.role === "system"
+        ? `[system] ${message.content}`
+        : message.content,
+    createdAt: message.createdAt,
+    attachments: message.attachments,
+    toolCalls: message.toolCalls
+  }));
 
-export const AgentView = ({ messages, isRunning }: AgentViewProps) => {
+export const AgentView = ({ sessionId, messages, isRunning, permissionRequest, onResolvePermission }: AgentViewProps) => {
   if (!messages.length) {
     return (
       <div className="grid h-full place-content-center px-6 text-center">
-        <div className="max-w-xl rounded-[8px] border border-border/80 bg-card/75 px-6 py-5 shadow-[3px_3px_0_hsl(var(--border))]">
-          <p className="sketch-title text-[24px] uppercase leading-none text-primary">Agent Desk</p>
+        <div className="max-w-xl rounded-lg border border-border/80 bg-card px-8 py-7">
+          <p className="text-[24px] font-semibold leading-none text-foreground">Agent Workspace</p>
           <p className="mt-2 text-sm text-muted-foreground">
             这里会显示 Claude Agent SDK 的执行过程与回复。
           </p>
@@ -25,30 +52,22 @@ export const AgentView = ({ messages, isRunning }: AgentViewProps) => {
     );
   }
 
-  return (
-    <div className="h-full overflow-auto px-3 py-3 sm:px-5 sm:py-4">
-      <div className="mx-auto flex w-full max-w-[980px] flex-col gap-3 pb-4">
-        {messages.map((message) => (
-          <article
-            key={message.id}
-            className="rounded-[8px] border border-border/85 bg-card/80 px-3 py-2.5 shadow-[2px_2px_0_hsl(var(--border))]"
-          >
-            <div className="mb-1 flex items-center justify-between gap-2 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
-              <span>{roleLabelByType[message.role]}</span>
-              <span>{new Date(message.createdAt).toLocaleTimeString()}</span>
-            </div>
-            <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-6 text-foreground">
-              {message.content}
-            </pre>
-          </article>
-        ))}
+  const mappedMessages = toChatMessages(messages);
 
-        {isRunning ? (
-          <div className="rounded-[8px] border border-border/70 bg-accent/40 px-3 py-2 text-xs text-muted-foreground">
-            Agent 正在执行...
-          </div>
-        ) : null}
-      </div>
+  return (
+    <div className="h-full min-h-0">
+      <ChatView
+        mode="agent"
+        sessionId={sessionId}
+        messages={mappedMessages}
+        isConfigured={true}
+        isGenerating={isRunning}
+        permissionRequest={permissionRequest}
+        onResolvePermission={onResolvePermission}
+        onEditMessage={() => {}}
+        onDeleteMessage={() => {}}
+        onResendMessage={() => {}}
+      />
     </div>
   );
 };

@@ -7,18 +7,22 @@ import {
   type KeyboardEventHandler
 } from "react";
 import {
+  Mic,
   ArrowUp,
   Brain,
   ChevronDown,
   CircleStop,
   ImageIcon,
-  Mic,
   Plus,
-  SlidersHorizontal
+  Server,
+  SlidersHorizontal,
+  Sparkles,
+  Video
 } from "lucide-react";
-import type { ChatContextWindow, ModelCapabilities } from "../shared/contracts";
+import type { ChatContextWindow, ModelCapabilities, Skill, UserMcpServer } from "../shared/contracts";
 import { Button } from "./ui/button";
 import { Textarea } from "./ui/textarea";
+import { filterSkills } from "../lib/skills-utils";
 
 export type ComposerAttachment = {
   id: string;
@@ -44,18 +48,27 @@ type ComposerProps = {
   sendWithEnter: boolean;
   chatContextWindow: ChatContextWindow;
   attachmentCount: number;
+  mcpServers: UserMcpServer[];
+  enabledMcpServers: string[];
+  skills: Skill[];
+  activeSkill: Skill | null;
+  onChangeActiveSkill: (skill: Skill | null) => void;
   onAddFiles: (files: FileList | File[] | null) => void;
   onChangeChatContextWindow: (value: ChatContextWindow) => void;
   onSelectModel: (modelId: string) => void;
+  onChangeMcpServers: (enabledIds: string[]) => void;
   onChange: (value: string) => void;
   onSubmit: (value: string) => void;
+  onApplySkill: (skill: Skill, params: Record<string, string>, input: string) => void;
   onStop: () => void;
   usageLabel?: string | null;
   disabled: boolean;
+  disabledPlaceholder?: string;
   isGenerating: boolean;
 };
 
-const MAX_TEXTAREA_HEIGHT = 24 * 4;
+const MIN_TEXTAREA_HEIGHT = 40;
+const MAX_TEXTAREA_ROWS = 4;
 const PASTE_AS_FILE_CHAR_THRESHOLD = 1500;
 const PASTE_AS_FILE_LINE_THRESHOLD = 28;
 const CODE_PASTE_MIN_LINE_THRESHOLD = 10;
@@ -186,20 +199,36 @@ export const Composer = ({
   sendWithEnter,
   chatContextWindow,
   attachmentCount,
+  mcpServers,
+  enabledMcpServers,
+  skills,
+  activeSkill,
+  onChangeActiveSkill,
   onAddFiles,
   onChangeChatContextWindow,
   onSelectModel,
+  onChangeMcpServers,
   onChange,
   onSubmit,
+  onApplySkill,
   onStop,
   usageLabel,
   disabled,
+  disabledPlaceholder,
   isGenerating
 }: ComposerProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const quickSettingsRef = useRef<HTMLDivElement>(null);
+  const mcpPopoverRef = useRef<HTMLDivElement>(null);
+  const skillsPopoverRef = useRef<HTMLDivElement>(null);
+  const skillsPickerRef = useRef<HTMLDivElement>(null);
   const [isQuickSettingsOpen, setIsQuickSettingsOpen] = useState(false);
+  const [isMcpPopoverOpen, setIsMcpPopoverOpen] = useState(false);
+  const [isSkillsPickerOpen, setIsSkillsPickerOpen] = useState(false);
+  const [skillsQuery, setSkillsQuery] = useState<string | null>(null);
+  const [skillParamState, setSkillParamState] = useState<{ skill: Skill; params: Record<string, string> } | null>(null);
+  const [skillsSelectedIndex, setSkillsSelectedIndex] = useState(0);
 
   const canSubmit = useMemo(
     () => Boolean(value.trim() || attachmentCount),
@@ -228,9 +257,19 @@ export const Composer = ({
     if (!textarea) {
       return;
     }
+    const computed = window.getComputedStyle(textarea);
+    const lineHeight = Number.parseFloat(computed.lineHeight) || 24;
+    const verticalPadding =
+      (Number.parseFloat(computed.paddingTop) || 0) +
+      (Number.parseFloat(computed.paddingBottom) || 0) +
+      (Number.parseFloat(computed.borderTopWidth) || 0) +
+      (Number.parseFloat(computed.borderBottomWidth) || 0);
+    const maxHeight = Math.max(MIN_TEXTAREA_HEIGHT, lineHeight * MAX_TEXTAREA_ROWS + verticalPadding);
+
     textarea.style.height = "0px";
-    const nextHeight = Math.min(textarea.scrollHeight, MAX_TEXTAREA_HEIGHT);
+    const nextHeight = Math.min(Math.max(textarea.scrollHeight, MIN_TEXTAREA_HEIGHT), maxHeight);
     textarea.style.height = `${nextHeight}px`;
+    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
   }, [value]);
 
   useEffect(() => {
@@ -257,16 +296,119 @@ export const Composer = ({
     };
   }, [isQuickSettingsOpen]);
 
+  useEffect(() => {
+    if (!isMcpPopoverOpen) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!mcpPopoverRef.current?.contains(event.target as Node)) {
+        setIsMcpPopoverOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsMcpPopoverOpen(false);
+    };
+    window.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isMcpPopoverOpen]);
+
+  useEffect(() => {
+    if (!isSkillsPickerOpen) return;
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!skillsPickerRef.current?.contains(event.target as Node)) {
+        setIsSkillsPickerOpen(false);
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setIsSkillsPickerOpen(false);
+    };
+    window.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isSkillsPickerOpen]);
+
+  const toggleMcp = (id: string) => {
+    const next = enabledMcpServers.includes(id)
+      ? enabledMcpServers.filter((x) => x !== id)
+      : [...enabledMcpServers, id];
+    onChangeMcpServers(next);
+  };
+
+  const activeMcpServers = mcpServers.filter((s) => s.enabled && enabledMcpServers.includes(s.id));
+  const activeMcpCount = activeMcpServers.length;
+
+  const filteredSkills = useMemo(
+    () => (skillsQuery !== null ? filterSkills(skillsQuery, skills) : []),
+    [skillsQuery, skills]
+  );
+
+  const isSkillsOpen = skillsQuery !== null && filteredSkills.length > 0 && !skillParamState;
+
+  const selectSkill = (skill: Skill) => {
+    if (skill.params.length === 0) {
+      const input = value.replace(/^\/\S*\s*/, "").trim();
+      onChange("");
+      onApplySkill(skill, {}, input);
+      setSkillsQuery(null);
+    } else {
+      const defaults: Record<string, string> = {};
+      skill.params.forEach((p) => { defaults[p.key] = p.defaultValue; });
+      setSkillParamState({ skill, params: defaults });
+      setSkillsQuery(null);
+    }
+  };
+
+  const confirmSkillParams = () => {
+    if (!skillParamState) return;
+    const input = value.replace(/^\/\S*\s*/, "").trim();
+    onChange("");
+    onApplySkill(skillParamState.skill, skillParamState.params, input);
+    setSkillParamState(null);
+  };
+
   const submit = () => {
     if (!canSubmit || disabled) {
       return;
     }
-    onSubmit(value.trim());
+    if (activeSkill) {
+      onApplySkill(activeSkill, {}, value.trim());
+    } else {
+      onSubmit(value.trim());
+    }
   };
 
   const onKeyDown: KeyboardEventHandler<HTMLTextAreaElement> = (event) => {
     if (event.nativeEvent.isComposing || event.keyCode === 229) {
       return;
+    }
+
+    // Skills popover navigation
+    if (isSkillsOpen) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setSkillsSelectedIndex((i) => Math.min(i + 1, filteredSkills.length - 1));
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setSkillsSelectedIndex((i) => Math.max(i - 1, 0));
+        return;
+      }
+      if (event.key === "Enter" || event.key === "Tab") {
+        event.preventDefault();
+        const skill = filteredSkills[skillsSelectedIndex];
+        if (skill) selectSkill(skill);
+        return;
+      }
+      if (event.key === "Escape") {
+        setSkillsQuery(null);
+        return;
+      }
     }
 
     if (event.key !== "Enter") {
@@ -316,7 +458,7 @@ export const Composer = ({
 
   return (
     <footer className="w-full">
-      <div className="w-full rounded-[8px] border border-border bg-card/95 px-3 py-2.5 shadow-[4px_4px_0_hsl(var(--border))] sm:px-4 sm:py-3 md:px-5 md:py-3.5">
+      <div className="flex w-full flex-col rounded-[28px] border border-border/80 bg-card px-4 py-3 shadow-[0_6px_22px_rgba(15,23,42,0.06)] transition-[border-color,box-shadow] duration-200 focus-within:border-ring/70 focus-within:shadow-[0_0_0_1px_hsl(var(--ring)/0.16)] sm:px-5">
         <input
           ref={fileInputRef}
           type="file"
@@ -332,27 +474,145 @@ export const Composer = ({
         <Textarea
           ref={textareaRef}
           value={value}
-          onChange={(event) => onChange(event.target.value)}
+          onChange={(event) => {
+            const next = event.target.value;
+            onChange(next);
+            // Detect slash command
+            const slashMatch = next.match(/^\/(\S*)$/);
+            if (slashMatch) {
+              setSkillsQuery(slashMatch[1]);
+              setSkillsSelectedIndex(0);
+            } else {
+              setSkillsQuery(null);
+            }
+          }}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
           rows={1}
-          className="max-h-[96px] min-h-[38px] resize-none border-0 bg-transparent p-0 text-[16px] leading-6 text-foreground shadow-none placeholder:text-muted-foreground focus-visible:ring-0"
+          className="h-[40px] min-h-[40px] resize-none border-0 bg-transparent px-0 py-0 text-[15px] leading-[1.65] text-foreground shadow-none placeholder:text-muted-foreground/80 focus-visible:ring-0"
           placeholder={
             disabled
-              ? "Configure provider settings to start chatting"
-              : "How can I help?"
+              ? (disabledPlaceholder ?? "请先完成模型配置")
+              : "给 Echo 发送消息"
           }
         />
 
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 sm:mt-2.5 sm:gap-3">
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 text-muted-foreground sm:gap-2">
+        {/* Skills slash command popover */}
+        {isSkillsOpen && (
+          <div
+            ref={skillsPopoverRef}
+            className="mb-2 overflow-hidden rounded-md border border-border bg-card shadow-[0_8px_16px_rgba(15,23,42,0.12)]"
+          >
+            {filteredSkills.map((skill, i) => (
+              <button
+                key={skill.id}
+                type="button"
+                className={[
+                  "flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors",
+                  i === skillsSelectedIndex ? "bg-accent" : "hover:bg-accent/60"
+                ].join(" ")}
+                onMouseEnter={() => setSkillsSelectedIndex(i)}
+                onClick={() => selectSkill(skill)}
+              >
+                <span className="text-sm">{skill.icon}</span>
+                <span className="font-medium text-foreground/80">{skill.name}</span>
+                <span className="text-muted-foreground">/{skill.command}</span>
+                {skill.description && (
+                  <span className="ml-auto text-[11px] text-muted-foreground/70">{skill.description}</span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Skill param form */}
+        {skillParamState && (
+          <div className="mb-2 rounded-md border border-border/70 bg-accent/35 px-3 py-2.5">
+            <div className="mb-2 flex items-center gap-2">
+              <span className="text-sm">{skillParamState.skill.icon}</span>
+              <span className="text-xs font-medium">{skillParamState.skill.name}</span>
+            </div>
+            <div className="space-y-1.5">
+              {skillParamState.skill.params.map((param) => (
+                <div key={param.key} className="flex items-center gap-2">
+                  <label className="w-20 shrink-0 text-[11px] text-muted-foreground">{param.label}</label>
+                  <input
+                    className="flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs"
+                    value={skillParamState.params[param.key] ?? param.defaultValue}
+                    onChange={(e) =>
+                      setSkillParamState((prev) =>
+                        prev ? { ...prev, params: { ...prev.params, [param.key]: e.target.value } } : prev
+                      )
+                    }
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") { e.preventDefault(); confirmSkillParams(); }
+                      if (e.key === "Escape") setSkillParamState(null);
+                    }}
+                    autoFocus={skillParamState.skill.params[0]?.key === param.key || undefined}
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="mt-2 flex justify-end gap-2">
+              <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setSkillParamState(null)}>
+                取消
+              </Button>
+              <Button size="sm" className="h-6 px-2 text-xs" onClick={confirmSkillParams}>
+                确认
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {activeMcpServers.length > 0 || activeSkill ? (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {activeSkill ? (
+              <span className="inline-flex items-center gap-1 rounded-md border border-primary/30 bg-primary/10 py-0.5 pl-2 pr-1 text-[12px] font-medium text-primary">
+                <span>{activeSkill.icon}</span>
+                {activeSkill.name}
+                <button
+                  type="button"
+                  onClick={() => onChangeActiveSkill(null)}
+                  className="ml-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-sm hover:bg-primary/20"
+                  aria-label="移除 Skill"
+                >
+                  <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
+                    <path d="M1 1l6 6M7 1L1 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                  </svg>
+                </button>
+              </span>
+            ) : null}
+            {activeMcpServers.map((server) => (
+              <span
+                key={server.id}
+                className="inline-flex items-center gap-1 rounded-md border border-primary/30 bg-primary/10 py-0.5 pl-2 pr-1 text-[12px] font-medium text-primary"
+              >
+                <span className="h-1.5 w-1.5 rounded-sm bg-primary" />
+                {server.name}
+                <button
+                  type="button"
+                  onClick={() => toggleMcp(server.id)}
+                  className="ml-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-sm hover:bg-primary/20"
+                  aria-label={`移除 ${server.name}`}
+                >
+                  <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
+                    <path d="M1 1l6 6M7 1L1 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                  </svg>
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="mt-2 flex items-center justify-between gap-2 pt-1">
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-visible pb-0.5 text-muted-foreground">
             <Button
               type="button"
               variant="ghost"
               size="icon"
-              className="h-7 w-7 rounded-[4px] text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+              className="h-[32px] w-[32px] rounded-full bg-accent/55 text-muted-foreground hover:bg-accent/80 hover:text-foreground"
               onClick={() => fileInputRef.current?.click()}
-              aria-label="Add attachment"
+              aria-label="添加附件"
             >
               <Plus className="h-4 w-4" />
             </Button>
@@ -361,17 +621,17 @@ export const Composer = ({
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7 rounded-[4px] text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                className="h-[32px] w-[32px] rounded-full bg-accent/55 text-muted-foreground hover:bg-accent/80 hover:text-foreground"
                 onClick={() => setIsQuickSettingsOpen((previous) => !previous)}
-                aria-label="Open quick settings"
+                aria-label="上下文窗口设置"
                 title="上下文档位"
               >
                 <SlidersHorizontal className="h-4 w-4" />
               </Button>
               {isQuickSettingsOpen ? (
-                <div className="absolute bottom-full left-0 z-40 mb-2 w-[236px] rounded-[6px] border border-border bg-card p-2.5 shadow-[4px_4px_0_hsl(var(--border))]">
+                <div className="absolute bottom-full left-0 z-[60] mb-2 w-[236px] rounded-md border border-border bg-card p-2.5 shadow-[0_10px_20px_rgba(15,23,42,0.12)]">
                   <p className="mb-1 px-1 text-[11px] uppercase tracking-[0.1em] text-muted-foreground">
-                    Context Window
+                    上下文窗口
                   </p>
                   <input
                     type="range"
@@ -380,7 +640,7 @@ export const Composer = ({
                     step={1}
                     value={contextWindowIndex}
                     className="h-5 w-full accent-primary"
-                    aria-label="Context window slider"
+                    aria-label="上下文窗口滑块"
                     onChange={(event) => {
                       const nextIndex = Number.parseInt(event.target.value, 10);
                       if (!Number.isFinite(nextIndex)) {
@@ -409,15 +669,174 @@ export const Composer = ({
                 </div>
               ) : null}
             </div>
-            <div className="relative w-[118px] shrink-0 sm:w-[180px] md:w-[200px]">
+            {mcpServers.filter((s) => s.enabled).length > 0 ? (
+              <div className="relative" ref={mcpPopoverRef}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className={[
+                    "relative h-[32px] w-[32px] rounded-full bg-accent/55 hover:bg-accent/80",
+                    activeMcpCount > 0 ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+                  ].join(" ")}
+                  onClick={() => setIsMcpPopoverOpen((p) => !p)}
+                  aria-label="选择 MCP 工具"
+                  title="MCP 工具"
+                >
+                  <Server className="h-4 w-4" />
+                  {activeMcpCount > 0 ? (
+                    <span className="absolute -right-0.5 -top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-sm bg-primary text-[9px] font-bold text-primary-foreground">
+                      {activeMcpCount}
+                    </span>
+                  ) : null}
+                </Button>
+                {isMcpPopoverOpen ? (
+                  <div className="absolute bottom-full left-0 z-[60] mb-2 w-[220px] rounded-md border border-border bg-card p-2 shadow-[0_10px_20px_rgba(15,23,42,0.12)]">
+                    <p className="mb-1.5 px-1 text-[11px] uppercase tracking-[0.1em] text-muted-foreground">
+                      MCP 工具
+                    </p>
+                    <div className="space-y-0.5">
+                      {mcpServers.filter((s) => s.enabled).map((server) => {
+                        const isOn = enabledMcpServers.includes(server.id);
+                        return (
+                          <button
+                            key={server.id}
+                            type="button"
+                            onClick={() => toggleMcp(server.id)}
+                            className={[
+                              "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
+                              isOn ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                            ].join(" ")}
+                          >
+                            <span className={["flex h-4 w-4 shrink-0 items-center justify-center rounded-[3px] border", isOn ? "border-primary bg-primary text-primary-foreground" : "border-border"].join(" ")}>
+                              {isOn ? <span className="text-[10px] font-bold">✓</span> : null}
+                            </span>
+                            <span className="truncate">{server.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            {skills.length > 0 ? (
+              <div className="relative" ref={skillsPickerRef}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className={[
+                    "relative h-[32px] w-[32px] rounded-full bg-accent/55 hover:bg-accent/80",
+                    activeSkill ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+                  ].join(" ")}
+                  onClick={() => setIsSkillsPickerOpen((p) => !p)}
+                  aria-label="选择技能"
+                  title="技能"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  {activeSkill ? (
+                    <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-sm bg-primary" />
+                  ) : null}
+                </Button>
+                {isSkillsPickerOpen ? (
+                  <div className="absolute bottom-full left-0 z-[60] mb-2 w-[220px] rounded-md border border-border bg-card p-2 shadow-[0_10px_20px_rgba(15,23,42,0.12)]">
+                    <p className="mb-1.5 px-1 text-[11px] uppercase tracking-[0.1em] text-muted-foreground">
+                      技能
+                    </p>
+                    <div className="space-y-0.5">
+                      {skills.map((skill) => {
+                        const isOn = activeSkill?.id === skill.id;
+                        return (
+                          <button
+                            key={skill.id}
+                            type="button"
+                            onClick={() => {
+                              onChangeActiveSkill(isOn ? null : skill);
+                              setIsSkillsPickerOpen(false);
+                            }}
+                            className={[
+                              "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors",
+                              isOn ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                            ].join(" ")}
+                          >
+                            <span className={["flex h-4 w-4 shrink-0 items-center justify-center rounded-[3px] border", isOn ? "border-primary bg-primary text-primary-foreground" : "border-border"].join(" ")}>
+                              {isOn ? <span className="text-[10px] font-bold">✓</span> : null}
+                            </span>
+                            <span className="text-sm">{skill.icon}</span>
+                            <span className="truncate text-xs">{skill.name}</span>
+                            <span className="ml-auto text-[10px] text-muted-foreground/60">/{skill.command}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            <div className="flex shrink-0 items-center gap-0.5">
+              {[
+                {
+                  key: "reasoningDisplay",
+                  label: "深度思考",
+                  Icon: Brain,
+                  enabled: modelCapabilities.reasoningDisplay
+                },
+                {
+                  key: "imageInput",
+                  label: "图片输入",
+                  Icon: ImageIcon,
+                  enabled: modelCapabilities.imageInput
+                },
+                {
+                  key: "audioInput",
+                  label: "音频输入",
+                  Icon: Mic,
+                  enabled: modelCapabilities.audioInput
+                },
+                {
+                  key: "videoInput",
+                  label: "视频输入",
+                  Icon: Video,
+                  enabled: modelCapabilities.videoInput
+                }
+              ]
+                .filter(({ key, enabled }) =>
+                  key === "audioInput" || key === "videoInput" ? enabled : true
+                )
+                .map(({ key, label, Icon, enabled }) => (
+                  <span
+                    key={key}
+                    title={`${label}${enabled ? "" : "（当前模型不支持）"}`}
+                    aria-label={label}
+                    className={[
+                      "inline-flex h-[32px] w-[32px] shrink-0 items-center justify-center",
+                      enabled
+                        ? "rounded-full bg-accent/65 text-foreground"
+                        : "text-muted-foreground/65"
+                    ].join(" ")}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                  </span>
+                ))}
+            </div>
+            {usageLabel ? (
+              <p className="ml-1 max-w-[220px] shrink-0 text-xs font-medium tabular-nums leading-none text-muted-foreground">
+                {usageLabel}
+              </p>
+            ) : null}
+          </div>
+          <div className="ml-2 flex shrink-0 items-center gap-2">
+            <div className="relative w-[148px] shrink-0 sm:w-[172px]">
               <select
                 value={hasSelectedModel ? modelValue : ""}
                 onChange={(event) => onSelectModel(event.target.value)}
                 disabled={!normalizedModelOptions.length}
-                className="h-8 w-full appearance-none overflow-hidden text-ellipsis whitespace-nowrap rounded-[4px] border border-transparent bg-transparent px-2.5 pr-7 text-sm font-medium text-muted-foreground hover:border-border/70 hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-70"
+                aria-label="选择模型"
+                className="h-[32px] w-full appearance-none overflow-hidden text-ellipsis whitespace-nowrap rounded-full border border-border/75 bg-accent/45 px-3 pr-8 text-xs font-medium text-foreground/80 hover:bg-accent/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-70"
               >
                 {!hasSelectedModel ? (
-                  <option value="">{modelLabel || "Model"}</option>
+                  <option value="">{modelLabel || "模型"}</option>
                 ) : null}
                 {normalizedModelOptions.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -427,58 +846,13 @@ export const Composer = ({
               </select>
               <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             </div>
-            <div className="ml-0.5 flex items-center gap-1">
-              {[
-                {
-                  key: "imageInput",
-                  label: "图片输入",
-                  Icon: ImageIcon,
-                  enabled: modelCapabilities.imageInput
-                },
-                {
-                  key: "reasoningDisplay",
-                  label: "思维链",
-                  Icon: Brain,
-                  enabled: modelCapabilities.reasoningDisplay
-                }
-              ].map(({ key, label, Icon, enabled }) => (
-                <span
-                  key={key}
-                  title={`${label}${enabled ? "" : "（当前模型不支持）"}`}
-                  className={[
-                    "inline-flex h-6 w-6 items-center justify-center rounded-[4px] border transition-colors",
-                    enabled
-                      ? "border-border bg-accent/70 text-foreground"
-                      : "border-border/60 bg-card text-muted-foreground/55"
-                  ].join(" ")}
-                >
-                  <Icon className="h-3.5 w-3.5" />
-                </span>
-              ))}
-            </div>
-          </div>
-          <div className="ml-auto flex shrink-0 items-center gap-2">
-            {usageLabel ? (
-              <p className="text-[15px] font-medium tabular-nums leading-none text-muted-foreground">
-                {usageLabel}
-              </p>
-            ) : null}
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 rounded-[4px] text-muted-foreground hover:bg-accent/60 hover:text-foreground"
-              aria-label="Voice input"
-            >
-              <Mic className="h-4 w-4" />
-            </Button>
             {isGenerating ? (
               <Button
                 type="button"
                 variant="outline"
-                className="h-9 w-9 rounded-[4px] border-destructive/60 bg-destructive/10 p-0 text-destructive hover:bg-destructive/15"
+                className="h-9 w-9 rounded-full border-destructive/60 bg-destructive/10 p-0 text-destructive hover:bg-destructive/15"
                 onClick={onStop}
-                aria-label="Stop generating"
+                aria-label="停止生成"
               >
                 <CircleStop className="h-4 w-4" />
               </Button>
@@ -487,14 +861,15 @@ export const Composer = ({
                 type="button"
                 onClick={submit}
                 disabled={disabled || !canSubmit}
-                className="h-9 w-9 rounded-[4px] border border-border bg-primary p-0 text-primary-foreground hover:bg-primary/90 disabled:border-border/40 disabled:bg-secondary disabled:text-muted-foreground"
-                aria-label="Send message"
+                className="h-9 w-9 rounded-full p-0 shadow-sm disabled:border-border/40 disabled:bg-secondary disabled:text-muted-foreground"
+                aria-label="发送消息"
               >
-                <ArrowUp className="h-4.5 w-4.5" />
+                <ArrowUp className="h-4 w-4" />
               </Button>
             )}
           </div>
         </div>
+
       </div>
     </footer>
   );

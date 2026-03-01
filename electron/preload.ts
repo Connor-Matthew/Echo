@@ -11,7 +11,10 @@ const api: MuApi = {
     get: () => ipcRenderer.invoke("settings:get"),
     save: (settings) => ipcRenderer.invoke("settings:save", settings),
     testConnection: (settings) => ipcRenderer.invoke("settings:testConnection", settings),
-    listModels: (settings) => ipcRenderer.invoke("settings:listModels", settings)
+    listModels: (settings) => ipcRenderer.invoke("settings:listModels", settings),
+    listMcpServers: (settings) => ipcRenderer.invoke("settings:listMcpServers", settings),
+    listMcpServerStatus: (settings) => ipcRenderer.invoke("settings:listMcpServerStatus", settings),
+    reloadMcpServers: (settings) => ipcRenderer.invoke("settings:reloadMcpServers", settings)
   },
   sessions: {
     get: () => ipcRenderer.invoke("sessions:get"),
@@ -57,9 +60,10 @@ const api: MuApi = {
     getMessages: (sessionId) => ipcRenderer.invoke("agent:getMessages", sessionId),
     sendMessage: (payload) => ipcRenderer.invoke("agent:sendMessage", payload),
     stop: (payload) => ipcRenderer.invoke("agent:stop", payload),
+    resolvePermission: (payload) => ipcRenderer.invoke("agent:resolvePermission", payload),
     onStreamEvent: (runId, listener) => {
       const handler = (_event: unknown, payload: AgentStreamEnvelope) => {
-        if (payload.runId === runId) {
+        if (runId === "*" || payload.runId === runId) {
           listener(payload);
         }
       };
@@ -68,6 +72,11 @@ const api: MuApi = {
         ipcRenderer.off(AGENT_STREAM_EVENT_CHANNEL, handler);
       };
     }
+  },
+  skills: {
+    get: () => ipcRenderer.invoke("skills:get"),
+    save: (skills) => ipcRenderer.invoke("skills:save", skills),
+    scanClaude: () => ipcRenderer.invoke("skills:scanClaude")
   }
 };
 

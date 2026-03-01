@@ -39,11 +39,11 @@ export const AttachmentTray = ({ attachments, onRemoveAttachment }: AttachmentTr
   }
 
   return (
-    <div className="mb-2.5 flex flex-wrap gap-2 sm:mb-3">
+    <div className="mb-3 flex flex-wrap gap-2 sm:mb-3.5">
       {attachments.map((attachment) => (
         <div
           key={attachment.id}
-          className="w-[168px] rounded-[6px] border border-border bg-card px-2 py-1.5 sm:w-[180px]"
+          className="w-[170px] rounded-md border border-border/75 bg-card px-2.5 py-2 sm:w-[184px]"
         >
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">

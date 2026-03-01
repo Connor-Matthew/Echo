@@ -12,9 +12,10 @@ import type {
 
 export type SettingsValidationSection =
   | "provider"
+  | "mcp"
   | "chat"
   | "memory"
-  | "soul"
+  | "skills"
   | "environment"
   | "theme"
   | "data"
@@ -196,6 +197,7 @@ export const createProvider = (index: number): StoredProvider => ({
   savedModels: [],
   modelCapabilities: {},
   modelContextWindows: {},
+  mcpServerOverrides: {},
   providerType: "openai",
   enabled: true,
   isPinned: false
@@ -212,6 +214,7 @@ export const getActiveProvider = (settings: AppSettings): StoredProvider => {
       savedModels: settings.model.trim() ? [settings.model.trim()] : [],
       modelCapabilities: {},
       modelContextWindows: {},
+      mcpServerOverrides: {},
       providerType: settings.providerType,
       enabled: true,
       isPinned: false
@@ -296,6 +299,21 @@ export const normalizeDraft = (settings: AppSettings): AppSettings => {
         })
         .filter((entry): entry is [string, number] => Boolean(entry))
     );
+    const mcpServerOverrides = Object.fromEntries(
+      Object.entries(provider.mcpServerOverrides ?? {})
+        .map(([serverName, override]) => {
+          const key = serverName.trim();
+          if (!key || !override || typeof override !== "object") {
+            return null;
+          }
+          const enabled = (override as { enabled?: unknown }).enabled;
+          if (typeof enabled !== "boolean") {
+            return null;
+          }
+          return [key, { enabled }] as const;
+        })
+        .filter((entry): entry is [string, { enabled: boolean }] => Boolean(entry))
+    );
 
     return {
       ...provider,
@@ -307,6 +325,7 @@ export const normalizeDraft = (settings: AppSettings): AppSettings => {
       savedModels,
       modelCapabilities,
       modelContextWindows,
+      mcpServerOverrides,
       providerType:
         provider.providerType === "anthropic"
           ? "anthropic"
@@ -320,7 +339,10 @@ export const normalizeDraft = (settings: AppSettings): AppSettings => {
     };
   });
 
-  return syncProviderState(settings, providers, settings.activeProviderId);
+  return {
+    ...syncProviderState(settings, providers, settings.activeProviderId),
+    mcpServers: settings.mcpServers ?? []
+  };
 };
 
 export const resolvePresetByBaseUrl = (baseUrl: string, providerType: ProviderType) => {
@@ -341,15 +363,15 @@ export const resolvePresetByBaseUrl = (baseUrl: string, providerType: ProviderTy
 };
 
 const providerBadgeByPreset: Record<string, { token: string; bgClass: string; textClass: string }> = {
-  openai: { token: "OA", bgClass: "bg-[#eef2f8]", textClass: "text-[#44536d]" },
-  openrouter: { token: "OR", bgClass: "bg-[#f1f3f8]", textClass: "text-[#4f596d]" },
-  groq: { token: "GQ", bgClass: "bg-[#f4f2ef]", textClass: "text-[#5b5350]" },
-  deepseek: { token: "DS", bgClass: "bg-[#edf1f7]", textClass: "text-[#495871]" },
-  claude: { token: "CL", bgClass: "bg-[#f4f1ee]", textClass: "text-[#5f5851]" },
-  "claude-agent": { token: "CA", bgClass: "bg-[#f3efe8]", textClass: "text-[#5b5449]" },
-  ollama: { token: "OL", bgClass: "bg-[#edf3f2]", textClass: "text-[#47605c]" },
-  lmstudio: { token: "LM", bgClass: "bg-[#f1eef6]", textClass: "text-[#5b5370]" },
-  "codex-acp": { token: "CP", bgClass: "bg-[#eef1f4]", textClass: "text-[#4a5866]" }
+  openai: { token: "OA", bgClass: "bg-primary/15", textClass: "text-primary" },
+  openrouter: { token: "OR", bgClass: "bg-accent", textClass: "text-foreground/85" },
+  groq: { token: "GQ", bgClass: "bg-muted", textClass: "text-foreground/80" },
+  deepseek: { token: "DS", bgClass: "bg-secondary", textClass: "text-foreground/85" },
+  claude: { token: "CL", bgClass: "bg-accent/70", textClass: "text-foreground/85" },
+  "claude-agent": { token: "CA", bgClass: "bg-accent/70", textClass: "text-foreground/85" },
+  ollama: { token: "OL", bgClass: "bg-secondary", textClass: "text-foreground/80" },
+  lmstudio: { token: "LM", bgClass: "bg-muted", textClass: "text-foreground/80" },
+  "codex-acp": { token: "CP", bgClass: "bg-accent", textClass: "text-foreground/85" }
 };
 
 const inferProviderPresetId = (provider: StoredProvider) => {
@@ -399,8 +421,8 @@ export const getProviderBadgeVisual = (provider: StoredProvider) => {
   const trimmed = provider.name.trim();
   return {
     token: trimmed ? trimmed.slice(0, 1).toUpperCase() : "P",
-    bgClass: "bg-[#eef1f6]",
-    textClass: "text-[#46556d]"
+    bgClass: "bg-accent",
+    textClass: "text-foreground/85"
   };
 };
 
@@ -528,7 +550,6 @@ export const areSettingsEqual = (left: AppSettings, right: AppSettings) =>
   left.systemPrompt === right.systemPrompt &&
   left.temperature === right.temperature &&
   left.maxTokens === right.maxTokens &&
-  left.defaultSoulModeEnabled === right.defaultSoulModeEnabled &&
   left.chatContextWindow === right.chatContextWindow &&
   left.sendWithEnter === right.sendWithEnter &&
   left.fontScale === right.fontScale &&
@@ -537,7 +558,8 @@ export const areSettingsEqual = (left: AppSettings, right: AppSettings) =>
   left.retryCount === right.retryCount &&
   left.sseDebug === right.sseDebug &&
   JSON.stringify(left.environment) === JSON.stringify(right.environment) &&
-  JSON.stringify(left.memos) === JSON.stringify(right.memos);
+  JSON.stringify(left.memos) === JSON.stringify(right.memos) &&
+  JSON.stringify(left.mcpServers) === JSON.stringify(right.mcpServers);
 
 export const isValidImportedSessions = (value: unknown): value is ChatSession[] =>
   Array.isArray(value) &&

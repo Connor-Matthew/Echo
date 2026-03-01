@@ -2,6 +2,7 @@ import { app } from "electron";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { AgentMessage, AgentSessionMeta } from "../../src/shared/agent-contracts";
+import type { ChatAttachment, ToolCall } from "../../src/shared/contracts";
 
 const STORE_DIR_NAME = "store";
 const AGENT_SESSIONS_INDEX_FILE = "agent-sessions.json";
@@ -72,12 +73,97 @@ const sanitizeAgentMessage = (value: unknown): AgentMessage | null => {
     return null;
   }
 
+  const sanitizeAttachment = (raw: unknown): ChatAttachment | null => {
+    if (!raw || typeof raw !== "object") {
+      return null;
+    }
+    const candidateAttachment = raw as Partial<ChatAttachment>;
+    const kind = candidateAttachment.kind;
+    if (
+      typeof candidateAttachment.id !== "string" ||
+      typeof candidateAttachment.name !== "string" ||
+      typeof candidateAttachment.mimeType !== "string" ||
+      typeof candidateAttachment.size !== "number" ||
+      !Number.isFinite(candidateAttachment.size) ||
+      candidateAttachment.size < 0
+    ) {
+      return null;
+    }
+    if (kind !== "text" && kind !== "image" && kind !== "file") {
+      return null;
+    }
+
+    return {
+      id: candidateAttachment.id,
+      name: candidateAttachment.name,
+      mimeType: candidateAttachment.mimeType,
+      size: candidateAttachment.size,
+      kind,
+      textContent:
+        kind === "text" && typeof candidateAttachment.textContent === "string"
+          ? candidateAttachment.textContent
+          : undefined,
+      imageDataUrl:
+        kind === "image" && typeof candidateAttachment.imageDataUrl === "string"
+          ? candidateAttachment.imageDataUrl
+          : undefined
+    };
+  };
+
+  const attachments = Array.isArray(candidate.attachments)
+    ? candidate.attachments
+        .map((attachment) => sanitizeAttachment(attachment))
+        .filter((attachment): attachment is ChatAttachment => Boolean(attachment))
+    : [];
+
+  const sanitizeToolCall = (raw: unknown): ToolCall | null => {
+    if (!raw || typeof raw !== "object") {
+      return null;
+    }
+    const candidateToolCall = raw as Partial<ToolCall>;
+    if (
+      typeof candidateToolCall.id !== "string" ||
+      typeof candidateToolCall.serverName !== "string" ||
+      typeof candidateToolCall.toolName !== "string"
+    ) {
+      return null;
+    }
+
+    const status =
+      candidateToolCall.status === "pending" ||
+      candidateToolCall.status === "success" ||
+      candidateToolCall.status === "error"
+        ? candidateToolCall.status
+        : "success";
+    const contentOffset =
+      typeof candidateToolCall.contentOffset === "number" && Number.isFinite(candidateToolCall.contentOffset)
+        ? Math.max(0, Math.floor(candidateToolCall.contentOffset))
+        : undefined;
+
+    return {
+      id: candidateToolCall.id,
+      serverName: candidateToolCall.serverName,
+      toolName: candidateToolCall.toolName,
+      status,
+      message: typeof candidateToolCall.message === "string" ? candidateToolCall.message : "",
+      contentOffset
+    };
+  };
+
+  const toolCalls = Array.isArray(candidate.toolCalls)
+    ? candidate.toolCalls
+        .map((toolCall) => sanitizeToolCall(toolCall))
+        .filter((toolCall): toolCall is ToolCall => Boolean(toolCall))
+    : [];
+
   return {
     id: candidate.id,
     sessionId: candidate.sessionId,
     role: candidate.role,
     content: candidate.content,
     createdAt: candidate.createdAt,
+    attachments: attachments.length ? attachments : undefined,
+    toolCalls: toolCalls.length ? toolCalls : undefined,
     runId: typeof candidate.runId === "string" ? candidate.runId : undefined,
     status:
       candidate.status === "completed" || candidate.status === "error" || candidate.status === "stopped"

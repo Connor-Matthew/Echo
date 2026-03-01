@@ -22,10 +22,22 @@ import {
   type PersonaUndoIngestPayload,
   type PersonaUndoIngestResult,
   type PersonaSnapshot,
-  type ModelListResult
+  type ModelListResult,
+  type McpServerListResult,
+  type McpServerStatusListResult,
+  type Skill
 } from "../shared/contracts";
+import {
+  clampInteger,
+  extractModelIds,
+  normalizeBaseUrl,
+  parseApiKeys,
+  resolveAnthropicEndpoint
+} from "../domain/provider/utils";
 import type {
   AgentMessage,
+  AgentResolvePermissionRequest,
+  AgentResolvePermissionResult,
   AgentSendMessageRequest,
   AgentSendMessageResult,
   AgentSessionMeta,
@@ -38,6 +50,9 @@ export type MuApi = {
     save: (settings: AppSettings) => Promise<void>;
     testConnection: (settings: AppSettings) => Promise<ConnectionTestResult>;
     listModels: (settings: AppSettings) => Promise<ModelListResult>;
+    listMcpServers: (settings: AppSettings) => Promise<McpServerListResult>;
+    listMcpServerStatus: (settings: AppSettings) => Promise<McpServerStatusListResult>;
+    reloadMcpServers: (settings: AppSettings) => Promise<McpServerStatusListResult>;
   };
   sessions: {
     get: () => Promise<ChatSession[]>;
@@ -76,10 +91,16 @@ export type MuApi = {
     getMessages: (sessionId: string) => Promise<AgentMessage[]>;
     sendMessage: (payload: AgentSendMessageRequest) => Promise<AgentSendMessageResult>;
     stop: (payload: { runId?: string; sessionId?: string }) => Promise<void>;
+    resolvePermission: (payload: AgentResolvePermissionRequest) => Promise<AgentResolvePermissionResult>;
     onStreamEvent: (
       runId: string,
       listener: (payload: AgentStreamEnvelope) => void
     ) => () => void;
+  };
+  skills: {
+    get: () => Promise<Skill[]>;
+    save: (skills: Skill[]) => Promise<void>;
+    scanClaude: () => Promise<Array<{ name: string; command: string; description: string; content: string }>>;
   };
 };
 
@@ -202,61 +223,6 @@ const buildFallbackPersonaMarkdown = (snapshot: PersonaSnapshot) => {
     profile.manualNotes || "这里内容永不被自动覆盖（用户自由编辑）",
     ""
   ].join("\n");
-};
-
-const normalizeBaseUrl = (value: string) => value.trim().replace(/\/+$/, "");
-const normalizeApiKeyToken = (value: string) => value.trim().replace(/^['"]|['"]$/g, "");
-const parseApiKeys = (raw: string) =>
-  Array.from(
-    new Set(
-      raw
-        .split(/[,\n]/)
-        .map((entry) => normalizeApiKeyToken(entry))
-        .filter(Boolean)
-    )
-  );
-const resolveAnthropicEndpoint = (baseUrl: string, resource: "models" | "messages") => {
-  const normalized = normalizeBaseUrl(baseUrl);
-  const rooted = normalized
-    .replace(/\/v1\/(messages|models)$/i, "")
-    .replace(/\/(messages|models)$/i, "");
-  return rooted.endsWith("/v1") ? `${rooted}/${resource}` : `${rooted}/v1/${resource}`;
-};
-const extractModelIds = (payload: unknown): string[] => {
-  if (!payload || typeof payload !== "object") {
-    return [];
-  }
-
-  const source = payload as {
-    data?: Array<{ id?: string; name?: string }>;
-    models?: Array<string | { id?: string; name?: string }>;
-    model_ids?: string[];
-  };
-
-  const fromData = Array.isArray(source.data)
-    ? source.data
-        .map((item) => item.id || item.name || "")
-        .filter((value): value is string => Boolean(value))
-    : [];
-  const fromModels = Array.isArray(source.models)
-    ? source.models
-        .map((item) => (typeof item === "string" ? item : item?.id || item?.name || ""))
-        .filter((value): value is string => Boolean(value))
-    : [];
-  const fromModelIds = Array.isArray(source.model_ids)
-    ? source.model_ids.filter((value): value is string => typeof value === "string")
-    : [];
-
-  return Array.from(new Set([...fromData, ...fromModels, ...fromModelIds])).sort((a, b) =>
-    a.localeCompare(b)
-  );
-};
-
-const clampInteger = (value: number, min: number, max: number, fallback: number) => {
-  if (!Number.isFinite(value)) {
-    return fallback;
-  }
-  return Math.min(max, Math.max(min, Math.round(value)));
 };
 
 const normalizeRequestTimeoutMs = (value: number) =>
@@ -696,10 +662,13 @@ const createBrowserFallbackApi = (): MuApi => {
 
   const emitAgent = (payload: AgentStreamEnvelope) => {
     const runListeners = agentListeners.get(payload.runId);
-    if (!runListeners) {
-      return;
+    if (runListeners) {
+      runListeners.forEach((listener) => listener(payload));
     }
-    runListeners.forEach((listener) => listener(payload));
+    const wildcardListeners = agentListeners.get("*");
+    if (wildcardListeners) {
+      wildcardListeners.forEach((listener) => listener(payload));
+    }
   };
 
   return {
@@ -852,7 +821,22 @@ const createBrowserFallbackApi = (): MuApi => {
           message: `Failed to fetch models. ${lastFailure}`,
           models: []
         };
-      }
+      },
+      listMcpServers: async () => ({
+        ok: false,
+        message: "MCP server management is only available in the Electron desktop runtime.",
+        servers: []
+      }),
+      listMcpServerStatus: async () => ({
+        ok: false,
+        message: "MCP server status is only available in the Electron desktop runtime.",
+        servers: []
+      }),
+      reloadMcpServers: async () => ({
+        ok: false,
+        message: "MCP server reload is only available in the Electron desktop runtime.",
+        servers: []
+      })
     },
     sessions: {
       get: async () => readLocalStorage<ChatSession[]>(SESSIONS_KEY, []),
@@ -1301,6 +1285,7 @@ const createBrowserFallbackApi = (): MuApi => {
           role: "user",
           content: payload.input.trim(),
           createdAt: nowIso(),
+          attachments: payload.attachments?.length ? payload.attachments : undefined,
           runId,
           status: "completed"
         };
@@ -1337,7 +1322,29 @@ const createBrowserFallbackApi = (): MuApi => {
           agentRunTimers.delete(runId);
         }
       },
+      resolvePermission: async () => ({ ok: false }),
       onStreamEvent: (runId, listener) => {
+        if (runId === "*") {
+          const wildcardHandler = (payload: AgentStreamEnvelope) => {
+            listener(payload);
+          };
+          const wildcardBucket =
+            agentListeners.get("*") ?? new Set<(payload: AgentStreamEnvelope) => void>();
+          wildcardBucket.add(wildcardHandler);
+          agentListeners.set("*", wildcardBucket);
+
+          return () => {
+            const currentWildcard = agentListeners.get("*");
+            if (!currentWildcard) {
+              return;
+            }
+            currentWildcard.delete(wildcardHandler);
+            if (!currentWildcard.size) {
+              agentListeners.delete("*");
+            }
+          };
+        }
+
         const bucket = agentListeners.get(runId) ?? new Set<(payload: AgentStreamEnvelope) => void>();
         bucket.add(listener);
         agentListeners.set(runId, bucket);
@@ -1353,6 +1360,11 @@ const createBrowserFallbackApi = (): MuApi => {
           }
         };
       }
+    },
+    skills: {
+      get: async () => readLocalStorage<Skill[]>("mu.skills.v1", []),
+      save: async (skills) => writeLocalStorage("mu.skills.v1", skills),
+      scanClaude: async () => []
     }
   };
 };
@@ -1373,9 +1385,10 @@ export const getMuApi = (): MuApi => {
       persona: runtimeApi.persona ?? fallbackApi.persona,
       memos: runtimeApi.memos ?? fallbackApi.memos,
       chat: runtimeApi.chat ?? fallbackApi.chat,
-      agent: runtimeApi.agent ?? fallbackApi.agent
+      agent: runtimeApi.agent ?? fallbackApi.agent,
+      skills: runtimeApi.skills ?? fallbackApi.skills
     };
-    return cachedApi;
+    return cachedApi as MuApi;
   }
   cachedApi = createBrowserFallbackApi();
   return cachedApi;
