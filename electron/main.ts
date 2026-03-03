@@ -612,7 +612,7 @@ app.whenReady().then(() => {
   // Initialize MCP manager from saved settings; fall back to Codex config if empty
   void readJson<Partial<AppSettings>>(SETTINGS_FILE, {})
     .then((saved) => {
-      const settings = normalizeSettings({ ...DEFAULT_SETTINGS, ...saved });
+      const settings = normalizeSettings(saved);
       if (settings.mcpServers.length) {
         return mcpManager.initializeFromUserServers(settings.mcpServers);
       }

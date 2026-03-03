@@ -675,7 +675,7 @@ const createBrowserFallbackApi = (): MuApi => {
     settings: {
       get: async () => {
         const saved = readLocalStorage<Partial<AppSettings>>(SETTINGS_KEY, {});
-        return normalizeSettings({ ...DEFAULT_SETTINGS, ...saved });
+        return normalizeSettings(saved);
       },
       save: async (settings) => writeLocalStorage(SETTINGS_KEY, normalizeSettings(settings)),
       testConnection: async (settings) => {

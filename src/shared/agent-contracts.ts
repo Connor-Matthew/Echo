@@ -185,6 +185,6 @@ export const buildAgentRunSettingsSnapshot = (
     baseUrl: normalizeAnthropicCompatibleBaseUrl(activeProvider.baseUrl),
     apiKey: activeProvider.apiKey,
     model: activeProvider.model,
-    systemPrompt: settings.systemPrompt
+    systemPrompt: settings.agentSystemPrompt
   };
 };

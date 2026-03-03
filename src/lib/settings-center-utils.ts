@@ -548,6 +548,7 @@ export const areSettingsEqual = (left: AppSettings, right: AppSettings) =>
   JSON.stringify(left.providers) === JSON.stringify(right.providers) &&
   left.theme === right.theme &&
   left.systemPrompt === right.systemPrompt &&
+  left.agentSystemPrompt === right.agentSystemPrompt &&
   left.temperature === right.temperature &&
   left.maxTokens === right.maxTokens &&
   left.chatContextWindow === right.chatContextWindow &&

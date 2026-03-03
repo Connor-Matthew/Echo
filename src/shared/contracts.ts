@@ -347,6 +347,7 @@ export type AppSettings = {
   activeProviderId: string;
   theme: ThemeMode;
   systemPrompt: string;
+  agentSystemPrompt: string;
   temperature: number;
   maxTokens: number;
   chatContextWindow: ChatContextWindow;
@@ -496,6 +497,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   activeProviderId: DEFAULT_PROVIDER.id,
   theme: "system",
   systemPrompt: "You are a precise and pragmatic coding assistant.",
+  agentSystemPrompt: "You are a precise and pragmatic coding assistant.",
   temperature: 0.4,
   maxTokens: 2048,
   chatContextWindow: "infinite",
@@ -732,6 +734,7 @@ export const normalizeSettings = (saved: Partial<AppSettings>): AppSettings => {
   const rawChatContextWindow = (saved as { chatContextWindow?: unknown }).chatContextWindow;
   const rawEnvironment = (saved as { environment?: unknown }).environment;
   const rawMemos = (saved as { memos?: unknown }).memos;
+  const rawAgentSystemPrompt = (saved as { agentSystemPrompt?: unknown }).agentSystemPrompt;
   const rawProviders = Array.isArray(saved.providers) ? saved.providers : [];
   const providersFromLegacy: StoredProvider[] = [
     {
@@ -768,6 +771,12 @@ export const normalizeSettings = (saved: Partial<AppSettings>): AppSettings => {
     apiKey: activeProvider.apiKey,
     model: activeProvider.model,
     providerType: activeProvider.providerType,
+    agentSystemPrompt:
+      typeof rawAgentSystemPrompt === "string"
+        ? rawAgentSystemPrompt
+        : typeof saved.systemPrompt === "string"
+          ? saved.systemPrompt
+          : DEFAULT_SETTINGS.agentSystemPrompt,
     chatContextWindow: normalizeChatContextWindow(rawChatContextWindow),
     environment: normalizeEnvironmentSettings(rawEnvironment),
     memos: normalizeMemosSettings(rawMemos),

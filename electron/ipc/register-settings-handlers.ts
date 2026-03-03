@@ -1,6 +1,5 @@
 import type { IpcMain } from "electron";
 import {
-  DEFAULT_SETTINGS,
   normalizeSettings,
   type AppSettings,
   type ConnectionTestResult,
@@ -27,7 +26,7 @@ type SettingsHandlerDeps = {
 export const registerSettingsHandlers = (ipcMain: IpcMain, deps: SettingsHandlerDeps) => {
   ipcMain.handle("settings:get", async () => {
     const saved = await deps.readJson<Partial<AppSettings>>(deps.settingsFile, {});
-    return normalizeSettings({ ...DEFAULT_SETTINGS, ...saved });
+    return normalizeSettings(saved);
   });
 
   ipcMain.handle("settings:save", async (_, settings: AppSettings) => {

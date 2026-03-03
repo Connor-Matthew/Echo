@@ -8,6 +8,18 @@ import { loadEnvironmentSnapshot } from "../../domain/environment/load-snapshot"
 import { useAgentOrchestration } from "../agent/use-agent-orchestration";
 import { useChatOrchestration } from "../chat/use-chat-orchestration";
 import {
+  buildAgentPermissionResolutionMessage,
+  enqueueAgentPermissionFromEnvelope,
+  markAgentPermissionResolving,
+  mergeRuntimeAgentMessageDecorations,
+  normalizeIncomingDraftFiles,
+  removeAttachmentById,
+  removeAgentPermissionQueueItems,
+  summarizeBlockedAttachmentMessages,
+  type PendingAgentPermission,
+  withPersistedAutoDetectedCapabilities
+} from "./controller-helpers";
+import {
   sendFromBaseMessagesService,
   type ChatActiveStream,
   type SendFromBaseMessagesOptions
@@ -77,104 +89,8 @@ type RemovedSession = {
 
 type AppView = "chat" | "agent" | "settings";
 
-type PendingAgentPermission = {
-  runId: string;
-  sessionId: string;
-  requestId: string;
-  toolName?: string;
-  reason?: string;
-  blockedPath?: string;
-  supportsAlwaysAllow: boolean;
-  resolving: boolean;
-  createdAt: string;
-};
-
 const api = getMuApi();
 const TOP_FRAME_HEIGHT_PX = 12;
-
-const withPersistedAutoDetectedCapabilities = (source: AppSettings): AppSettings => {
-  const modelId = source.model.trim();
-  if (!modelId) {
-    return source;
-  }
-
-  const activeProvider =
-    source.providers.find((provider) => provider.id === source.activeProviderId) ??
-    source.providers[0];
-  if (!activeProvider) {
-    return source;
-  }
-
-  const capabilityKey = toModelCapabilityKey(modelId);
-  if (!capabilityKey) {
-    return source;
-  }
-
-  const inferred = inferModelCapabilities(activeProvider.providerType, modelId);
-  const hasDetectedSignal =
-    inferred.imageInput || inferred.audioInput || inferred.videoInput || inferred.reasoningDisplay;
-  const stored = activeProvider.modelCapabilities?.[capabilityKey];
-  if (!stored) {
-    if (!hasDetectedSignal) {
-      return source;
-    }
-    return normalizeSettings({
-      ...source,
-      providers: source.providers.map((provider) =>
-        provider.id === activeProvider.id
-          ? {
-              ...provider,
-              modelCapabilities: {
-                ...(provider.modelCapabilities ?? {}),
-                [capabilityKey]: inferred
-              }
-            }
-          : provider
-      )
-    });
-  }
-
-  const isLegacyAllDisabled =
-    stored.textInput !== false &&
-    !stored.imageInput &&
-    !stored.audioInput &&
-    !stored.videoInput &&
-    !stored.reasoningDisplay;
-  if (!isLegacyAllDisabled || !hasDetectedSignal) {
-    return source;
-  }
-
-  const promoted = {
-    ...stored,
-    imageInput: stored.imageInput || inferred.imageInput,
-    audioInput: stored.audioInput || inferred.audioInput,
-    videoInput: stored.videoInput || inferred.videoInput,
-    reasoningDisplay: stored.reasoningDisplay || inferred.reasoningDisplay
-  };
-  if (
-    promoted.imageInput === stored.imageInput &&
-    promoted.audioInput === stored.audioInput &&
-    promoted.videoInput === stored.videoInput &&
-    promoted.reasoningDisplay === stored.reasoningDisplay
-  ) {
-    return source;
-  }
-
-  return normalizeSettings({
-    ...source,
-    providers: source.providers.map((provider) =>
-      provider.id === activeProvider.id
-        ? {
-            ...provider,
-            modelCapabilities: {
-              ...(provider.modelCapabilities ?? {}),
-              [capabilityKey]: promoted
-            }
-          }
-        : provider
-    )
-  });
-};
 
 export const useAppController = () => {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -446,129 +362,16 @@ export const useAppController = () => {
     }));
   };
 
-  const mergeRuntimeAgentMessageDecorations = (
-    incomingMessages: AgentMessage[],
-    previousMessages: AgentMessage[]
-  ) => {
-    if (!previousMessages.length) {
-      return incomingMessages;
-    }
-
-    const messageIdByRunRole = new Map<string, string>();
-    const toolCallsByMessageId = new Map<string, NonNullable<AgentMessage["toolCalls"]>>();
-    const toolCallsByRunId = new Map<string, NonNullable<AgentMessage["toolCalls"]>>();
-    const contentByMessageId = new Map<string, string>();
-    const contentByRunId = new Map<string, string>();
-
-    for (const previousMessage of previousMessages) {
-      if (previousMessage.runId) {
-        messageIdByRunRole.set(`${previousMessage.runId}:${previousMessage.role}`, previousMessage.id);
-      }
-      if (previousMessage.role !== "assistant") {
-        continue;
-      }
-      if (previousMessage.toolCalls?.length) {
-        toolCallsByMessageId.set(previousMessage.id, previousMessage.toolCalls);
-        if (previousMessage.runId) {
-          toolCallsByRunId.set(previousMessage.runId, previousMessage.toolCalls);
-        }
-      }
-      if (previousMessage.content) {
-        contentByMessageId.set(previousMessage.id, previousMessage.content);
-        if (previousMessage.runId) {
-          contentByRunId.set(previousMessage.runId, previousMessage.content);
-        }
-      }
-    }
-
-    return incomingMessages.map((message) => {
-      const stableMessageId = message.runId
-        ? messageIdByRunRole.get(`${message.runId}:${message.role}`)
-        : undefined;
-
-      if (message.role !== "assistant") {
-        if (!stableMessageId || stableMessageId === message.id) {
-          return message;
-        }
-        return {
-          ...message,
-          id: stableMessageId
-        };
-      }
-      const matchedToolCalls =
-        !message.toolCalls?.length
-          ? (toolCallsByMessageId.get(message.id) ??
-              (message.runId ? toolCallsByRunId.get(message.runId) : undefined))
-          : undefined;
-      const matchedContent =
-        !message.content
-          ? (contentByMessageId.get(message.id) ??
-              (message.runId ? contentByRunId.get(message.runId) : undefined))
-          : undefined;
-      if (
-        !matchedToolCalls?.length &&
-        !matchedContent &&
-        (!stableMessageId || stableMessageId === message.id)
-      ) {
-        return message;
-      }
-      return {
-        ...message,
-        ...(stableMessageId && stableMessageId !== message.id ? { id: stableMessageId } : {}),
-        ...(matchedContent ? { content: matchedContent } : {}),
-        ...(matchedToolCalls?.length ? { toolCalls: matchedToolCalls.map((toolCall) => ({ ...toolCall })) } : {})
-      };
-    });
-  };
-
   const removeAgentPermissionRequests = (payload: {
     runId?: string;
     sessionId?: string;
     requestId?: string;
   }) => {
-    setAgentPermissionQueue((previous) =>
-      previous.filter((item) => {
-        if (payload.runId && item.runId !== payload.runId) {
-          return true;
-        }
-        if (payload.sessionId && item.sessionId !== payload.sessionId) {
-          return true;
-        }
-        if (payload.requestId && item.requestId !== payload.requestId) {
-          return true;
-        }
-        return false;
-      })
-    );
+    setAgentPermissionQueue((previous) => removeAgentPermissionQueueItems(previous, payload));
   };
 
   const enqueueAgentPermissionRequest = (payload: AgentStreamEnvelope) => {
-    if (payload.event.type !== "permission_request") {
-      return;
-    }
-    const event = payload.event;
-    setAgentPermissionQueue((previous) => {
-      const exists = previous.some(
-        (item) => item.runId === payload.runId && item.requestId === event.requestId
-      );
-      if (exists) {
-        return previous;
-      }
-      return [
-        ...previous,
-        {
-          runId: payload.runId,
-          sessionId: payload.sessionId,
-          requestId: event.requestId,
-          toolName: event.toolName,
-          reason: event.reason,
-          blockedPath: event.blockedPath,
-          supportsAlwaysAllow: Boolean(event.supportsAlwaysAllow),
-          resolving: false,
-          createdAt: payload.timestamp
-        }
-      ];
-    });
+    setAgentPermissionQueue((previous) => enqueueAgentPermissionFromEnvelope(previous, payload));
   };
 
   const resolveAgentPermissionRequest = async (
@@ -576,13 +379,7 @@ export const useAppController = () => {
     decision: "approved" | "denied",
     applySuggestions: boolean
   ) => {
-    setAgentPermissionQueue((previous) =>
-      previous.map((item) =>
-        item.runId === request.runId && item.requestId === request.requestId
-          ? { ...item, resolving: true }
-          : item
-      )
-    );
+    setAgentPermissionQueue((previous) => markAgentPermissionResolving(previous, request, true));
 
     try {
       const result = await api.agent.resolvePermission({
@@ -590,12 +387,7 @@ export const useAppController = () => {
         requestId: request.requestId,
         decision,
         applySuggestions,
-        message:
-          decision === "approved"
-            ? applySuggestions
-              ? "Approved by user (always allow)."
-              : "Approved by user (once)."
-            : "Denied by user."
+        message: buildAgentPermissionResolutionMessage(decision, applySuggestions)
       });
 
       if (!result.ok) {
@@ -604,13 +396,7 @@ export const useAppController = () => {
         return;
       }
     } catch {
-      setAgentPermissionQueue((previous) =>
-        previous.map((item) =>
-          item.runId === request.runId && item.requestId === request.requestId
-            ? { ...item, resolving: false }
-            : item
-        )
-      );
+      setAgentPermissionQueue((previous) => markAgentPermissionResolving(previous, request, false));
       appendAgentSystemEvent(request.sessionId, "Failed to resolve permission request.");
     }
   };
@@ -1161,11 +947,12 @@ export const useAppController = () => {
     await saveSettings(DEFAULT_SETTINGS);
   };
 
-  const addFiles = (files: FileList | File[] | null) => {
-    if (!files) {
-      return;
-    }
-    const incomingFiles = Array.isArray(files) ? files : Array.from(files);
+  const addDraftLikeFiles = (
+    files: FileList | File[] | null,
+    onBlockedMessage: (message: string) => void,
+    onAccepted: (accepted: DraftAttachment[]) => void
+  ) => {
+    const incomingFiles = normalizeIncomingDraftFiles(files);
     if (!incomingFiles.length) {
       return;
     }
@@ -1178,64 +965,51 @@ export const useAppController = () => {
         modelCapabilities: activeModelCapabilities
       });
 
-      if (blockedMessages.length) {
-        const uniqueMessages = Array.from(new Set(blockedMessages));
-        setErrorBanner(uniqueMessages.slice(0, 3).join("；"));
+      const blockedSummary = summarizeBlockedAttachmentMessages(blockedMessages);
+      if (blockedSummary) {
+        onBlockedMessage(blockedSummary);
       }
 
       if (!accepted.length) {
         return;
       }
-      setDraftAttachments((previous) => [...previous, ...accepted]);
+      onAccepted(accepted);
     })();
   };
 
+  const addFiles = (files: FileList | File[] | null) => {
+    addDraftLikeFiles(
+      files,
+      (message) => setErrorBanner(message),
+      (accepted) => setDraftAttachments((previous) => [...previous, ...accepted])
+    );
+  };
+
   const addAgentFiles = (files: FileList | File[] | null) => {
-    if (!files) {
-      return;
-    }
-    const incomingFiles = Array.isArray(files) ? files : Array.from(files);
-    if (!incomingFiles.length) {
-      return;
-    }
-
-    void (async () => {
-      const { accepted, blockedMessages } = await buildDraftAttachments({
-        files: incomingFiles,
-        createId,
-        modelId: settings.model,
-        modelCapabilities: activeModelCapabilities
-      });
-
-      if (blockedMessages.length) {
-        const uniqueMessages = Array.from(new Set(blockedMessages));
-        setAgentErrorBanner(uniqueMessages.slice(0, 3).join("；"));
-      }
-
-      if (!accepted.length) {
-        return;
-      }
-      setAgentDraftAttachments((previous) => [...previous, ...accepted]);
-    })();
+    addDraftLikeFiles(
+      files,
+      (message) => setAgentErrorBanner(message),
+      (accepted) => setAgentDraftAttachments((previous) => [...previous, ...accepted])
+    );
   };
 
   const removeAttachment = (attachmentId: string) => {
     setDraftAttachments((previous) => {
-      const target = previous.find((attachment) => attachment.id === attachmentId);
-      if (target) {
-        revokeAttachmentPreview(target);
+      const { removed, next } = removeAttachmentById(previous, attachmentId);
+      if (removed) {
+        revokeAttachmentPreview(removed);
       }
-      return previous.filter((attachment) => attachment.id !== attachmentId);
+      return next;
     });
   };
 
   const removeAgentAttachment = (attachmentId: string) => {
     setAgentDraftAttachments((previous) => {
-      const target = previous.find((attachment) => attachment.id === attachmentId);
-      if (target) {
-        revokeAttachmentPreview(target);
+      const { removed, next } = removeAttachmentById(previous, attachmentId);
+      if (removed) {
+        revokeAttachmentPreview(removed);
       }
-      return previous.filter((attachment) => attachment.id !== attachmentId);
+      return next;
     });
   };
 

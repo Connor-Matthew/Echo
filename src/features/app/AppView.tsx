@@ -1,16 +1,25 @@
+import { useEffect, useMemo, useState } from "react";
 import { PanelLeft } from "lucide-react";
 import { AgentView } from "../../components/AgentView";
 import { AttachmentTray } from "../../components/AttachmentTray";
 import { ChatView } from "../../components/ChatView";
+import { CommandPalette } from "../../components/CommandPalette";
+import {
+  detectIsMacPlatform,
+  isEditableEventTarget,
+  matchesShortcut
+} from "../../components/command-palette/shortcut-utils";
 import { Composer } from "../../components/Composer";
 import { SettingsCenter } from "../../components/SettingsCenter";
 import { Sidebar } from "../../components/Sidebar";
 import { Button } from "../../components/ui/button";
 import { mergeSkills } from "../../lib/skills-utils";
+import { buildCommandPaletteCommands } from "./build-command-palette-commands";
 import { useAppController } from "./use-app-controller";
 
 export const AppView = () => {
   const controller = useAppController();
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const {
     TOP_FRAME_HEIGHT_PX,
     activeView,
@@ -105,6 +114,127 @@ export const AppView = () => {
     reloadMcpServers,
     resetSettings
   } = controller;
+
+  const focusComposerInView = (view: "chat" | "agent") => {
+    window.requestAnimationFrame(() => {
+      const selector =
+        view === "agent"
+          ? "[data-agent-composer-root='true'] textarea"
+          : "[data-chat-composer-root='true'] textarea";
+      document.querySelector<HTMLTextAreaElement>(selector)?.focus();
+    });
+  };
+
+  const activeAgentSession = useMemo(
+    () => agentSessions.find((session) => session.id === activeAgentSessionId) ?? null,
+    [agentSessions, activeAgentSessionId]
+  );
+  const isMacPlatform = useMemo(() => detectIsMacPlatform(), []);
+
+  const commandPaletteCommands = useMemo(
+    () =>
+      buildCommandPaletteCommands({
+        activeView,
+        isSidebarOpen,
+        activeSession,
+        activeAgentSession,
+        orderedChatSessions,
+        agentSessions,
+        isGenerating,
+        isAgentRunning,
+        closeSidebarIfCompact,
+        setActiveView,
+        setActiveSessionId,
+        setActiveAgentSessionId,
+        setIsSidebarOpen,
+        createNewChat,
+        createNewAgentSession,
+        openSettings,
+        renameChat,
+        toggleChatPin,
+        exportSession,
+        exportSessionMarkdown,
+        deleteChat,
+        renameAgentSession,
+        deleteAgentSession,
+        stopGenerating,
+        stopAgentRun,
+        focusComposerInView,
+        exportSessions,
+        clearAllSessions,
+        resetSettings
+      }),
+    [
+      activeView,
+      activeAgentSession,
+      activeSession,
+      agentSessions,
+      createNewAgentSession,
+      createNewChat,
+      clearAllSessions,
+      deleteAgentSession,
+      deleteChat,
+      exportSession,
+      exportSessionMarkdown,
+      exportSessions,
+      isAgentRunning,
+      isGenerating,
+      isSidebarOpen,
+      openSettings,
+      orderedChatSessions,
+      renameAgentSession,
+      renameChat,
+      resetSettings,
+      closeSidebarIfCompact,
+      setActiveView,
+      setActiveAgentSessionId,
+      setActiveSessionId,
+      setIsSidebarOpen,
+      stopAgentRun,
+      stopGenerating,
+      toggleChatPin
+    ]
+  );
+
+  const shortcutCommands = useMemo(
+    () => commandPaletteCommands.filter((command) => Boolean(command.shortcut)),
+    [commandPaletteCommands]
+  );
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const isPaletteToggle = matchesShortcut(event, "mod+k", isMacPlatform);
+      if (isPaletteToggle) {
+        event.preventDefault();
+        setIsCommandPaletteOpen((previous) => !previous);
+        return;
+      }
+
+      if (isEditableEventTarget(event.target)) {
+        return;
+      }
+
+      if (isCommandPaletteOpen) {
+        return;
+      }
+
+      const matchedCommand = shortcutCommands.find(
+        (command) =>
+          typeof command.shortcut === "string" &&
+          matchesShortcut(event, command.shortcut, isMacPlatform)
+      );
+      if (!matchedCommand) {
+        return;
+      }
+      event.preventDefault();
+      matchedCommand.onSelect();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isCommandPaletteOpen, isMacPlatform, shortcutCommands]);
 
   const sidebarContent =
     activeView === "chat" ? (
@@ -274,7 +404,7 @@ export const AppView = () => {
                     <h2 className="mb-14 text-center text-[36px] font-semibold leading-tight text-foreground sm:mb-16 sm:text-[44px] md:mb-20">
                       今天有什么可以帮到你？
                     </h2>
-                    <div className="mx-auto w-full max-w-[720px]">
+                    <div className="mx-auto w-full max-w-[720px]" data-chat-composer-root="true">
                       <AttachmentTray
                         attachments={draftAttachments}
                         onRemoveAttachment={removeAttachment}
@@ -342,7 +472,10 @@ export const AppView = () => {
                   </div>
 
                   <div className="px-2 pb-2 pt-0 sm:px-3 sm:pb-3 md:px-4 md:pb-4">
-                    <div className="paper-conversation-stage mx-auto w-full max-w-[720px] min-w-0">
+                    <div
+                      className="paper-conversation-stage mx-auto w-full max-w-[720px] min-w-0"
+                      data-chat-composer-root="true"
+                    >
                       <AttachmentTray
                         attachments={draftAttachments}
                         onRemoveAttachment={removeAttachment}
@@ -506,6 +639,12 @@ export const AppView = () => {
           )}
         </main>
       </div>
+
+      <CommandPalette
+        isOpen={isCommandPaletteOpen}
+        commands={commandPaletteCommands}
+        onClose={() => setIsCommandPaletteOpen(false)}
+      />
     </div>
   );
 };

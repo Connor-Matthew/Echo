@@ -20,6 +20,11 @@ import {
   syncProviderState,
   validateSettingsForSection
 } from "../../lib/settings-center-utils";
+import {
+  combineStatusMessages,
+  toMcpStatusMap,
+  toProviderTypeValue
+} from "./controller-helpers";
 import type {
   AppSettings,
   ChatSession,
@@ -237,15 +242,7 @@ export const useSettingsCenterController = ({
               ...provider,
               [field]:
                 field === "providerType"
-                  ? ((
-                      value === "anthropic"
-                        ? "anthropic"
-                        : value === "acp"
-                          ? "acp"
-                          : value === "claude-agent"
-                            ? "claude-agent"
-                          : "openai"
-                    ) as StoredProvider["providerType"])
+                  ? toProviderTypeValue(value)
                   : value
             }
           : provider
@@ -587,7 +584,8 @@ export const useSettingsCenterController = ({
     try {
       const normalized = normalizeDraft({
         ...draft,
-        systemPrompt: draft.systemPrompt.trim()
+        systemPrompt: draft.systemPrompt.trim(),
+        agentSystemPrompt: draft.agentSystemPrompt.trim()
       });
       await onSave(normalized);
     } catch (error) {
@@ -678,9 +676,6 @@ export const useSettingsCenterController = ({
     }
   };
 
-  const toMcpStatusMap = (servers: McpServerStatus[]) =>
-    Object.fromEntries(servers.map((server) => [server.name, server] as const));
-
   const refreshMcpServers = async () => {
     setIsFetchingMcp(true);
     setMcpMessage(null);
@@ -692,12 +687,7 @@ export const useSettingsCenterController = ({
       ]);
       setMcpServers(configResult.servers);
       setMcpServerStatuses(toMcpStatusMap(statusResult.servers));
-      setMcpMessage(
-        [configResult.message, statusResult.message]
-          .map((entry) => entry.trim())
-          .filter(Boolean)
-          .join(" ")
-      );
+      setMcpMessage(combineStatusMessages(configResult.message, statusResult.message));
     } finally {
       setIsFetchingMcp(false);
     }
@@ -714,12 +704,7 @@ export const useSettingsCenterController = ({
       ]);
       setMcpServerStatuses(toMcpStatusMap(reloadResult.servers));
       setMcpServers(configResult.servers);
-      setMcpMessage(
-        [reloadResult.message, configResult.message]
-          .map((entry) => entry.trim())
-          .filter(Boolean)
-          .join(" ")
-      );
+      setMcpMessage(combineStatusMessages(reloadResult.message, configResult.message));
     } finally {
       setIsReloadingMcp(false);
     }

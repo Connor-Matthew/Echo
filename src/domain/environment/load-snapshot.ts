@@ -23,21 +23,32 @@ type LoadEnvironmentSnapshotOptions = {
     cacheTtlMs?: number;
   }) => Promise<EnvironmentWeatherSnapshot>;
   getSystemStatus: () => Promise<EnvironmentDeviceStatus>;
+  collectLocalContext?: typeof collectLocalEnvironmentContext;
+  buildUnavailable?: typeof buildUnavailableWeather;
+  toStaleFromPrevious?: typeof toStaleWeatherFromPrevious;
+  setTimeoutFn?: (handler: () => void, timeoutMs: number) => ReturnType<typeof setTimeout>;
+  clearTimeoutFn?: (handle: ReturnType<typeof setTimeout>) => void;
 };
 
 export const loadEnvironmentSnapshot = async (
   options: LoadEnvironmentSnapshotOptions
 ): Promise<EnvironmentSnapshot> => {
   const city = options.city.trim();
+  const collectLocalContext = options.collectLocalContext ?? collectLocalEnvironmentContext;
+  const buildUnavailable = options.buildUnavailable ?? buildUnavailableWeather;
+  const toStaleFromPrevious = options.toStaleFromPrevious ?? toStaleWeatherFromPrevious;
+  const setTimeoutFn = options.setTimeoutFn ?? ((handler, timeoutMs) => setTimeout(handler, timeoutMs));
+  const clearTimeoutFn = options.clearTimeoutFn ?? ((handle) => clearTimeout(handle));
+
   const [local, systemStatus] = await Promise.all([
-    collectLocalEnvironmentContext(options.cwd),
+    collectLocalContext(options.cwd),
     options.getSystemStatus().catch(() => ({} as EnvironmentDeviceStatus))
   ]);
 
-  let weather = buildUnavailableWeather(city ? "weather_lookup_skipped" : "city_not_set");
+  let weather = buildUnavailable(city ? "weather_lookup_skipped" : "city_not_set");
   if (city) {
     const timeoutMs = Math.min(Math.max(options.weatherTimeoutMs, 100), 2000);
-    let timeoutId: number | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
     try {
       const weatherRequest = options.getWeatherSnapshot({
         city,
@@ -45,20 +56,20 @@ export const loadEnvironmentSnapshot = async (
         cacheTtlMs: options.weatherCacheTtlMs
       });
       const timeoutRequest = new Promise<null>((resolve) => {
-        timeoutId = window.setTimeout(() => resolve(null), timeoutMs);
+        timeoutId = setTimeoutFn(() => resolve(null), timeoutMs);
       });
       const nextWeather = await Promise.race([weatherRequest, timeoutRequest]);
       weather =
         nextWeather ??
-        toStaleWeatherFromPrevious(options.previousWeather, "weather_timeout") ??
-        buildUnavailableWeather("weather_timeout");
+        toStaleFromPrevious(options.previousWeather, "weather_timeout") ??
+        buildUnavailable("weather_timeout");
     } catch (error) {
       const reason = error instanceof Error ? error.message : "weather_lookup_failed";
       weather =
-        toStaleWeatherFromPrevious(options.previousWeather, reason) ?? buildUnavailableWeather(reason);
+        toStaleFromPrevious(options.previousWeather, reason) ?? buildUnavailable(reason);
     } finally {
       if (timeoutId !== null) {
-        window.clearTimeout(timeoutId);
+        clearTimeoutFn(timeoutId);
       }
     }
   }
