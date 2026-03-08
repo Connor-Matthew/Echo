@@ -129,9 +129,28 @@
     -webkit-app-region: drag;
   }
 
+  .app-shell {
+    background:
+      linear-gradient(
+        180deg,
+        hsl(18 24% 86%) 0%,
+        hsl(220 20% 92%) 14%,
+        hsl(220 22% 94%) 100%
+      );
+  }
+
+  .dark .app-shell {
+    background:
+      linear-gradient(
+        180deg,
+        hsl(220 14% 14%) 0%,
+        hsl(220 16% 11%) 100%
+      );
+  }
+
   .sketch-panel {
-    border: 1px solid hsl(var(--border));
-    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border) / 0.45);
+    background: hsl(var(--card) / 0.98);
     box-shadow: none;
   }
 

@@ -319,17 +319,20 @@ export const AppView = () => {
 
   return (
     <div
-      className="app-shell relative h-screen min-w-0 overflow-hidden bg-background"
+      className="app-shell relative h-screen min-w-0 overflow-hidden bg-background p-1.5 sm:p-2"
       data-file-dragging={activeView === "chat" && isChatDragOver ? "true" : "false"}
     >
       <div className="app-window-drag-layer" style={{ left: 0, height: TOP_FRAME_HEIGHT_PX }} aria-hidden />
 
       <div
-        className="relative grid h-full gap-0 transition-[grid-template-columns] duration-300 ease-out"
-        style={{ gridTemplateColumns: `${sidebarWidth}px minmax(0, 1fr)` }}
+        className="relative grid h-full overflow-hidden rounded-[22px] border border-border/35 bg-card/62 p-1.5 shadow-[0_14px_34px_rgba(15,23,42,0.06)] backdrop-blur-[0.5px] transition-[grid-template-columns,column-gap] duration-300 ease-out sm:p-2"
+        style={{
+          gridTemplateColumns: `${sidebarWidth}px minmax(0, 1fr)`,
+          columnGap: isSidebarOpen ? "0.4rem" : "0rem"
+        }}
       >
         <div
-          className={`sketch-panel overflow-hidden rounded-none border-r transition-[transform,opacity] duration-250 ease-out ${
+          className={`sketch-panel overflow-hidden rounded-[18px] transition-[transform,opacity] duration-250 ease-out ${
             !isSidebarOpen
               ? "-translate-x-[110%] opacity-0 pointer-events-none"
               : "translate-x-0 opacity-100"
@@ -340,11 +343,10 @@ export const AppView = () => {
 
         <main
           className={[
-            "sketch-panel relative flex min-h-0 flex-col overflow-hidden rounded-none border transition-colors",
-            isSidebarOpen ? "border-l-0" : "",
+            "sketch-panel relative flex min-h-0 flex-col overflow-hidden rounded-[18px] transition-colors",
             activeView === "chat" && isChatDragOver
               ? "border-primary bg-accent/30"
-              : "border-border/70"
+              : ""
           ].join(" ")}
           onDragEnter={handleChatDragEnter}
           onDragOver={handleChatDragOver}
@@ -359,12 +361,12 @@ export const AppView = () => {
             </div>
           ) : null}
           {showFloatingSidebarToggle ? (
-            <div className="absolute left-[92px] top-0 z-20">
+            <div className="absolute left-3 top-3 z-20">
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="h-8 w-8 rounded-none bg-transparent p-0 text-muted-foreground hover:bg-transparent hover:text-foreground"
+                className="h-8 w-8 rounded-xl bg-card/90 p-0 text-muted-foreground shadow-[0_1px_6px_rgba(15,23,42,0.12)] hover:bg-card hover:text-foreground"
                 onClick={() => setIsSidebarOpen((previous) => !previous)}
                 aria-label="展开侧边栏"
                 title="展开侧边栏"
@@ -606,7 +608,7 @@ export const AppView = () => {
             </div>
           ) : (
             <>
-              <header className="border-b border-border/70 bg-card px-3 py-2.5 sm:px-4">
+              <header className="bg-card/72 px-3 py-2.5 sm:px-4">
                 <div className="flex items-start gap-3">
                   <div>
                     <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">

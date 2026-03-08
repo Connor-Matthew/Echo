@@ -134,11 +134,11 @@ const ChatAgentModeSwitch = ({
 }) => {
   const isChat = activeMode === "chat";
   return (
-    <div className="relative grid grid-cols-2 rounded-xl border border-border/70 bg-card/70 p-1">
+    <div className="relative grid grid-cols-2 rounded-xl border border-border/45 bg-card/60 p-0.5">
       <span
         aria-hidden
         className={cn(
-          "pointer-events-none absolute bottom-1 left-1 top-1 w-[calc(50%-4px)] rounded-lg border border-border/80 bg-accent/80 shadow-[0_3px_10px_rgba(15,23,42,0.08)] transition-transform duration-300 ease-out",
+          "pointer-events-none absolute bottom-0.5 left-0.5 top-0.5 w-[calc(50%-2px)] rounded-lg bg-accent/75 shadow-[0_2px_8px_rgba(15,23,42,0.06)] transition-transform duration-300 ease-out",
           isChat ? "translate-x-0" : "translate-x-full"
         )}
       />
@@ -357,7 +357,7 @@ export const Sidebar = (props: SidebarProps) => {
     ];
 
     return (
-      <aside className="flex h-full flex-col overflow-hidden bg-secondary/45 px-2.5 pb-2.5 pt-3">
+      <aside className="flex h-full flex-col overflow-hidden bg-secondary/35 px-2.5 pb-2 pt-2.5">
         <div className="-mt-[12px] mb-3 flex items-center justify-end">
           <Button
             type="button"
@@ -392,10 +392,10 @@ export const Sidebar = (props: SidebarProps) => {
                     type="button"
                     variant="ghost"
                     className={cn(
-                      "h-8 w-full justify-start gap-2 rounded-md border px-2.5 text-sm",
+                      "h-8 w-full justify-start gap-2 rounded-md px-2.5 text-sm",
                       active
-                        ? "border-border/80 bg-accent/70 text-foreground"
-                        : "border-transparent text-foreground/80 hover:border-border/55 hover:bg-accent/55"
+                        ? "bg-accent/72 text-foreground"
+                        : "text-foreground/80 hover:bg-accent/55"
                     )}
                     onClick={() => props.onSelectSettingsSection(item.key)}
                   >
@@ -408,7 +408,7 @@ export const Sidebar = (props: SidebarProps) => {
           </div>
         </div>
 
-        <div className="mt-2 border-t border-border/90 pt-2">
+        <div className="mt-2 pt-2">
           <div className="mt-1 flex items-center gap-2 px-2 text-xs text-muted-foreground">
             <Bot className="h-3.5 w-3.5" />
             本地模式
@@ -446,8 +446,8 @@ export const Sidebar = (props: SidebarProps) => {
 
     return (
       <>
-        <aside className="relative flex h-full flex-col overflow-hidden bg-secondary/45">
-          <div className="border-b border-border/70 px-3 pb-4 pt-3">
+        <aside className="relative flex h-full flex-col overflow-hidden bg-secondary/35">
+          <div className="px-3 pb-3 pt-2.5">
             <div className="-mt-[12px] mb-3 flex items-center justify-end">
               {props.onToggleSidebar ? (
                 <Button
@@ -500,10 +500,10 @@ export const Sidebar = (props: SidebarProps) => {
                         <article
                           key={session.id}
                           className={cn(
-                            "rounded-lg border transition-colors",
+                            "rounded-lg transition-colors",
                             active
-                              ? "border-primary/30 bg-card ring-1 ring-primary/20"
-                              : "border-transparent hover:border-border/70 hover:bg-card/70"
+                              ? "bg-card shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.24)]"
+                              : "hover:bg-accent/85"
                           )}
                           onContextMenu={(event) => {
                             event.preventDefault();
@@ -578,10 +578,10 @@ export const Sidebar = (props: SidebarProps) => {
                         <article
                           key={session.id}
                           className={cn(
-                            "rounded-lg border transition-colors",
+                            "rounded-lg transition-colors",
                             active
-                              ? "border-primary/30 bg-card ring-1 ring-primary/20"
-                              : "border-transparent hover:border-border/70 hover:bg-card/70"
+                              ? "bg-card shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.24)]"
+                              : "hover:bg-accent/85"
                           )}
                           onContextMenu={(event) => {
                             event.preventDefault();
@@ -647,7 +647,7 @@ export const Sidebar = (props: SidebarProps) => {
             </div>
           </div>
 
-          <div className="border-t border-border/70 px-3 py-2.5">
+          <div className="px-3 py-2">
             <Button
               variant="ghost"
               className="h-8 w-full justify-start rounded-lg text-sm text-foreground/80 hover:bg-card"
@@ -748,8 +748,8 @@ export const Sidebar = (props: SidebarProps) => {
 
     return (
       <>
-        <aside className="relative flex h-full flex-col overflow-hidden bg-secondary/45">
-          <div className="border-b border-border/70 px-3 pb-4 pt-3">
+        <aside className="relative flex h-full flex-col overflow-hidden bg-secondary/35">
+          <div className="px-3 pb-3 pt-2.5">
             <div className="-mt-[12px] mb-3 flex items-center justify-end">
               {props.onToggleSidebar ? (
                 <Button
@@ -794,10 +794,10 @@ export const Sidebar = (props: SidebarProps) => {
                   <article
                     key={session.id}
                     className={cn(
-                      "rounded-lg border transition-colors",
+                      "rounded-lg transition-colors",
                       active
-                        ? "border-primary/30 bg-card ring-1 ring-primary/20"
-                        : "border-transparent hover:border-border/70 hover:bg-card/70"
+                        ? "bg-card shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.24)]"
+                        : "hover:bg-accent/85"
                     )}
                     onContextMenu={(event) => {
                       event.preventDefault();
@@ -859,7 +859,7 @@ export const Sidebar = (props: SidebarProps) => {
             </div>
           </div>
 
-          <div className="border-t border-border/70 px-3 py-2.5">
+          <div className="px-3 py-2">
             <Button
               variant="ghost"
               className="h-8 w-full justify-start rounded-lg text-sm text-foreground/80 hover:bg-card"
