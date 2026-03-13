@@ -122,6 +122,7 @@ const normalizeToolCall = (raw: unknown): ToolCall | null => {
 const normalizeSession = (session: ChatSession): ChatSession => ({
   ...session,
   isPinned: Boolean(session.isPinned),
+  soulModeEnabled: session.soulModeEnabled !== false,
   enabledMcpServers: Array.isArray(session.enabledMcpServers)
     ? session.enabledMcpServers.filter((id): id is string => typeof id === "string" && Boolean(id))
     : undefined,
@@ -360,6 +361,7 @@ export const createSession = (title = "New Chat"): ChatSession => {
     createdAt: now,
     updatedAt: now,
     isPinned: false,
+    soulModeEnabled: true,
     messages: [],
     usageByModel: {}
   };

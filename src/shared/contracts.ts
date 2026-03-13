@@ -135,112 +135,18 @@ export type ChatSession = {
   createdAt: string;
   updatedAt: string;
   isPinned?: boolean;
+  soulModeEnabled?: boolean;
   enabledMcpServers?: string[];
   messages: ChatMessage[];
   usageByModel?: Record<string, ChatSessionUsage>;
 };
 
-export type PersonaEmotionTrend = "stable" | "positive" | "low" | "volatile" | "unknown";
-
-export type PersonaPreference = {
-  id: string;
-  text: string;
-  confidence: number;
-  lastSeen: string;
-  evidenceCount: number;
-};
-
-export type PersonaRecentEvent = {
-  id: string;
-  text: string;
-  date: string;
-  confidence: number;
-};
-
-export type PersonaEmotionWindow = {
-  trend: PersonaEmotionTrend;
-  confidence: number;
-  evidenceCount: number;
-  note: string;
-};
-
-export type PersonaProfile = {
-  version: number;
-  sourceMode: "soul";
-  updatedAt: string;
-  identityHint: string;
-  communicationStyle: {
-    tone: string;
-    length: string;
-    taboo: string[];
-  };
-  stablePreferences: PersonaPreference[];
-  emotionTrend7d: PersonaEmotionWindow;
-  recentEvents: PersonaRecentEvent[];
-  boundaries: {
-    avoidTopics: string[];
-    sensitiveHandling: string;
-  };
-  manualNotes: string;
-  counters: {
-    ingestedUserMessages: number;
-    lastAutoRefreshAt?: string;
-    lastIngestedAt?: string;
-    lastMarkdownSyncAt?: string;
-    pendingAutoRefresh?: boolean;
-  };
-  emotionSignals: Array<{
-    score: -1 | 0 | 1;
-    capturedAt: string;
-  }>;
-};
-
-export type PersonaSyncWarning = {
-  code: "markdown_parse_failed";
-  message: string;
-};
-
-export type PersonaSnapshot = {
-  profile: PersonaProfile;
-  jsonPath: string;
-  markdownPath: string;
-  warning?: PersonaSyncWarning;
-};
-
-export type PersonaInjectionPayload = {
-  block: string;
-  snapshot: PersonaSnapshot;
-};
-
-export type PersonaIngestPayload = {
-  text: string;
-  createdAt?: string;
-};
-
-export type PersonaIngestResult = {
-  operationId: string;
-  observedAt: string;
-  reason: "extracted" | "no_match" | "disabled";
-  undoable: boolean;
-  extracted: {
-    preferencesAdded: string[];
-    preferencesUpdated: string[];
-    eventsAdded: string[];
-    eventsUpdated: string[];
-  };
-};
-
-export type PersonaUndoIngestPayload = {
-  operationId: string;
-};
-
-export type PersonaUndoIngestResult = {
-  ok: boolean;
-  reverted: {
-    preferences: number;
-    events: number;
-  };
-  message: string;
+export type SoulAutomationState = {
+  lastProcessedUserMessageId?: string;
+  lastProcessedUserMessageCreatedAt?: string;
+  lastMemoryUpdatedAt?: string;
+  lastSoulRewriteAt?: string;
+  lastSoulRewriteSlot?: string;
 };
 
 export type EnvironmentSettings = {
@@ -338,6 +244,11 @@ export type MemosSettings = {
   addTimeoutMs: number;
 };
 
+export type SoulEvolutionSettings = {
+  providerId: string;
+  model: string;
+};
+
 export type AppSettings = {
   baseUrl: string;
   apiKey: string;
@@ -359,6 +270,7 @@ export type AppSettings = {
   sseDebug: boolean;
   environment: EnvironmentSettings;
   memos: MemosSettings;
+  soulEvolution: SoulEvolutionSettings;
   mcpServers: UserMcpServer[];
 };
 
@@ -496,8 +408,30 @@ export const DEFAULT_SETTINGS: AppSettings = {
   providers: [DEFAULT_PROVIDER],
   activeProviderId: DEFAULT_PROVIDER.id,
   theme: "system",
-  systemPrompt: "You are a precise and pragmatic coding assistant.",
-  agentSystemPrompt: "You are a precise and pragmatic coding assistant.",
+  systemPrompt: `You are a genuine conversation partner, not a response machine.
+
+Core principles:
+- Honesty over flattery: Give answers you actually believe. If something is wrong, say so. If a view deserves scrutiny, raise it — gently but directly.
+- Clarity over eloquence: Match response length to the complexity of the question, not to signal effort. Skip preambles and filler phrases like "Great question!" or "Certainly!".
+- Genuine curiosity: Acknowledge uncertainty honestly. Admit what you don't know rather than guessing or fabricating.
+- Respect through directness: Treat users as capable adults. Don't over-simplify or condescend.
+
+Character: Calm and unhurried. Direct without being blunt. Occasionally humorous when the moment calls for it — never performative. Humble about limitations without unnecessary self-deprecation.
+
+Communication style:
+- Respond in the user's language. In Chinese contexts, use natural idiomatic Chinese, not translated-sounding prose.
+- Calibrate tone to context: precise in technical work, open in creative exploration, gentle in emotional conversations.
+- Use formatting (lists, headers, code blocks) only when it genuinely aids understanding.
+
+Limits: Acknowledge when your knowledge may be outdated. Recommend verification for important decisions. For things you shouldn't do, explain why clearly rather than pretending you can't.`,
+  agentSystemPrompt: `You are a genuine conversation partner, not a response machine.
+
+Core principles:
+- Honesty over flattery: Give answers you actually believe. If something is wrong, say so.
+- Clarity over eloquence: Match response length to complexity. Skip preambles and filler phrases.
+- Respect through directness: Treat users as capable adults.
+
+Communication: Respond in the user's language. In Chinese contexts, use natural idiomatic Chinese. Use formatting only when it aids understanding.`,
   temperature: 0.4,
   maxTokens: 2048,
   chatContextWindow: "infinite",
@@ -509,6 +443,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   sseDebug: false,
   environment: DEFAULT_ENVIRONMENT_SETTINGS,
   memos: DEFAULT_MEMOS_SETTINGS,
+  soulEvolution: {
+    providerId: DEFAULT_PROVIDER.id,
+    model: ""
+  },
   mcpServers: []
 };
 
@@ -706,6 +644,21 @@ const normalizeMemosSettings = (value: unknown): MemosSettings => {
   };
 };
 
+const normalizeSoulEvolutionSettings = (
+  value: unknown,
+  activeProvider: StoredProvider
+): SoulEvolutionSettings => {
+  const source =
+    value && typeof value === "object" ? (value as Partial<SoulEvolutionSettings>) : undefined;
+  return {
+    providerId: typeof source?.providerId === "string" && source.providerId.trim()
+      ? source.providerId.trim()
+      : activeProvider.id,
+    model:
+      typeof source?.model === "string" && source.model.trim() ? source.model.trim() : activeProvider.model
+  };
+};
+
 const normalizeMcpServers = (value: unknown): UserMcpServer[] => {
   if (!Array.isArray(value)) return [];
   return value
@@ -780,6 +733,10 @@ export const normalizeSettings = (saved: Partial<AppSettings>): AppSettings => {
     chatContextWindow: normalizeChatContextWindow(rawChatContextWindow),
     environment: normalizeEnvironmentSettings(rawEnvironment),
     memos: normalizeMemosSettings(rawMemos),
+    soulEvolution: normalizeSoulEvolutionSettings(
+      (saved as { soulEvolution?: unknown }).soulEvolution,
+      activeProvider
+    ),
     mcpServers: normalizeMcpServers(saved.mcpServers)
   };
 };

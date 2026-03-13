@@ -1,4 +1,4 @@
-import { isValidElement, useEffect, useRef, useState, type ReactNode } from "react";
+import { isValidElement, memo, useEffect, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
@@ -79,8 +79,8 @@ const CodeBlock = ({ code, language }: { code: string; language?: string }) => {
   };
 
   return (
-    <div className="mb-2 overflow-hidden rounded-md border border-border bg-card last:mb-0">
-      <div className="flex items-center justify-between border-b border-border/80 bg-accent/55 px-2.5 py-1.5">
+    <div className="chat-code-block mb-2 overflow-hidden rounded-md last:mb-0">
+      <div className="chat-code-block-header flex items-center justify-between px-2.5 py-1.5">
         <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
           {language || "code"}
         </span>
@@ -96,7 +96,7 @@ const CodeBlock = ({ code, language }: { code: string; language?: string }) => {
           {copied ? "已复制" : "复制代码"}
         </Button>
       </div>
-      <pre className="overflow-x-auto p-3">
+      <pre className="overflow-x-auto p-3.5">
         <code className="font-mono text-[13px] leading-6 text-foreground">{code}</code>
       </pre>
     </div>
@@ -105,19 +105,19 @@ const CodeBlock = ({ code, language }: { code: string; language?: string }) => {
 
 const markdownComponents: Components = {
   h1: ({ children }) => (
-    <h1 className="mb-3 mt-1 text-[1.2rem] font-semibold leading-tight">{children}</h1>
+    <h1 className="mb-3.5 mt-1.5 text-[1.24rem] font-semibold leading-tight">{children}</h1>
   ),
   h2: ({ children }) => (
-    <h2 className="mb-2.5 mt-1 text-[1.1rem] font-semibold leading-tight">{children}</h2>
+    <h2 className="mb-3 mt-1.5 text-[1.12rem] font-semibold leading-tight">{children}</h2>
   ),
-  h3: ({ children }) => <h3 className="mb-2 mt-1 text-[1rem] font-semibold">{children}</h3>,
-  h4: ({ children }) => <h4 className="mb-1.5 mt-1 text-[0.95rem] font-semibold">{children}</h4>,
-  p: ({ children }) => <p className="mb-2 leading-7 last:mb-0">{children}</p>,
-  ul: ({ children }) => <ul className="mb-2 list-disc pl-5 leading-7 last:mb-0">{children}</ul>,
-  ol: ({ children }) => <ol className="mb-2 list-decimal pl-5 leading-7 last:mb-0">{children}</ol>,
-  li: ({ children }) => <li className="mb-0.5">{children}</li>,
+  h3: ({ children }) => <h3 className="mb-2.5 mt-1.5 text-[1rem] font-semibold">{children}</h3>,
+  h4: ({ children }) => <h4 className="mb-2 mt-1.5 text-[0.95rem] font-semibold">{children}</h4>,
+  p: ({ children }) => <p className="mb-2.5 last:mb-0">{children}</p>,
+  ul: ({ children }) => <ul className="mb-2.5 list-disc pl-5 last:mb-0">{children}</ul>,
+  ol: ({ children }) => <ol className="mb-2.5 list-decimal pl-5 last:mb-0">{children}</ol>,
+  li: ({ children }) => <li className="mb-1">{children}</li>,
   blockquote: ({ children }) => (
-    <blockquote className="mb-2 border-l-2 border-border pl-3 text-muted-foreground">
+    <blockquote className="mb-2.5 border-l-2 border-border pl-3 text-muted-foreground">
       {children}
     </blockquote>
   ),
@@ -141,7 +141,7 @@ const markdownComponents: Components = {
       return <code className="font-mono text-[13px] leading-6 text-foreground">{children}</code>;
     }
     return (
-      <code className="rounded-[3px] bg-accent/70 px-1 py-[1px] font-mono text-[13px] text-foreground">
+      <code className="chat-inline-code rounded-[3px] px-1 py-[1px] font-mono text-[13px] text-foreground">
         {children}
       </code>
     );
@@ -160,10 +160,10 @@ const markdownComponents: Components = {
   hr: () => <hr className="my-3 border-border" />
 };
 
-export const MarkdownContent = ({ content, isUser }: { content: string; isUser: boolean }) => (
+const MarkdownContentInner = ({ content, isUser }: { content: string; isUser: boolean }) => (
   <div
     className={[
-      "text-[15px] leading-[1.65] break-words",
+      "chat-markdown-root break-words text-[15px]",
       isUser ? "text-foreground" : "text-foreground"
     ].join(" ")}
   >
@@ -172,3 +172,10 @@ export const MarkdownContent = ({ content, isUser }: { content: string; isUser: 
     </ReactMarkdown>
   </div>
 );
+
+export const MarkdownContent = memo(
+  MarkdownContentInner,
+  (prev, next) => prev.content === next.content && prev.isUser === next.isUser
+);
+
+MarkdownContent.displayName = "MarkdownContent";

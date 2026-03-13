@@ -24,6 +24,15 @@ import {
   type ChatActiveStream,
   type SendFromBaseMessagesOptions
 } from "../chat/services/send-from-base-messages";
+import {
+  SOUL_MEMORY_BATCH_SIZE,
+  buildMemoryRewriteMessages,
+  buildSoulRewriteMessages,
+  getLatestDueSoulRewriteSlot,
+  getNextSoulRewriteDelayMs,
+  getPendingSoulMemoryMessages,
+  runBackgroundChatCompletion
+} from "../chat/services/soul-automation";
 import { buildDraftAttachments, type DraftAttachment } from "../../lib/app-draft-attachments";
 import {
   exportSessionAsJson,
@@ -91,6 +100,7 @@ type AppView = "chat" | "agent" | "settings";
 
 const api = getMuApi();
 const TOP_FRAME_HEIGHT_PX = 12;
+const SOUL_TOAST_DURATION_MS = 2000;
 
 export const useAppController = () => {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -119,6 +129,7 @@ export const useAppController = () => {
   const [isHydrated, setIsHydrated] = useState(false);
   const [removedSession, setRemovedSession] = useState<RemovedSession | null>(null);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
+  const [soulStatusToast, setSoulStatusToast] = useState<string | null>(null);
   const [viewportWidth, setViewportWidth] = useState(getCurrentViewportWidth);
   const [isSidebarOpen, setIsSidebarOpen] = useState(
     () => getCurrentViewportWidth() >= SIDEBAR_AUTO_HIDE_WIDTH
@@ -131,6 +142,10 @@ export const useAppController = () => {
   const activeAgentRunRef = useRef<AgentActiveRun | null>(null);
   const agentEnvironmentSnapshotRef = useRef<EnvironmentSnapshot | null>(null);
   const chatEnvironmentSnapshotRef = useRef<EnvironmentSnapshot | null>(null);
+  const soulToastTimeoutRef = useRef<number | null>(null);
+  const soulMemoryTaskRef = useRef(false);
+  const soulRewriteTaskRef = useRef(false);
+  const soulRewriteTimerRef = useRef<number | null>(null);
   const wasCompactLayoutRef = useRef(getCurrentViewportWidth() < SIDEBAR_AUTO_HIDE_WIDTH);
   const chatDropDepthRef = useRef(0);
   const isChatDragOverRef = useRef(false);
@@ -153,6 +168,17 @@ export const useAppController = () => {
     isChatDragOverRef.current = next;
     setIsChatDragOver(next);
   };
+
+  const showSoulStatus = useCallback((message: string) => {
+    if (soulToastTimeoutRef.current !== null) {
+      window.clearTimeout(soulToastTimeoutRef.current);
+    }
+    setSoulStatusToast(message);
+    soulToastTimeoutRef.current = window.setTimeout(() => {
+      setSoulStatusToast(null);
+      soulToastTimeoutRef.current = null;
+    }, SOUL_TOAST_DURATION_MS);
+  }, []);
 
   useEffect(() => {
     const resetDragState = () => {
@@ -499,6 +525,116 @@ export const useAppController = () => {
     settings.environment.weatherCacheTtlMs
   ]);
 
+  const updateSessionSoulMode = useCallback(
+    (sessionId: string, enabled: boolean) => {
+      upsertSession(sessionId, (session) => ({
+        ...session,
+        soulModeEnabled: enabled,
+        updatedAt: nowIso()
+      }));
+      showSoulStatus(enabled ? "已经切换为 SOUL 模式" : "已经切换为系统提示词模式");
+    },
+    [showSoulStatus]
+  );
+
+  const runSoulMemoryCompaction = useCallback(async (): Promise<boolean> => {
+    if (!isHydrated || !isConfigured || isGenerating || soulMemoryTaskRef.current) {
+      return false;
+    }
+
+    soulMemoryTaskRef.current = true;
+    try {
+      const automationState = await api.soul.getAutomationState();
+      const pendingMessages = getPendingSoulMemoryMessages(sessions, automationState);
+      if (pendingMessages.length < SOUL_MEMORY_BATCH_SIZE) {
+        return false;
+      }
+
+      const batch = pendingMessages.slice(0, SOUL_MEMORY_BATCH_SIZE);
+      const currentMemory = await api.soul.getMemoryMarkdown();
+      const nextMemory = await runBackgroundChatCompletion({
+        api,
+        settings,
+        messages: buildMemoryRewriteMessages(currentMemory, batch)
+      });
+      if (!nextMemory.trim()) {
+        return false;
+      }
+
+      const lastMessage = batch[batch.length - 1];
+      await api.soul.saveMemoryMarkdown(nextMemory);
+      await api.soul.saveAutomationState({
+        ...automationState,
+        lastProcessedUserMessageId: lastMessage.id,
+        lastProcessedUserMessageCreatedAt: lastMessage.createdAt,
+        lastMemoryUpdatedAt: nowIso()
+      });
+      return true;
+    } catch (error) {
+      console.warn("[soul][memory] failed", error instanceof Error ? error.message : "unknown_error");
+      return false;
+    } finally {
+      soulMemoryTaskRef.current = false;
+    }
+  }, [isConfigured, isGenerating, isHydrated, sessions, settings]);
+
+  const runSoulRewriteIfDue = useCallback(async (options?: { force?: boolean }): Promise<boolean> => {
+    if (!isHydrated || !isConfigured || isGenerating || soulRewriteTaskRef.current) {
+      return false;
+    }
+
+    const dueSlot = getLatestDueSoulRewriteSlot(new Date());
+    if (!options?.force && !dueSlot) {
+      return false;
+    }
+
+    soulRewriteTaskRef.current = true;
+    try {
+      const automationState = await api.soul.getAutomationState();
+      if (!options?.force && automationState.lastSoulRewriteSlot === dueSlot) {
+        return false;
+      }
+
+      const [currentSoul, memoryMarkdown] = await Promise.all([
+        api.soul.getMarkdown(),
+        api.soul.getMemoryMarkdown()
+      ]);
+      const nextSoul = await runBackgroundChatCompletion({
+        api,
+        settings,
+        messages: buildSoulRewriteMessages(currentSoul, memoryMarkdown)
+      });
+      if (!nextSoul.trim()) {
+        return false;
+      }
+
+      await api.soul.saveMarkdown(nextSoul);
+      await api.soul.saveAutomationState({
+        ...automationState,
+        lastSoulRewriteAt: nowIso(),
+        lastSoulRewriteSlot: dueSlot ?? automationState.lastSoulRewriteSlot
+      });
+      showSoulStatus("SOUL 已更新");
+      return true;
+    } catch (error) {
+      console.warn("[soul][rewrite] failed", error instanceof Error ? error.message : "unknown_error");
+      return false;
+    } finally {
+      soulRewriteTaskRef.current = false;
+    }
+  }, [isConfigured, isGenerating, isHydrated, settings, showSoulStatus]);
+
+  const scheduleNextSoulRewriteCheck = useCallback(() => {
+    if (soulRewriteTimerRef.current !== null) {
+      window.clearTimeout(soulRewriteTimerRef.current);
+    }
+    soulRewriteTimerRef.current = window.setTimeout(() => {
+      void runSoulRewriteIfDue().finally(() => {
+        scheduleNextSoulRewriteCheck();
+      });
+    }, getNextSoulRewriteDelayMs(new Date()));
+  }, [runSoulRewriteIfDue]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -568,6 +704,54 @@ export const useAppController = () => {
   useEffect(() => {
     agentEnvironmentSnapshotRef.current = agentEnvironmentSnapshot;
   }, [agentEnvironmentSnapshot]);
+
+  useEffect(() => {
+    if (!isHydrated || !isConfigured || isGenerating) {
+      return;
+    }
+
+    let cancelled = false;
+    const timeoutId = window.setTimeout(() => {
+      void (async () => {
+        try {
+          let memoryChanged = false;
+          while (!cancelled && (await runSoulMemoryCompaction())) {
+            memoryChanged = true;
+            if (!cancelled) {
+              await runSoulRewriteIfDue({ force: true });
+            }
+          }
+          if (!cancelled && !memoryChanged) {
+            await runSoulRewriteIfDue();
+          }
+        } catch (error) {
+          console.warn(
+            "[soul][maintenance] failed",
+            error instanceof Error ? error.message : "unknown_error"
+          );
+        }
+      })();
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [isConfigured, isGenerating, isHydrated, runSoulMemoryCompaction, runSoulRewriteIfDue, sessions]);
+
+  useEffect(() => {
+    if (!isHydrated || !isConfigured) {
+      return;
+    }
+
+    scheduleNextSoulRewriteCheck();
+    return () => {
+      if (soulRewriteTimerRef.current !== null) {
+        window.clearTimeout(soulRewriteTimerRef.current);
+        soulRewriteTimerRef.current = null;
+      }
+    };
+  }, [isConfigured, isHydrated, scheduleNextSoulRewriteCheck]);
 
   useEffect(() => {
     if (!isHydrated || activeView !== "agent") {
@@ -655,6 +839,12 @@ export const useAppController = () => {
       finishAgentRun();
       if (removedTimeoutRef.current !== null) {
         window.clearTimeout(removedTimeoutRef.current);
+      }
+      if (soulToastTimeoutRef.current !== null) {
+        window.clearTimeout(soulToastTimeoutRef.current);
+      }
+      if (soulRewriteTimerRef.current !== null) {
+        window.clearTimeout(soulRewriteTimerRef.current);
       }
       draftAttachmentsRef.current.forEach(revokeAttachmentPreview);
       agentDraftAttachmentsRef.current.forEach(revokeAttachmentPreview);
@@ -1312,11 +1502,13 @@ export const useAppController = () => {
     stopGenerating,
     removedSession,
     errorBanner,
+    soulStatusToast,
     undoDelete,
     createNewChat,
     renameChat,
     deleteChat,
     toggleChatPin,
+    updateSessionSoulMode,
     exportSession,
     exportSessionMarkdown,
     exportSessions,

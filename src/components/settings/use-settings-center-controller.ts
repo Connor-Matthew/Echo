@@ -125,6 +125,27 @@ export const useSettingsCenterController = ({
     () => resolvePresetByBaseUrl(activeProvider.baseUrl, activeProvider.providerType)?.id ?? "custom",
     [activeProvider.baseUrl, activeProvider.providerType]
   );
+  const soulEvolutionProvider = useMemo(
+    () =>
+      draft.providers.find((provider) => provider.id === draft.soulEvolution.providerId) ??
+      draft.providers[0],
+    [draft.providers, draft.soulEvolution.providerId]
+  );
+  const soulEvolutionModelOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          [
+            ...(Array.isArray(soulEvolutionProvider?.savedModels) ? soulEvolutionProvider.savedModels : []),
+            soulEvolutionProvider?.model ?? "",
+            draft.soulEvolution.model
+          ]
+            .map((entry) => entry.trim())
+            .filter(Boolean)
+        )
+      ),
+    [draft.soulEvolution.model, soulEvolutionProvider]
+  );
   const activeSavedModels = useMemo(
     () =>
       Array.from(
@@ -228,6 +249,28 @@ export const useSettingsCenterController = ({
       }
     }));
     setMemosTestResult(null);
+    setSaveError(null);
+  };
+
+  const updateSoulEvolutionField = <K extends keyof AppSettings["soulEvolution"]>(
+    field: K,
+    value: AppSettings["soulEvolution"][K]
+  ) => {
+    setDraft((previous) => {
+      const nextSoulEvolution = {
+        ...previous.soulEvolution,
+        [field]: value
+      };
+      if (field === "providerId") {
+        const nextProvider =
+          previous.providers.find((provider) => provider.id === value) ?? previous.providers[0];
+        nextSoulEvolution.model = nextSoulEvolution.model.trim() || nextProvider?.model || "";
+      }
+      return {
+        ...previous,
+        soulEvolution: nextSoulEvolution
+      };
+    });
     setSaveError(null);
   };
 
@@ -831,6 +874,8 @@ export const useSettingsCenterController = ({
     isAcpProvider,
     isClaudeAgentProvider,
     activeProviderPreset,
+    soulEvolutionProvider,
+    soulEvolutionModelOptions,
     activeSavedModels,
     activeModelCapabilities,
     hasActiveModelCapabilityOverride,
@@ -844,6 +889,7 @@ export const useSettingsCenterController = ({
     updateField,
     updateEnvironmentField,
     updateMemosField,
+    updateSoulEvolutionField,
     updateActiveProviderField,
     updateActiveProviderMcpOverride,
     setActiveProviderModel,

@@ -24,14 +24,6 @@ const api: MuApi = {
     getWeatherSnapshot: (payload) => ipcRenderer.invoke("env:getWeatherSnapshot", payload),
     getSystemStatus: () => ipcRenderer.invoke("env:getSystemStatus")
   },
-  persona: {
-    getSnapshot: () => ipcRenderer.invoke("persona:getSnapshot"),
-    getMarkdown: () => ipcRenderer.invoke("persona:getMarkdown"),
-    saveMarkdown: (markdown) => ipcRenderer.invoke("persona:saveMarkdown", markdown),
-    getInjectionPayload: () => ipcRenderer.invoke("persona:getInjectionPayload"),
-    ingestMessage: (payload) => ipcRenderer.invoke("persona:ingestMessage", payload),
-    undoIngest: (payload) => ipcRenderer.invoke("persona:undoIngest", payload)
-  },
   memos: {
     testConnection: (settings) => ipcRenderer.invoke("memos:testConnection", settings),
     searchMemory: (payload) => ipcRenderer.invoke("memos:searchMemory", payload),
@@ -77,6 +69,14 @@ const api: MuApi = {
     get: () => ipcRenderer.invoke("skills:get"),
     save: (skills) => ipcRenderer.invoke("skills:save", skills),
     scanClaude: () => ipcRenderer.invoke("skills:scanClaude")
+  },
+  soul: {
+    getMarkdown: () => ipcRenderer.invoke("soul:getMarkdown"),
+    saveMarkdown: (markdown) => ipcRenderer.invoke("soul:saveMarkdown", markdown),
+    getMemoryMarkdown: () => ipcRenderer.invoke("soul:getMemoryMarkdown"),
+    saveMemoryMarkdown: (markdown) => ipcRenderer.invoke("soul:saveMemoryMarkdown", markdown),
+    getAutomationState: () => ipcRenderer.invoke("soul:getAutomationState"),
+    saveAutomationState: (state) => ipcRenderer.invoke("soul:saveAutomationState", state)
   }
 };
 

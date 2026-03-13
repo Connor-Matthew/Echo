@@ -32,7 +32,8 @@ export type SettingsSection =
   | "environment"
   | "theme"
   | "data"
-  | "advanced";
+  | "advanced"
+  | "soul";
 
 type ChatSidebarProps = {
   mode: "chat";
@@ -134,11 +135,11 @@ const ChatAgentModeSwitch = ({
 }) => {
   const isChat = activeMode === "chat";
   return (
-    <div className="relative grid grid-cols-2 rounded-xl border border-border/45 bg-card/60 p-0.5">
+    <div className="mode-switch-track relative grid grid-cols-2 rounded-xl p-0.5">
       <span
         aria-hidden
         className={cn(
-          "pointer-events-none absolute bottom-0.5 left-0.5 top-0.5 w-[calc(50%-2px)] rounded-lg bg-accent/75 shadow-[0_2px_8px_rgba(15,23,42,0.06)] transition-transform duration-300 ease-out",
+          "mode-switch-thumb pointer-events-none absolute bottom-0.5 left-0.5 top-0.5 w-[calc(50%-2px)] rounded-lg",
           isChat ? "translate-x-0" : "translate-x-full"
         )}
       />
@@ -351,13 +352,14 @@ export const Sidebar = (props: SidebarProps) => {
       { key: "memory", label: "记忆", icon: Database, group: "能力增强" },
       { key: "skills", label: "技能", icon: Sparkles, group: "能力增强" },
       { key: "environment", label: "环境", icon: Cpu, group: "能力增强" },
+      { key: "soul", label: "灵魂", icon: Bot, group: "能力增强" },
       { key: "theme", label: "主题", icon: Palette, group: "界面与数据" },
       { key: "data", label: "数据", icon: Database, group: "界面与数据" },
       { key: "advanced", label: "高级", icon: SlidersHorizontal, group: "界面与数据" }
     ];
 
     return (
-      <aside className="flex h-full flex-col overflow-hidden bg-secondary/35 px-2.5 pb-2 pt-2.5">
+      <aside className="sidebar-surface flex h-full flex-col overflow-hidden px-2.5 pb-2 pt-2.5">
         <div className="-mt-[12px] mb-3 flex items-center justify-end">
           <Button
             type="button"
@@ -392,11 +394,9 @@ export const Sidebar = (props: SidebarProps) => {
                     type="button"
                     variant="ghost"
                     className={cn(
-                      "h-8 w-full justify-start gap-2 rounded-md px-2.5 text-sm",
-                      active
-                        ? "bg-accent/72 text-foreground"
-                        : "text-foreground/80 hover:bg-accent/55"
+                      "sidebar-nav-button h-8 w-full justify-start gap-2 rounded-md px-2.5 text-sm"
                     )}
+                    data-active={active ? "true" : "false"}
                     onClick={() => props.onSelectSettingsSection(item.key)}
                   >
                     <Icon className="h-4 w-4" />
@@ -446,7 +446,7 @@ export const Sidebar = (props: SidebarProps) => {
 
     return (
       <>
-        <aside className="relative flex h-full flex-col overflow-hidden bg-secondary/35">
+        <aside className="sidebar-surface relative flex h-full flex-col overflow-hidden">
           <div className="px-3 pb-3 pt-2.5">
             <div className="-mt-[12px] mb-3 flex items-center justify-end">
               {props.onToggleSidebar ? (
@@ -499,12 +499,8 @@ export const Sidebar = (props: SidebarProps) => {
                       return (
                         <article
                           key={session.id}
-                          className={cn(
-                            "rounded-lg transition-colors",
-                            active
-                              ? "bg-card shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.24)]"
-                              : "hover:bg-accent/85"
-                          )}
+                          className="session-list-item rounded-lg transition-colors"
+                          data-active={active ? "true" : "false"}
                           onContextMenu={(event) => {
                             event.preventDefault();
                             cancelChatRename();
@@ -577,12 +573,8 @@ export const Sidebar = (props: SidebarProps) => {
                       return (
                         <article
                           key={session.id}
-                          className={cn(
-                            "rounded-lg transition-colors",
-                            active
-                              ? "bg-card shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.24)]"
-                              : "hover:bg-accent/85"
-                          )}
+                          className="session-list-item rounded-lg transition-colors"
+                          data-active={active ? "true" : "false"}
                           onContextMenu={(event) => {
                             event.preventDefault();
                             cancelChatRename();
@@ -748,7 +740,7 @@ export const Sidebar = (props: SidebarProps) => {
 
     return (
       <>
-        <aside className="relative flex h-full flex-col overflow-hidden bg-secondary/35">
+        <aside className="sidebar-surface relative flex h-full flex-col overflow-hidden">
           <div className="px-3 pb-3 pt-2.5">
             <div className="-mt-[12px] mb-3 flex items-center justify-end">
               {props.onToggleSidebar ? (
@@ -793,12 +785,8 @@ export const Sidebar = (props: SidebarProps) => {
                 return (
                   <article
                     key={session.id}
-                    className={cn(
-                      "rounded-lg transition-colors",
-                      active
-                        ? "bg-card shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.24)]"
-                        : "hover:bg-accent/85"
-                    )}
+                    className="session-list-item rounded-lg transition-colors"
+                    data-active={active ? "true" : "false"}
                     onContextMenu={(event) => {
                       event.preventDefault();
                       cancelAgentRename();

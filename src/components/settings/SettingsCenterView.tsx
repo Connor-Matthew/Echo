@@ -15,8 +15,11 @@ import {
   Sparkles,
   SlidersHorizontal,
   Trash2,
+  Bot,
   X
 } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { getMuApi } from "../../lib/mu-api";
 import { cn } from "../../lib/utils";
 import {
   clamp,
@@ -24,8 +27,10 @@ import {
   densityOptions,
   fontScaleOptions,
   getProviderBadgeVisual,
+  normalizeDraft,
   providerPresets,
-  themeOptions
+  themeOptions,
+  validateSettingsForSection
 } from "../../lib/settings-center-utils";
 import type {
   AppSettings,
@@ -90,6 +95,7 @@ export const SettingsCenterView = (props: SettingsCenterProps) => {
     userSkills,
     onSaveUserSkills,
     onExportSessions,
+    settings,
     draft,
     setDraft,
     isSaving,
@@ -123,6 +129,8 @@ export const SettingsCenterView = (props: SettingsCenterProps) => {
     isAcpProvider,
     isClaudeAgentProvider,
     activeProviderPreset,
+    soulEvolutionProvider,
+    soulEvolutionModelOptions,
     activeSavedModels,
     activeModelCapabilities,
     hasActiveModelCapabilityOverride,
@@ -135,6 +143,7 @@ export const SettingsCenterView = (props: SettingsCenterProps) => {
     updateField,
     updateEnvironmentField,
     updateMemosField,
+    updateSoulEvolutionField,
     updateActiveProviderField,
     updateActiveProviderMcpOverride,
     setActiveProviderModel,
@@ -163,6 +172,69 @@ export const SettingsCenterView = (props: SettingsCenterProps) => {
     clearSessions,
     resetSettings
   } = useSettingsCenterController(props);
+
+  const [soulMarkdown, setSoulMarkdown] = useState("");
+  const [soulDraft, setSoulDraft] = useState("");
+  const [soulMemoryMarkdown, setSoulMemoryMarkdown] = useState("");
+  const [soulMemoryDraft, setSoulMemoryDraft] = useState("");
+  const [isSavingSoul, setIsSavingSoul] = useState(false);
+  const [soulSaveStatus, setSoulSaveStatus] = useState<"idle" | "saved" | "error">("idle");
+
+  const isSoulDirty = soulDraft !== soulMarkdown;
+  const isSoulMemoryDirty = soulMemoryDraft !== soulMemoryMarkdown;
+  const isSoulEvolutionDirty =
+    JSON.stringify(draft.soulEvolution) !== JSON.stringify(settings.soulEvolution);
+  const isSoulAnythingDirty = isSoulDirty || isSoulMemoryDirty || isSoulEvolutionDirty;
+
+  const loadSoul = useCallback(async () => {
+    const api = getMuApi();
+    const [content, memoryContent] = await Promise.all([
+      api.soul.getMarkdown(),
+      api.soul.getMemoryMarkdown()
+    ]);
+    setSoulMarkdown(content);
+    setSoulDraft(content);
+    setSoulMemoryMarkdown(memoryContent);
+    setSoulMemoryDraft(memoryContent);
+  }, []);
+
+  useEffect(() => {
+    if (section === "soul") {
+      void loadSoul();
+    }
+  }, [section, loadSoul]);
+
+  const saveSoul = async () => {
+    const api = getMuApi();
+    setIsSavingSoul(true);
+    setSoulSaveStatus("idle");
+    try {
+      const validationError = validateSettingsForSection(draft, "soul");
+      if (validationError) {
+        throw new Error(validationError);
+      }
+      await Promise.all([
+        props.onSave(
+          normalizeDraft({
+            ...draft,
+            systemPrompt: draft.systemPrompt.trim(),
+            agentSystemPrompt: draft.agentSystemPrompt.trim()
+          })
+        ),
+        api.soul.saveMarkdown(soulDraft),
+        api.soul.saveMemoryMarkdown(soulMemoryDraft)
+      ]);
+      setSoulMarkdown(soulDraft);
+      setSoulMemoryMarkdown(soulMemoryDraft);
+      setSoulSaveStatus("saved");
+      setTimeout(() => setSoulSaveStatus("idle"), 2000);
+    } catch {
+      setSoulSaveStatus("error");
+    } finally {
+      setIsSavingSoul(false);
+    }
+  };
+
   return (
     <section className="h-full overflow-auto bg-background px-4 py-5 sm:px-5 sm:py-6 md:px-6 md:py-7">
       <div className="paper-conversation-stage mx-auto w-full">
@@ -1519,6 +1591,112 @@ export const SettingsCenterView = (props: SettingsCenterProps) => {
                 <Button onClick={save} disabled={isSaving || !isDirty}>
                   {isSaving ? "保存中..." : "保存"}
                 </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {section === "soul" ? (
+          <Card className={SETTINGS_CARD_CLASS}>
+            <CardHeader>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <Bot className="h-4 w-4" />
+                <span className="text-xs font-medium uppercase tracking-[0.16em]">灵魂</span>
+              </div>
+              <CardTitle className="text-2xl">SOUL.md</CardTitle>
+              <CardDescription>
+                定义当前灵魂的核心身份、价值观与行为准则。内容会存储在本地，并在开启 SOUL 模式时作为唯一人格源。
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <label htmlFor="soulEvolutionProvider" className="text-sm text-muted-foreground">
+                    SOUL 演化渠道
+                  </label>
+                  <select
+                    id="soulEvolutionProvider"
+                    className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm text-foreground outline-none transition focus:border-primary"
+                    value={draft.soulEvolution.providerId}
+                    onChange={(event) => updateSoulEvolutionField("providerId", event.target.value)}
+                  >
+                    {draft.providers.map((provider) => (
+                      <option key={provider.id} value={provider.id}>
+                        {provider.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label htmlFor="soulEvolutionModel" className="text-sm text-muted-foreground">
+                    SOUL 演化模型
+                  </label>
+                  <input
+                    id="soulEvolutionModel"
+                    list="soul-evolution-model-options"
+                    className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm text-foreground outline-none transition focus:border-primary"
+                    value={draft.soulEvolution.model}
+                    onChange={(event) => updateSoulEvolutionField("model", event.target.value)}
+                    placeholder="选择或输入模型 ID"
+                    spellCheck={false}
+                  />
+                  <datalist id="soul-evolution-model-options">
+                    {soulEvolutionModelOptions.map((modelId) => (
+                      <option key={modelId} value={modelId} />
+                    ))}
+                  </datalist>
+                  <p className="text-xs text-muted-foreground">
+                    当前渠道：{soulEvolutionProvider?.name ?? "未选择"}。不可用时会静默回退到当前聊天模型。
+                  </p>
+                </div>
+              </div>
+              <textarea
+                className={cn(SETTINGS_TEXTAREA_CLASS, "min-h-[480px] font-mono text-xs leading-relaxed")}
+                value={soulDraft}
+                onChange={(event) => setSoulDraft(event.target.value)}
+                placeholder="在这里编写 SOUL.md 内容..."
+                spellCheck={false}
+              />
+              <div className="space-y-2">
+                <div>
+                  <p className="text-sm font-medium text-foreground">memory.md</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    本地沉淀摘要。不会直接注入普通聊天，但会参与定时 SOUL 重写。
+                  </p>
+                </div>
+                <textarea
+                  className={cn(SETTINGS_TEXTAREA_CLASS, "min-h-[220px] font-mono text-xs leading-relaxed")}
+                  value={soulMemoryDraft}
+                  onChange={(event) => setSoulMemoryDraft(event.target.value)}
+                  placeholder="在这里编写 memory.md 内容..."
+                  spellCheck={false}
+                />
+              </div>
+              {soulSaveStatus === "saved" ? (
+                <p className={STATUS_SUCCESS_CLASS}>已保存</p>
+              ) : soulSaveStatus === "error" ? (
+                <p className={STATUS_ERROR_CLASS}>保存失败，请重试</p>
+              ) : null}
+              <div className="flex items-center justify-between">
+                <div className="space-y-1 text-xs text-muted-foreground">
+                  <p>存储路径：~/.echo/memory/soul.md</p>
+                  <p>自动沉淀：~/.echo/memory/memory.md</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setSoulDraft(soulMarkdown);
+                      setSoulMemoryDraft(soulMemoryMarkdown);
+                    }}
+                    disabled={!isSoulAnythingDirty || isSavingSoul}
+                  >
+                    重置
+                  </Button>
+                  <Button onClick={saveSoul} disabled={isSavingSoul || !isSoulAnythingDirty}>
+                    {isSavingSoul ? "保存中..." : "保存"}
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>

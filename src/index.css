@@ -1,3 +1,4 @@
+@import "./styles/design-tokens.css";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -133,30 +134,36 @@
     background:
       linear-gradient(
         180deg,
-        hsl(18 24% 86%) 0%,
-        hsl(220 20% 92%) 14%,
-        hsl(220 22% 94%) 100%
+        hsl(var(--echo-shell-bg-start)) 0%,
+        hsl(var(--echo-shell-bg-mid)) 14%,
+        hsl(var(--echo-shell-bg-end)) 100%
       );
   }
 
-  .dark .app-shell {
-    background:
-      linear-gradient(
-        180deg,
-        hsl(220 14% 14%) 0%,
-        hsl(220 16% 11%) 100%
-      );
+  .app-shell-frame {
+    overflow: hidden;
+    border-radius: var(--echo-shell-radius);
+    border: 1px solid hsl(var(--border) / var(--echo-shell-frame-border-alpha));
+    background: hsl(var(--card) / var(--echo-shell-frame-bg-alpha));
+    padding: var(--echo-shell-padding-compact);
+    box-shadow: var(--echo-shell-shadow-window);
+    backdrop-filter: blur(0.5px);
+  }
+
+  @media (min-width: 640px) {
+    .app-shell-frame {
+      padding: var(--echo-shell-padding-regular);
+    }
   }
 
   .sketch-panel {
-    border: 1px solid hsl(var(--border) / 0.45);
-    background: hsl(var(--card) / 0.98);
+    border: 1px solid hsl(var(--border) / var(--echo-panel-border-alpha));
+    background: hsl(var(--card) / var(--echo-panel-bg-alpha));
     box-shadow: none;
   }
 
-  .dark .sketch-panel {
-    background: hsl(var(--card));
-    box-shadow: none;
+  .app-shell-panel {
+    border-radius: var(--echo-shell-panel-radius);
   }
 
   .sketch-title {
@@ -174,7 +181,7 @@
   }
 
   .paper-conversation-stage {
-    max-width: 980px;
+    max-width: var(--echo-conversation-max-width);
   }
 
   .paper-message-enter {
@@ -227,6 +234,142 @@
   .dark .app-shell[data-file-dragging="true"] .sketch-panel {
     border-color: hsl(var(--ring));
     box-shadow: 0 0 0 1px hsl(var(--ring) / 0.4);
+  }
+
+  .sidebar-surface {
+    background: hsl(var(--secondary) / var(--echo-sidebar-bg-alpha));
+  }
+
+  .mode-switch-track {
+    border: 1px solid hsl(var(--border) / var(--echo-mode-switch-border-alpha));
+    background: hsl(var(--card) / var(--echo-mode-switch-bg-alpha));
+  }
+
+  .mode-switch-thumb {
+    background: hsl(var(--accent) / var(--echo-mode-switch-thumb-bg-alpha));
+    box-shadow: var(--echo-mode-switch-thumb-shadow);
+    transition:
+      transform var(--echo-motion-slow) var(--echo-ease-standard),
+      background-color var(--echo-motion-fast) var(--echo-ease-standard),
+      box-shadow var(--echo-motion-fast) var(--echo-ease-standard);
+  }
+
+  .sidebar-nav-button[data-active="true"] {
+    background: hsl(var(--accent) / var(--echo-nav-active-bg-alpha));
+    color: hsl(var(--foreground));
+  }
+
+  .sidebar-nav-button[data-active="false"] {
+    color: hsl(var(--foreground) / 0.8);
+  }
+
+  .sidebar-nav-button {
+    transition:
+      background-color var(--echo-motion-fast) var(--echo-ease-standard),
+      color var(--echo-motion-fast) var(--echo-ease-standard);
+  }
+
+  .sidebar-nav-button[data-active="false"]:hover {
+    background: hsl(var(--accent) / var(--echo-nav-hover-bg-alpha));
+  }
+
+  .session-list-item[data-active="true"] {
+    background: hsl(var(--card));
+    box-shadow: inset 0 0 0 1px hsl(var(--primary) / var(--echo-session-active-ring-alpha));
+  }
+
+  .session-list-item[data-active="false"]:hover {
+    background: hsl(var(--accent) / var(--echo-session-hover-bg-alpha));
+  }
+
+  .session-list-item {
+    transition:
+      background-color var(--echo-motion-fast) var(--echo-ease-standard),
+      box-shadow var(--echo-motion-fast) var(--echo-ease-standard);
+  }
+
+  .floating-sidebar-toggle {
+    background: hsl(var(--card) / 0.9);
+    box-shadow: var(--echo-floating-toggle-shadow);
+    transition:
+      background-color var(--echo-motion-fast) var(--echo-ease-standard),
+      color var(--echo-motion-fast) var(--echo-ease-standard),
+      box-shadow var(--echo-motion-fast) var(--echo-ease-standard);
+  }
+
+  .floating-sidebar-toggle:hover {
+    background: hsl(var(--card));
+  }
+
+  .echo-card {
+    border: 1px solid hsl(var(--border) / var(--echo-card-border-alpha));
+    border-radius: var(--echo-shell-panel-radius);
+    background: hsl(var(--card));
+    box-shadow: var(--echo-card-shadow);
+  }
+
+  .echo-button-base {
+    border-radius: var(--echo-control-radius);
+    transition:
+      background-color var(--echo-motion-fast) var(--echo-ease-standard),
+      color var(--echo-motion-fast) var(--echo-ease-standard),
+      border-color var(--echo-motion-fast) var(--echo-ease-standard),
+      box-shadow var(--echo-motion-fast) var(--echo-ease-standard);
+  }
+
+  .chat-scroll-stage {
+    max-width: var(--echo-chat-stage-max-width);
+  }
+
+  .chat-message-column-user {
+    max-width: 78%;
+    align-items: flex-end;
+  }
+
+  @media (min-width: 640px) {
+    .chat-message-column-user {
+      max-width: 70%;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .chat-message-column-user {
+      max-width: 62%;
+    }
+  }
+
+  .chat-message-column-assistant {
+    width: 100%;
+    max-width: var(--echo-chat-assistant-max-width);
+    align-items: flex-start;
+  }
+
+  .chat-message-surface-user {
+    border: 1px solid hsl(var(--border) / var(--echo-chat-user-surface-border-alpha));
+    background: hsl(var(--secondary) / var(--echo-chat-user-surface-bg-alpha));
+  }
+
+  .chat-message-surface-assistant {
+    border: 1px solid transparent;
+    background: hsl(var(--card) / var(--echo-chat-assistant-surface-bg-alpha));
+  }
+
+  .chat-markdown-root {
+    line-height: var(--echo-chat-markdown-line-height);
+  }
+
+  .chat-inline-code {
+    background: hsl(var(--accent) / var(--echo-chat-inline-code-bg-alpha));
+  }
+
+  .chat-code-block {
+    border: 1px solid hsl(var(--border) / var(--echo-chat-code-border-alpha));
+    background: hsl(var(--card));
+  }
+
+  .chat-code-block-header {
+    border-bottom: 1px solid hsl(var(--border) / var(--echo-chat-code-border-alpha));
+    background: hsl(var(--accent) / var(--echo-chat-code-header-bg-alpha));
   }
 
   @media (max-width: 768px) {

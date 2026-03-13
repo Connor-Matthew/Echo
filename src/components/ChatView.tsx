@@ -1,4 +1,5 @@
 import {
+  memo,
   useEffect,
   useMemo,
   useRef,
@@ -515,7 +516,7 @@ const MessageBubble = ({
     <div className={`group paper-message-enter flex items-start gap-3 ${isUser ? "justify-end" : "justify-start"}`}>
       <div
         className={`flex flex-none flex-col ${
-          isUser ? "max-w-[78%] items-end sm:max-w-[70%] lg:max-w-[62%]" : "w-full max-w-[620px] items-start"
+          isUser ? "chat-message-column-user" : "chat-message-column-assistant"
         }`}
       >
         {isUser && isEditing ? (
@@ -551,10 +552,10 @@ const MessageBubble = ({
         ) : (
           <div
             className={[
-              "inline-block w-fit max-w-full break-words transition-opacity duration-150",
+              "inline-block w-fit max-w-full break-words rounded-md transition-opacity duration-150",
               isUser
-                ? "rounded-md border border-border/80 bg-secondary px-3 py-2 sm:px-3.5"
-                : "rounded-md border border-transparent bg-transparent px-1 py-1"
+                ? "chat-message-surface-user px-3 py-2 sm:px-3.5"
+                : "chat-message-surface-assistant px-2 py-1.5"
             ].join(" ")}
           >
             {!isUser && message.appliedSkill ? (
@@ -697,6 +698,42 @@ const MessageBubble = ({
   );
 };
 
+const areMessageBubblePropsEqual = (prev: MessageBubbleProps, next: MessageBubbleProps) => {
+  if (prev.message !== next.message) {
+    return false;
+  }
+  if (prev.mode !== next.mode) {
+    return false;
+  }
+
+  const prevIsGeneratingMessage =
+    prev.isGenerating && prev.activeGeneratingAssistantId === prev.message.id;
+  const nextIsGeneratingMessage =
+    next.isGenerating && next.activeGeneratingAssistantId === next.message.id;
+  if (prevIsGeneratingMessage !== nextIsGeneratingMessage) {
+    return false;
+  }
+
+  const prevRequest = prev.permissionRequest;
+  const nextRequest = next.permissionRequest;
+  if (
+    prevRequest?.requestId !== nextRequest?.requestId ||
+    prevRequest?.runId !== nextRequest?.runId ||
+    prevRequest?.resolving !== nextRequest?.resolving
+  ) {
+    return false;
+  }
+
+  return (
+    prev.onResolvePermission === next.onResolvePermission &&
+    prev.onEditMessage === next.onEditMessage &&
+    prev.onDeleteMessage === next.onDeleteMessage &&
+    prev.onResendMessage === next.onResendMessage
+  );
+};
+
+const MemoMessageBubble = memo(MessageBubble, areMessageBubblePropsEqual);
+
 export const ChatView = ({
   sessionId,
   messages,
@@ -752,11 +789,11 @@ export const ChatView = ({
   return (
     <section
       ref={scrollContainerRef}
-      className="paper-conversation-stage mx-auto h-full w-full max-w-[760px] overflow-auto px-4 py-5 sm:px-5 sm:py-6 md:px-6 md:py-7"
+      className="chat-scroll-stage paper-conversation-stage mx-auto h-full w-full overflow-auto px-4 py-5 sm:px-5 sm:py-6 md:px-6 md:py-7"
     >
       <div ref={scrollContentRef} className="grid gap-3.5 sm:gap-4">
         {messages.map((message) => (
-          <MessageBubble
+          <MemoMessageBubble
             key={message.id}
             message={message}
             isGenerating={isGenerating}

@@ -16,15 +16,10 @@ import {
   type MemosAddResult,
   type MemosSearchPayload,
   type MemosSearchResult,
-  type PersonaIngestPayload,
-  type PersonaIngestResult,
-  type PersonaInjectionPayload,
-  type PersonaUndoIngestPayload,
-  type PersonaUndoIngestResult,
-  type PersonaSnapshot,
   type ModelListResult,
   type McpServerListResult,
   type McpServerStatusListResult,
+  type SoulAutomationState,
   type Skill
 } from "../shared/contracts";
 import {
@@ -62,14 +57,6 @@ export type MuApi = {
     getWeatherSnapshot: (payload: EnvironmentWeatherRequest) => Promise<EnvironmentWeatherSnapshot>;
     getSystemStatus: () => Promise<EnvironmentDeviceStatus>;
   };
-  persona: {
-    getSnapshot: () => Promise<PersonaSnapshot>;
-    getMarkdown: () => Promise<string>;
-    saveMarkdown: (markdown: string) => Promise<PersonaSnapshot>;
-    getInjectionPayload: () => Promise<PersonaInjectionPayload>;
-    ingestMessage: (payload: PersonaIngestPayload) => Promise<PersonaIngestResult>;
-    undoIngest: (payload: PersonaUndoIngestPayload) => Promise<PersonaUndoIngestResult>;
-  };
   memos: {
     testConnection: (settings: AppSettings) => Promise<ConnectionTestResult>;
     searchMemory: (payload: MemosSearchPayload) => Promise<MemosSearchResult>;
@@ -102,14 +89,23 @@ export type MuApi = {
     save: (skills: Skill[]) => Promise<void>;
     scanClaude: () => Promise<Array<{ name: string; command: string; description: string; content: string }>>;
   };
+  soul: {
+    getMarkdown: () => Promise<string>;
+    saveMarkdown: (markdown: string) => Promise<void>;
+    getMemoryMarkdown: () => Promise<string>;
+    saveMemoryMarkdown: (markdown: string) => Promise<void>;
+    getAutomationState: () => Promise<SoulAutomationState>;
+    saveAutomationState: (state: SoulAutomationState) => Promise<SoulAutomationState>;
+  };
 };
 
 const SETTINGS_KEY = "mu.settings.v1";
 const SESSIONS_KEY = "mu.sessions.v1";
-const PERSONA_KEY = "mu.persona.v1";
-const PERSONA_MARKDOWN_KEY = "mu.persona.markdown.v1";
 const AGENT_SESSIONS_KEY = "mu.agent.sessions.v1";
 const AGENT_MESSAGES_KEY = "mu.agent.messages.v1";
+const SOUL_MARKDOWN_KEY = "mu.soul.markdown.v1";
+const SOUL_MEMORY_MARKDOWN_KEY = "mu.soul.memory.markdown.v1";
+const SOUL_AUTOMATION_STATE_KEY = "mu.soul.automation.state.v1";
 const MIN_REQUEST_TIMEOUT_MS = 5000;
 const MAX_REQUEST_TIMEOUT_MS = 180000;
 const MIN_RETRY_COUNT = 0;
@@ -131,99 +127,7 @@ const writeLocalStorage = (key: string, value: unknown) => {
   window.localStorage.setItem(key, JSON.stringify(value));
 };
 
-const createFallbackPersonaSnapshot = (): PersonaSnapshot => {
-  const now = new Date().toISOString();
-  return {
-    profile: {
-      version: 1,
-      sourceMode: "soul",
-      updatedAt: now,
-      identityHint: "",
-      communicationStyle: {
-        tone: "",
-        length: "",
-        taboo: []
-      },
-      stablePreferences: [],
-      emotionTrend7d: {
-        trend: "unknown",
-        confidence: 0,
-        evidenceCount: 0,
-        note: ""
-      },
-      recentEvents: [],
-      boundaries: {
-        avoidTopics: [],
-        sensitiveHandling: "Ask for confirmation before using sensitive inferences."
-      },
-      manualNotes: "",
-      counters: {
-        ingestedUserMessages: 0
-      },
-      emotionSignals: []
-    },
-    jsonPath: "localStorage://mu.persona.v1",
-    markdownPath: "localStorage://mu.persona.v1"
-  };
-};
-
-const readFallbackPersonaSnapshot = () =>
-  readLocalStorage<PersonaSnapshot>(PERSONA_KEY, createFallbackPersonaSnapshot());
-
-const writeFallbackPersonaSnapshot = (snapshot: PersonaSnapshot) => {
-  writeLocalStorage(PERSONA_KEY, snapshot);
-};
-
-const buildFallbackPersonaMarkdown = (snapshot: PersonaSnapshot) => {
-  const profile = snapshot.profile;
-  const preferenceLines = profile.stablePreferences.length
-    ? profile.stablePreferences.map(
-        (item) =>
-          `- [${item.id}] ${item.text} (confidence: ${item.confidence.toFixed(2)}, last_seen: ${item.lastSeen})`
-      )
-    : ["- [pref_placeholder] 暂无（confidence: 0.00, last_seen: 1970-01-01)"];
-  const eventLines = profile.recentEvents.length
-    ? profile.recentEvents.map(
-        (item) =>
-          `- [${item.id}] ${item.text} (date: ${item.date}, confidence: ${item.confidence.toFixed(2)})`
-      )
-    : ["- [event_placeholder] 暂无（date: 1970-01-01, confidence: 0.00)"];
-
-  return [
-    "# Persona Card",
-    `- version: ${profile.version}`,
-    `- updated_at: ${profile.updatedAt}`,
-    `- source_mode: ${profile.sourceMode}`,
-    "",
-    "## Identity Hint",
-    profile.identityHint || "一句话描述用户当前阶段状态（可改写）",
-    "",
-    "## Communication Style",
-    `- 语气偏好：${profile.communicationStyle.tone}`,
-    `- 长度偏好：${profile.communicationStyle.length}`,
-    `- 禁忌表达：${profile.communicationStyle.taboo.join("、")}`,
-    "",
-    "## Stable Preferences",
-    ...preferenceLines,
-    "",
-    "## Emotion Trend (7d)",
-    `- trend: ${profile.emotionTrend7d.trend}`,
-    `- confidence: ${profile.emotionTrend7d.confidence.toFixed(2)}`,
-    `- evidence_count: ${profile.emotionTrend7d.evidenceCount}`,
-    `- note: ${profile.emotionTrend7d.note}`,
-    "",
-    "## Recent Events",
-    ...eventLines,
-    "",
-    "## Boundaries",
-    `- 不希望被提及：${profile.boundaries.avoidTopics.join("、")}`,
-    `- 敏感话题处理：${profile.boundaries.sensitiveHandling}`,
-    "",
-    "## Manual Notes",
-    profile.manualNotes || "这里内容永不被自动覆盖（用户自由编辑）",
-    ""
-  ].join("\n");
-};
+const createFallbackSoulAutomationState = (): SoulAutomationState => ({});
 
 const normalizeRequestTimeoutMs = (value: number) =>
   clampInteger(value, MIN_REQUEST_TIMEOUT_MS, MAX_REQUEST_TIMEOUT_MS, DEFAULT_SETTINGS.requestTimeoutMs);
@@ -850,118 +754,6 @@ const createBrowserFallbackApi = (): MuApi => {
       }),
       getSystemStatus: async () => ({})
     },
-    persona: {
-      getSnapshot: async () => readFallbackPersonaSnapshot(),
-      getMarkdown: async () => {
-        const stored = window.localStorage.getItem(PERSONA_MARKDOWN_KEY);
-        if (stored && stored.trim()) {
-          return stored;
-        }
-        const snapshot = readFallbackPersonaSnapshot();
-        const markdown = buildFallbackPersonaMarkdown(snapshot);
-        window.localStorage.setItem(PERSONA_MARKDOWN_KEY, markdown);
-        return markdown;
-      },
-      saveMarkdown: async (markdown) => {
-        const normalized = `${markdown.replace(/\r\n/g, "\n").trimEnd()}\n`;
-        window.localStorage.setItem(PERSONA_MARKDOWN_KEY, normalized);
-        const snapshot = readFallbackPersonaSnapshot();
-        const next: PersonaSnapshot = {
-          ...snapshot,
-          profile: {
-            ...snapshot.profile,
-            updatedAt: nowIso(),
-            counters: {
-              ...snapshot.profile.counters,
-              lastMarkdownSyncAt: nowIso()
-            }
-          }
-        };
-        writeFallbackPersonaSnapshot(next);
-        return next;
-      },
-      getInjectionPayload: async () => {
-        const snapshot = readFallbackPersonaSnapshot();
-        const preferenceLines = snapshot.profile.stablePreferences
-          .slice(0, 2)
-          .map(
-            (entry) =>
-              `  - ${entry.text} (confidence: ${entry.confidence.toFixed(2)}, last_seen: ${entry.lastSeen})`
-          );
-        const eventLines = snapshot.profile.recentEvents
-          .slice(0, 1)
-          .map(
-            (entry) => `  - ${entry.text} (date: ${entry.date}, confidence: ${entry.confidence.toFixed(2)})`
-          );
-        const block = [
-          "<user_memory_profile>",
-          `profile_version: ${snapshot.profile.version}`,
-          `updated_at: ${snapshot.profile.updatedAt}`,
-          "stable_preferences:",
-          ...(preferenceLines.length ? preferenceLines : ["  - none"]),
-          "emotion_trend_7d:",
-          `  trend: ${snapshot.profile.emotionTrend7d.trend}`,
-          `  confidence: ${snapshot.profile.emotionTrend7d.confidence.toFixed(2)}`,
-          "recent_events:",
-          ...(eventLines.length ? eventLines : ["  - none"]),
-          "</user_memory_profile>"
-        ].join("\n");
-        return { block, snapshot };
-      },
-      ingestMessage: async (payload) => {
-        const text = payload.text.trim();
-        const observedAt = payload.createdAt?.trim() || nowIso();
-        const operationId = crypto.randomUUID();
-        if (!text) {
-          return {
-            operationId,
-            observedAt,
-            reason: "no_match" as const,
-            undoable: false,
-            extracted: {
-              preferencesAdded: [],
-              preferencesUpdated: [],
-              eventsAdded: [],
-              eventsUpdated: []
-            }
-          };
-        }
-        const snapshot = readFallbackPersonaSnapshot();
-        const next: PersonaSnapshot = {
-          ...snapshot,
-          profile: {
-            ...snapshot.profile,
-            updatedAt: nowIso(),
-            counters: {
-              ...snapshot.profile.counters,
-              ingestedUserMessages: snapshot.profile.counters.ingestedUserMessages + 1,
-              lastIngestedAt: observedAt
-            }
-          }
-        };
-        writeFallbackPersonaSnapshot(next);
-        return {
-          operationId,
-          observedAt,
-          reason: "no_match" as const,
-          undoable: false,
-          extracted: {
-            preferencesAdded: [],
-            preferencesUpdated: [],
-            eventsAdded: [],
-            eventsUpdated: []
-          }
-        };
-      },
-      undoIngest: async () => ({
-        ok: false,
-        reverted: {
-          preferences: 0,
-          events: 0
-        },
-        message: "Undo is only available in the Electron desktop runtime."
-      })
-    },
     memos: {
       testConnection: async () => ({
         ok: false,
@@ -1365,6 +1157,21 @@ const createBrowserFallbackApi = (): MuApi => {
       get: async () => readLocalStorage<Skill[]>("mu.skills.v1", []),
       save: async (skills) => writeLocalStorage("mu.skills.v1", skills),
       scanClaude: async () => []
+    },
+    soul: {
+      getMarkdown: async () => readLocalStorage<string>(SOUL_MARKDOWN_KEY, ""),
+      saveMarkdown: async (markdown) => writeLocalStorage(SOUL_MARKDOWN_KEY, markdown),
+      getMemoryMarkdown: async () => readLocalStorage<string>(SOUL_MEMORY_MARKDOWN_KEY, ""),
+      saveMemoryMarkdown: async (markdown) => writeLocalStorage(SOUL_MEMORY_MARKDOWN_KEY, markdown),
+      getAutomationState: async () =>
+        readLocalStorage<SoulAutomationState>(
+          SOUL_AUTOMATION_STATE_KEY,
+          createFallbackSoulAutomationState()
+        ),
+      saveAutomationState: async (state) => {
+        writeLocalStorage(SOUL_AUTOMATION_STATE_KEY, state);
+        return state;
+      }
     }
   };
 };
@@ -1382,11 +1189,11 @@ export const getMuApi = (): MuApi => {
       settings: runtimeApi.settings ?? fallbackApi.settings,
       sessions: runtimeApi.sessions ?? fallbackApi.sessions,
       env: runtimeApi.env ?? fallbackApi.env,
-      persona: runtimeApi.persona ?? fallbackApi.persona,
       memos: runtimeApi.memos ?? fallbackApi.memos,
       chat: runtimeApi.chat ?? fallbackApi.chat,
       agent: runtimeApi.agent ?? fallbackApi.agent,
-      skills: runtimeApi.skills ?? fallbackApi.skills
+      skills: runtimeApi.skills ?? fallbackApi.skills,
+      soul: runtimeApi.soul ?? fallbackApi.soul
     };
     return cachedApi as MuApi;
   }

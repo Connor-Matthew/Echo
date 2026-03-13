@@ -13,6 +13,7 @@ import {
   type StreamUsageSnapshot
 } from "../../../lib/app-chat-utils";
 import type { MuApi } from "../../../lib/mu-api";
+import { buildSoulSystemMessage } from "./soul-automation";
 import type {
   AppliedSkillMeta,
   AppSettings,
@@ -125,45 +126,7 @@ export const sendFromBaseMessagesService = async ({
     settings.chatContextWindow
   );
   const systemPrompt = settings.systemPrompt.trim();
-
-  let environmentSystemContent: string | null = null;
-  try {
-    environmentSystemContent = await buildChatEnvironmentSystemMessage();
-  } catch (error) {
-    console.warn(
-      "[chat][environment][injected] failed",
-      error instanceof Error ? error.message : "unknown_error"
-    );
-    environmentSystemContent = null;
-  }
-
-  let memosMemoryContent: string | null = null;
-  if (settings.memos.enabled && userMessage.content.trim()) {
-    try {
-      const result = await api.memos.searchMemory({
-        settings,
-        query: userMessage.content,
-        conversationId: "echo-global-memory"
-      });
-      if (result.ok && result.memories.length) {
-        const memoryLines = result.memories.slice(0, settings.memos.topK).map((item) => `- ${item}`);
-        memosMemoryContent = ["<memos_memory>", ...memoryLines, "</memos_memory>"].join("\n");
-      } else if (!result.ok) {
-        console.warn("[memos][search] failed", result.message);
-      }
-    } catch (error) {
-      console.warn("[memos][search] failed", error instanceof Error ? error.message : "unknown_error");
-      memosMemoryContent = null;
-    }
-  }
-
-  const systemMessages: ChatStreamRequest["messages"] = [
-    ...(systemPrompt ? [{ role: "system" as const, content: systemPrompt }] : []),
-    ...(environmentSystemContent ? [{ role: "system" as const, content: environmentSystemContent }] : []),
-    ...(memosMemoryContent ? [{ role: "system" as const, content: memosMemoryContent }] : [])
-  ];
-  const messagesWithSystem = [...systemMessages, ...completionMessages];
-  const submittedContextTokens = estimateTokensFromCompletionMessages(messagesWithSystem);
+  const isSoulModeEnabled = session.soulModeEnabled !== false;
 
   upsertSession(session.id, (current) => {
     const shouldRetitle = allowRetitle && current.messages.length === 0 && current.title === "New Chat";
@@ -183,6 +146,76 @@ export const sendFromBaseMessagesService = async ({
   let assistantResponseText = "";
 
   try {
+    const soulSystemPromise = isSoulModeEnabled
+      ? api.soul
+          .getMarkdown()
+          .then((markdown) => buildSoulSystemMessage(markdown) || null)
+          .catch((error) => {
+            console.warn(
+              "[chat][soul][injected] failed",
+              error instanceof Error ? error.message : "unknown_error"
+            );
+            return null;
+          })
+      : Promise.resolve<string | null>(null);
+
+    const environmentSystemPromise = buildChatEnvironmentSystemMessage().catch((error) => {
+      console.warn(
+        "[chat][environment][injected] failed",
+        error instanceof Error ? error.message : "unknown_error"
+      );
+      return null;
+    });
+
+    const memosMemoryPromise =
+      settings.memos.enabled && userMessage.content.trim()
+        ? api.memos
+            .searchMemory({
+              settings,
+              query: userMessage.content,
+              conversationId: "echo-global-memory"
+            })
+            .then((result) => {
+              if (result.ok && result.memories.length) {
+                const memoryLines = result.memories
+                  .slice(0, settings.memos.topK)
+                  .map((item) => `- ${item}`);
+                return ["<memos_memory>", ...memoryLines, "</memos_memory>"].join("\n");
+              }
+              if (!result.ok) {
+                console.warn("[memos][search] failed", result.message);
+              }
+              return null;
+            })
+            .catch((error) => {
+              console.warn(
+                "[memos][search] failed",
+                error instanceof Error ? error.message : "unknown_error"
+              );
+              return null;
+            })
+        : Promise.resolve<string | null>(null);
+
+    const [soulSystemContent, environmentSystemContent, memosMemoryContent] = await Promise.all([
+      soulSystemPromise,
+      environmentSystemPromise,
+      memosMemoryPromise
+    ]);
+
+    const systemMessages: ChatStreamRequest["messages"] = [
+      ...(isSoulModeEnabled
+        ? soulSystemContent
+          ? [{ role: "system" as const, content: soulSystemContent }]
+          : []
+        : systemPrompt
+          ? [{ role: "system" as const, content: systemPrompt }]
+          : []),
+      ...(environmentSystemContent ? [{ role: "system" as const, content: environmentSystemContent }] : []),
+      ...(memosMemoryContent ? [{ role: "system" as const, content: memosMemoryContent }] : [])
+    ];
+    const messagesWithSystem = [...systemMessages, ...completionMessages];
+    const submittedContextTokens = estimateTokensFromCompletionMessages(messagesWithSystem);
+
     const { streamId } = await api.chat.startStream({
       settings,
       messages: messagesWithSystem,

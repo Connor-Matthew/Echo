@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { PanelLeft } from "lucide-react";
+import { Bot, PanelLeft } from "lucide-react";
 import { AgentView } from "../../components/AgentView";
 import { AttachmentTray } from "../../components/AttachmentTray";
 import { ChatView } from "../../components/ChatView";
@@ -58,11 +58,13 @@ export const AppView = () => {
     stopGenerating,
     removedSession,
     errorBanner,
+    soulStatusToast,
     undoDelete,
     createNewChat,
     renameChat,
     deleteChat,
     toggleChatPin,
+    updateSessionSoulMode,
     exportSession,
     exportSessionMarkdown,
     exportSessions,
@@ -325,14 +327,14 @@ export const AppView = () => {
       <div className="app-window-drag-layer" style={{ left: 0, height: TOP_FRAME_HEIGHT_PX }} aria-hidden />
 
       <div
-        className="relative grid h-full overflow-hidden rounded-[22px] border border-border/35 bg-card/62 p-1.5 shadow-[0_14px_34px_rgba(15,23,42,0.06)] backdrop-blur-[0.5px] transition-[grid-template-columns,column-gap] duration-300 ease-out sm:p-2"
+        className="app-shell-frame relative grid h-full transition-[grid-template-columns,column-gap] duration-300 ease-out"
         style={{
           gridTemplateColumns: `${sidebarWidth}px minmax(0, 1fr)`,
-          columnGap: isSidebarOpen ? "0.4rem" : "0rem"
+          columnGap: isSidebarOpen ? "var(--echo-shell-column-gap-open)" : "0rem"
         }}
       >
         <div
-          className={`sketch-panel overflow-hidden rounded-[18px] transition-[transform,opacity] duration-250 ease-out ${
+          className={`sketch-panel app-shell-panel overflow-hidden transition-[transform,opacity] duration-250 ease-out ${
             !isSidebarOpen
               ? "-translate-x-[110%] opacity-0 pointer-events-none"
               : "translate-x-0 opacity-100"
@@ -343,7 +345,7 @@ export const AppView = () => {
 
         <main
           className={[
-            "sketch-panel relative flex min-h-0 flex-col overflow-hidden rounded-[18px] transition-colors",
+            "sketch-panel app-shell-panel relative flex min-h-0 flex-col overflow-hidden transition-colors",
             activeView === "chat" && isChatDragOver
               ? "border-primary bg-accent/30"
               : ""
@@ -360,13 +362,20 @@ export const AppView = () => {
               </div>
             </div>
           ) : null}
+          {activeView === "chat" && soulStatusToast ? (
+            <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center px-4">
+              <div className="state-note min-w-[220px] max-w-[360px] rounded-2xl px-4 py-2 text-center text-sm shadow-[0_16px_40px_rgba(15,23,42,0.12)]">
+                {soulStatusToast}
+              </div>
+            </div>
+          ) : null}
           {showFloatingSidebarToggle ? (
             <div className="absolute left-3 top-3 z-20">
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="h-8 w-8 rounded-xl bg-card/90 p-0 text-muted-foreground shadow-[0_1px_6px_rgba(15,23,42,0.12)] hover:bg-card hover:text-foreground"
+                className="floating-sidebar-toggle h-8 w-8 rounded-xl p-0 text-muted-foreground hover:text-foreground"
                 onClick={() => setIsSidebarOpen((previous) => !previous)}
                 aria-label="展开侧边栏"
                 title="展开侧边栏"
@@ -403,6 +412,36 @@ export const AppView = () => {
               {showCenteredChatLanding ? (
                 <section className="flex h-full w-full items-center justify-center px-4 py-6 sm:px-6">
                   <div className="w-full max-w-[920px]">
+                    <div className="paper-conversation-stage mx-auto mb-10 grid h-12 w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 px-3 text-[12px] text-muted-foreground sm:px-4">
+                      <div className="min-w-0">
+                        <p className="truncate text-[13px] font-medium text-foreground">
+                          {activeSession?.title ?? "New Chat"}
+                        </p>
+                      </div>
+                      <div className="flex justify-center">
+                        <Button
+                          type="button"
+                          variant={activeSession?.soulModeEnabled !== false ? "default" : "outline"}
+                          size="sm"
+                          className="h-8 rounded-full px-3"
+                          onClick={() => {
+                            if (!activeSession) {
+                              return;
+                            }
+                            updateSessionSoulMode(
+                              activeSession.id,
+                              activeSession.soulModeEnabled === false
+                            );
+                          }}
+                        >
+                          <Bot className="mr-1.5 h-3.5 w-3.5" />
+                          {activeSession?.soulModeEnabled !== false ? "SOUL 模式" : "系统提示词"}
+                        </Button>
+                      </div>
+                      <div className="text-right leading-none">
+                        消息 {activeChatMessageCount}
+                      </div>
+                    </div>
                     <h2 className="mb-14 text-center text-[36px] font-semibold leading-tight text-foreground sm:mb-16 sm:text-[44px] md:mb-20">
                       今天有什么可以帮到你？
                     </h2>
@@ -451,14 +490,38 @@ export const AppView = () => {
                   <div className="flex min-h-0 flex-1 flex-col bg-transparent">
                     <div
                       className={[
-                        "paper-conversation-stage mx-auto mt-0 flex h-8 w-full items-center justify-between px-3 text-[12px] text-muted-foreground sm:px-4",
+                        "paper-conversation-stage mx-auto mt-0 grid h-12 w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 px-3 text-[12px] text-muted-foreground sm:px-4",
                         showFloatingSidebarToggle ? "pl-[132px] sm:pl-[136px]" : ""
                       ].join(" ")}
                     >
-                      <span />
-                      <span className="leading-none">
+                      <div className="min-w-0">
+                        <p className="truncate text-[13px] font-medium text-foreground">
+                          {activeSession?.title ?? "New Chat"}
+                        </p>
+                      </div>
+                      <div className="flex justify-center">
+                        <Button
+                          type="button"
+                          variant={activeSession?.soulModeEnabled !== false ? "default" : "outline"}
+                          size="sm"
+                          className="h-8 rounded-full px-3"
+                          onClick={() => {
+                            if (!activeSession) {
+                              return;
+                            }
+                            updateSessionSoulMode(
+                              activeSession.id,
+                              activeSession.soulModeEnabled === false
+                            );
+                          }}
+                        >
+                          <Bot className="mr-1.5 h-3.5 w-3.5" />
+                          {activeSession?.soulModeEnabled !== false ? "SOUL 模式" : "系统提示词"}
+                        </Button>
+                      </div>
+                      <div className="text-right leading-none">
                         消息 {activeChatMessageCount}
-                      </span>
+                      </div>
                     </div>
                     <div className="min-h-0 flex-1">
                       <ChatView

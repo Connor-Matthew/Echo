@@ -19,7 +19,8 @@ export type SettingsValidationSection =
   | "environment"
   | "theme"
   | "data"
-  | "advanced";
+  | "advanced"
+  | "soul";
 
 export type ProviderPreset = {
   id: string;
@@ -240,6 +241,10 @@ export const syncProviderState = (
   const safeProviders = sortProviders(providers.length ? providers : [createProvider(0)]);
   const activeProvider =
     safeProviders.find((provider) => provider.id === requestedActiveId) ?? safeProviders[0];
+  const currentSoulProviderId = settings.soulEvolution?.providerId?.trim();
+  const soulProvider =
+    safeProviders.find((provider) => provider.id === currentSoulProviderId) ?? activeProvider;
+  const currentSoulModel = settings.soulEvolution?.model?.trim();
 
   return {
     ...settings,
@@ -248,7 +253,11 @@ export const syncProviderState = (
     baseUrl: activeProvider.baseUrl,
     apiKey: activeProvider.apiKey,
     model: activeProvider.model,
-    providerType: activeProvider.providerType
+    providerType: activeProvider.providerType,
+    soulEvolution: {
+      providerId: soulProvider.id,
+      model: currentSoulModel || soulProvider.model
+    }
   };
 };
 
@@ -339,8 +348,18 @@ export const normalizeDraft = (settings: AppSettings): AppSettings => {
     };
   });
 
+  const synced = syncProviderState(settings, providers, settings.activeProviderId);
+  const soulProvider =
+    synced.providers.find((provider) => provider.id === settings.soulEvolution?.providerId?.trim()) ??
+    synced.providers.find((provider) => provider.id === synced.soulEvolution.providerId) ??
+    synced.providers[0];
+
   return {
-    ...syncProviderState(settings, providers, settings.activeProviderId),
+    ...synced,
+    soulEvolution: {
+      providerId: soulProvider.id,
+      model: settings.soulEvolution?.model?.trim() || soulProvider.model
+    },
     mcpServers: settings.mcpServers ?? []
   };
 };
@@ -503,6 +522,17 @@ export const validateSettingsForSection = (
     return null;
   }
 
+  if (section === "soul") {
+    const soulProvider = draft.providers.find((provider) => provider.id === draft.soulEvolution.providerId);
+    if (!soulProvider) {
+      return "SOUL 演化渠道不存在。";
+    }
+    if (!draft.soulEvolution.model.trim()) {
+      return "SOUL 演化模型不能为空。";
+    }
+    return null;
+  }
+
   if (section === "environment") {
     if (draft.environment.temperatureUnit !== "c" && draft.environment.temperatureUnit !== "f") {
       return "Environment temperature unit must be C or F.";
@@ -560,6 +590,7 @@ export const areSettingsEqual = (left: AppSettings, right: AppSettings) =>
   left.sseDebug === right.sseDebug &&
   JSON.stringify(left.environment) === JSON.stringify(right.environment) &&
   JSON.stringify(left.memos) === JSON.stringify(right.memos) &&
+  JSON.stringify(left.soulEvolution) === JSON.stringify(right.soulEvolution) &&
   JSON.stringify(left.mcpServers) === JSON.stringify(right.mcpServers);
 
 export const isValidImportedSessions = (value: unknown): value is ChatSession[] =>

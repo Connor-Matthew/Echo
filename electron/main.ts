@@ -23,17 +23,17 @@ import { getEnvironmentDeviceStatus, getEnvironmentWeatherSnapshot } from "./env
 import { registerChatHandlers } from "./ipc/register-chat-handlers";
 import { registerEnvironmentHandlers } from "./ipc/register-environment-handlers";
 import { registerMemosHandlers } from "./ipc/register-memos-handlers";
-import { registerPersonaHandlers } from "./ipc/register-persona-handlers";
 import { registerSettingsHandlers } from "./ipc/register-settings-handlers";
 import { registerStorageHandlers } from "./ipc/register-storage-handlers";
+import { registerSoulHandlers } from "./ipc/register-soul-handlers";
 import {
-  getPersonaInjectionPayload,
-  getPersonaMarkdownDocument,
-  getPersonaSnapshot,
-  ingestPersonaMessage,
-  undoPersonaIngest,
-  savePersonaMarkdownDocument
-} from "./memory/persona-service";
+  getSoulAutomationState,
+  getSoulMarkdownDocument,
+  getSoulMemoryMarkdownDocument,
+  saveSoulAutomationState,
+  saveSoulMarkdownDocument,
+  saveSoulMemoryMarkdownDocument
+} from "./memory/soul-service";
 import {
   DEFAULT_SETTINGS,
   normalizeSettings,
@@ -539,19 +539,19 @@ const registerIpcHandlers = () => {
     scanClaudeSkills
   });
 
-  registerPersonaHandlers(ipcMain, {
-    getPersonaSnapshot,
-    getPersonaMarkdownDocument,
-    savePersonaMarkdownDocument,
-    getPersonaInjectionPayload,
-    ingestPersonaMessage,
-    undoPersonaIngest
-  });
-
   registerMemosHandlers(ipcMain, {
     testMemosConnection,
     searchMemosMemory,
     addMemosMessage
+  });
+
+  registerSoulHandlers(ipcMain, {
+    getSoulMarkdownDocument,
+    saveSoulMarkdownDocument,
+    getSoulMemoryMarkdownDocument,
+    saveSoulMemoryMarkdownDocument,
+    getSoulAutomationState,
+    saveSoulAutomationState
   });
 
   registerChatHandlers(ipcMain, {
