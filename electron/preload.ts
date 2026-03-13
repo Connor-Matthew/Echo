@@ -76,7 +76,10 @@ const api: MuApi = {
     getMemoryMarkdown: () => ipcRenderer.invoke("soul:getMemoryMarkdown"),
     saveMemoryMarkdown: (markdown) => ipcRenderer.invoke("soul:saveMemoryMarkdown", markdown),
     getAutomationState: () => ipcRenderer.invoke("soul:getAutomationState"),
-    saveAutomationState: (state) => ipcRenderer.invoke("soul:saveAutomationState", state)
+    saveAutomationState: (state) => ipcRenderer.invoke("soul:saveAutomationState", state),
+    getJournalEntry: (date) => ipcRenderer.invoke("soul:getJournalEntry", date),
+    saveJournalEntry: (date, markdown) => ipcRenderer.invoke("soul:saveJournalEntry", date, markdown),
+    listJournalDates: () => ipcRenderer.invoke("soul:listJournalDates")
   }
 };
 

@@ -1,4 +1,5 @@
 import {
+  BookOpen,
   Check,
   ChevronDown,
   ChevronRight,
@@ -47,6 +48,7 @@ import { Button } from "../ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Input } from "../ui/input";
 import { SkillsPanel } from "../SkillsPanel";
+import { MarkdownContent } from "../chat/message-markdown-content";
 import type { SettingsSection } from "../Sidebar";
 
 type SettingsCenterProps = {
@@ -177,6 +179,11 @@ export const SettingsCenterView = (props: SettingsCenterProps) => {
   const [soulDraft, setSoulDraft] = useState("");
   const [soulMemoryMarkdown, setSoulMemoryMarkdown] = useState("");
   const [soulMemoryDraft, setSoulMemoryDraft] = useState("");
+
+  const [journalDates, setJournalDates] = useState<string[]>([]);
+  const [selectedJournalDate, setSelectedJournalDate] = useState<string | null>(null);
+  const [journalContent, setJournalContent] = useState<string | null>(null);
+  const [isLoadingJournal, setIsLoadingJournal] = useState(false);
   const [isSavingSoul, setIsSavingSoul] = useState(false);
   const [soulSaveStatus, setSoulSaveStatus] = useState<"idle" | "saved" | "error">("idle");
 
@@ -203,6 +210,27 @@ export const SettingsCenterView = (props: SettingsCenterProps) => {
       void loadSoul();
     }
   }, [section, loadSoul]);
+
+  useEffect(() => {
+    if (section !== "journal") return;
+    const api = getMuApi();
+    void api.soul.listJournalDates().then((dates) => {
+      setJournalDates(dates);
+      if (dates.length > 0 && selectedJournalDate === null) {
+        setSelectedJournalDate(dates[0]);
+      }
+    });
+  }, [section, selectedJournalDate]);
+
+  useEffect(() => {
+    if (!selectedJournalDate) return;
+    const api = getMuApi();
+    setIsLoadingJournal(true);
+    void api.soul.getJournalEntry(selectedJournalDate).then((content) => {
+      setJournalContent(content);
+      setIsLoadingJournal(false);
+    });
+  }, [selectedJournalDate]);
 
   const saveSoul = async () => {
     const api = getMuApi();
@@ -1698,6 +1726,61 @@ export const SettingsCenterView = (props: SettingsCenterProps) => {
                   </Button>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {section === "journal" ? (
+          <Card className={SETTINGS_CARD_CLASS}>
+            <CardHeader>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <BookOpen className="h-4 w-4" />
+                <span className="text-xs font-medium uppercase tracking-[0.16em]">日记</span>
+              </div>
+              <CardTitle>今日手记</CardTitle>
+              <CardDescription>
+                每天 22:00 自动生成，回顾当天对话的 AI 视角手记
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {journalDates.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-4 text-center">
+                  还没有日记，今天的对话结束后会在 22:00 自动生成第一篇
+                </p>
+              ) : (
+                <div className="flex gap-4 min-h-[400px]">
+                  <div className="w-36 shrink-0 flex flex-col gap-1 overflow-y-auto">
+                    {journalDates.map((date) => (
+                      <button
+                        key={date}
+                        onClick={() => setSelectedJournalDate(date)}
+                        className={cn(
+                          "rounded-lg px-3 py-2 text-left text-sm transition-colors",
+                          selectedJournalDate === date
+                            ? "bg-accent text-accent-foreground font-medium"
+                            : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                        )}
+                      >
+                        {date}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex-1 min-w-0 border-l border-border pl-4">
+                    {isLoadingJournal ? (
+                      <p className="text-sm text-muted-foreground pt-2">加载中...</p>
+                    ) : journalContent ? (
+                      <MarkdownContent content={journalContent} isUser={false} />
+                    ) : selectedJournalDate ? (
+                      <p className="text-sm text-muted-foreground pt-2">
+                        {new Date().toISOString().startsWith(selectedJournalDate) &&
+                        new Date().getHours() < 22
+                          ? "今日手记将在 22:00 自动生成"
+                          : "暂无内容"}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         ) : null}

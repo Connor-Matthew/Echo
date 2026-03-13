@@ -32,7 +32,10 @@ import {
   getSoulMemoryMarkdownDocument,
   saveSoulAutomationState,
   saveSoulMarkdownDocument,
-  saveSoulMemoryMarkdownDocument
+  saveSoulMemoryMarkdownDocument,
+  getJournalEntry,
+  saveJournalEntry,
+  listJournalDates
 } from "./memory/soul-service";
 import {
   DEFAULT_SETTINGS,
@@ -551,7 +554,10 @@ const registerIpcHandlers = () => {
     getSoulMemoryMarkdownDocument,
     saveSoulMemoryMarkdownDocument,
     getSoulAutomationState,
-    saveSoulAutomationState
+    saveSoulAutomationState,
+    getJournalEntry,
+    saveJournalEntry,
+    listJournalDates
   });
 
   registerChatHandlers(ipcMain, {

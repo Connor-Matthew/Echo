@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import {
   ArrowLeft,
   Bot,
+  BookOpen,
   Cpu,
   Database,
   Download,
@@ -33,7 +34,8 @@ export type SettingsSection =
   | "theme"
   | "data"
   | "advanced"
-  | "soul";
+  | "soul"
+  | "journal";
 
 type ChatSidebarProps = {
   mode: "chat";
@@ -353,6 +355,7 @@ export const Sidebar = (props: SidebarProps) => {
       { key: "skills", label: "技能", icon: Sparkles, group: "能力增强" },
       { key: "environment", label: "环境", icon: Cpu, group: "能力增强" },
       { key: "soul", label: "灵魂", icon: Bot, group: "能力增强" },
+      { key: "journal", label: "日记", icon: BookOpen, group: "能力增强" },
       { key: "theme", label: "主题", icon: Palette, group: "界面与数据" },
       { key: "data", label: "数据", icon: Database, group: "界面与数据" },
       { key: "advanced", label: "高级", icon: SlidersHorizontal, group: "界面与数据" }

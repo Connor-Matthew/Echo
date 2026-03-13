@@ -28,8 +28,11 @@ import {
   SOUL_MEMORY_BATCH_SIZE,
   buildMemoryRewriteMessages,
   buildSoulRewriteMessages,
+  buildJournalMessages,
   getLatestDueSoulRewriteSlot,
   getNextSoulRewriteDelayMs,
+  getNextJournalDelayMs,
+  getTodayDateString,
   getPendingSoulMemoryMessages,
   runBackgroundChatCompletion
 } from "../chat/services/soul-automation";
@@ -146,6 +149,8 @@ export const useAppController = () => {
   const soulMemoryTaskRef = useRef(false);
   const soulRewriteTaskRef = useRef(false);
   const soulRewriteTimerRef = useRef<number | null>(null);
+  const journalTaskRef = useRef(false);
+  const journalTimerRef = useRef<number | null>(null);
   const wasCompactLayoutRef = useRef(getCurrentViewportWidth() < SIDEBAR_AUTO_HIDE_WIDTH);
   const chatDropDepthRef = useRef(0);
   const isChatDragOverRef = useRef(false);
@@ -635,6 +640,82 @@ export const useAppController = () => {
     }, getNextSoulRewriteDelayMs(new Date()));
   }, [runSoulRewriteIfDue]);
 
+  const runJournalIfDue = useCallback(async (): Promise<boolean> => {
+    if (!isHydrated || !isConfigured || journalTaskRef.current) {
+      return false;
+    }
+
+    const today = getTodayDateString(new Date());
+    const now = new Date();
+    if (now.getHours() < 22) {
+      return false;
+    }
+
+    const todayMessages = sessions
+      .flatMap((session) =>
+        session.messages
+          .filter(
+            (message) =>
+              message.role === "user" &&
+              message.content.trim() &&
+              message.createdAt.startsWith(today)
+          )
+          .map((message) => ({
+            id: message.id,
+            sessionId: session.id,
+            content: message.content,
+            createdAt: message.createdAt
+          }))
+      );
+
+    if (todayMessages.length === 0) {
+      return false;
+    }
+
+    journalTaskRef.current = true;
+    try {
+      const automationState = await api.soul.getAutomationState();
+      if (automationState.lastJournalDate === today) {
+        return false;
+      }
+
+      const [soulMarkdown, memoryMarkdown] = await Promise.all([
+        api.soul.getMarkdown(),
+        api.soul.getMemoryMarkdown()
+      ]);
+
+      const journalText = await runBackgroundChatCompletion({
+        api,
+        settings,
+        messages: buildJournalMessages(todayMessages, memoryMarkdown, soulMarkdown)
+      });
+
+      if (!journalText.trim()) {
+        return false;
+      }
+
+      await api.soul.saveJournalEntry(today, journalText);
+      await api.soul.saveAutomationState({ ...automationState, lastJournalDate: today });
+      return true;
+    } catch (error) {
+      console.warn("[soul][journal] failed", error instanceof Error ? error.message : "unknown_error");
+      return false;
+    } finally {
+      journalTaskRef.current = false;
+    }
+  }, [isConfigured, isHydrated, sessions, settings]);
+
+  const scheduleNextJournalCheck = useCallback(() => {
+    if (journalTimerRef.current !== null) {
+      window.clearTimeout(journalTimerRef.current);
+    }
+    journalTimerRef.current = window.setTimeout(() => {
+      void runJournalIfDue().finally(() => {
+        scheduleNextJournalCheck();
+      });
+    }, getNextJournalDelayMs(new Date()));
+  }, [runJournalIfDue]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -754,6 +835,21 @@ export const useAppController = () => {
   }, [isConfigured, isHydrated, scheduleNextSoulRewriteCheck]);
 
   useEffect(() => {
+    if (!isHydrated || !isConfigured) {
+      return;
+    }
+
+    void runJournalIfDue();
+    scheduleNextJournalCheck();
+    return () => {
+      if (journalTimerRef.current !== null) {
+        window.clearTimeout(journalTimerRef.current);
+        journalTimerRef.current = null;
+      }
+    };
+  }, [isConfigured, isHydrated, runJournalIfDue, scheduleNextJournalCheck]);
+
+  useEffect(() => {
     if (!isHydrated || activeView !== "agent") {
       return;
     }
@@ -845,6 +941,9 @@ export const useAppController = () => {
       }
       if (soulRewriteTimerRef.current !== null) {
         window.clearTimeout(soulRewriteTimerRef.current);
+      }
+      if (journalTimerRef.current !== null) {
+        window.clearTimeout(journalTimerRef.current);
       }
       draftAttachmentsRef.current.forEach(revokeAttachmentPreview);
       agentDraftAttachmentsRef.current.forEach(revokeAttachmentPreview);

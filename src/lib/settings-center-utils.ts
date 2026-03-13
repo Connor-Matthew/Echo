@@ -20,7 +20,8 @@ export type SettingsValidationSection =
   | "theme"
   | "data"
   | "advanced"
-  | "soul";
+  | "soul"
+  | "journal";
 
 export type ProviderPreset = {
   id: string;

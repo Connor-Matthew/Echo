@@ -147,6 +147,7 @@ export type SoulAutomationState = {
   lastMemoryUpdatedAt?: string;
   lastSoulRewriteAt?: string;
   lastSoulRewriteSlot?: string;
+  lastJournalDate?: string;
 };
 
 export type EnvironmentSettings = {

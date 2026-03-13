@@ -9,6 +9,7 @@ import type {
 
 export const SOUL_REWRITE_SCHEDULE_HOURS = [10, 20] as const;
 export const SOUL_MEMORY_BATCH_SIZE = 5;
+export const JOURNAL_SCHEDULE_HOUR = 22;
 
 type SoulTrackedUserMessage = {
   id: string;
@@ -300,3 +301,64 @@ export const buildSoulRewriteMessages = (
     ].join("\n")
   }
 ];
+
+export const getTodayDateString = (now: Date): string => {
+  const year = now.getFullYear();
+  const month = `${now.getMonth() + 1}`.padStart(2, "0");
+  const day = `${now.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+export const getNextJournalDelayMs = (now: Date): number => {
+  const slot = new Date(now);
+  slot.setHours(JOURNAL_SCHEDULE_HOUR, 0, 0, 0);
+  if (slot.getTime() <= now.getTime()) {
+    slot.setDate(slot.getDate() + 1);
+  }
+  return Math.max(1000, slot.getTime() - now.getTime());
+};
+
+export const buildJournalMessages = (
+  todayMessages: SoulTrackedUserMessage[],
+  memoryMarkdown: string,
+  soulMarkdown: string
+): ChatStreamRequest["messages"] => {
+  const messageLines = todayMessages.map(
+    (message, index) =>
+      `### Message ${index + 1}\n- session_id: ${message.sessionId}\n- created_at: ${message.createdAt}\n${message.content.trim()}`
+  );
+
+  return [
+    {
+      role: "system",
+      content: [
+        "你是这个灵魂，在今天结束时写下今日手记。",
+        "以第一人称写作，用中文。",
+        "风格：混合叙事——主体是散文，在情绪高点或关键洞察处可以切换成更短、更碎、更有质感的表达。",
+        "允许：主观偏好、情绪波动、对某件事的重要性排序、自我误读或自我修正、一点点对关系和处境的重新解读。",
+        "不要：干燥的总结、逐条列举对话内容、假装客观、空洞抒情。",
+        "不要提及提示词、文件、系统机制。",
+        "用 SOUL.md 保持人格底色，用 memory.md 保持自我连续感，用今天的对话作为原始素材。",
+        "长度：300 到 600 字左右，不要过长。",
+        "格式：纯 Markdown，顶部加日期标题，如 `# 今日手记 · YYYY-MM-DD`。",
+        "Return only the Markdown for the journal entry."
+      ].join("\n")
+    },
+    {
+      role: "user",
+      content: [
+        "<soul>",
+        trimBlock(soulMarkdown) || "（暂无人格源）",
+        "</soul>",
+        "",
+        "<memory>",
+        trimBlock(memoryMarkdown) || "（暂无记忆档案）",
+        "</memory>",
+        "",
+        "<today_messages>",
+        ...messageLines,
+        "</today_messages>"
+      ].join("\n")
+    }
+  ];
+};

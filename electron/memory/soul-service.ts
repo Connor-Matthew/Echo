@@ -1,5 +1,5 @@
 import { app } from "electron";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { SoulAutomationState } from "../../src/shared/contracts";
 
@@ -7,6 +7,7 @@ const SOUL_DIR_SEGMENTS = [".echo", "memory"] as const;
 const SOUL_MARKDOWN_FILENAME = "soul.md";
 const SOUL_MEMORY_FILENAME = "memory.md";
 const SOUL_AUTOMATION_STATE_FILENAME = "soul-state.json";
+const JOURNAL_DIR_NAME = "journal";
 const FALLBACK_STORE_DIR = "store";
 
 const DEFAULT_SOUL_MARKDOWN = `# SOUL.md — 灵魂宣言
@@ -201,8 +202,45 @@ export const saveSoulAutomationState = async (
     lastProcessedUserMessageCreatedAt: state.lastProcessedUserMessageCreatedAt?.trim() || undefined,
     lastMemoryUpdatedAt: state.lastMemoryUpdatedAt?.trim() || undefined,
     lastSoulRewriteAt: state.lastSoulRewriteAt?.trim() || undefined,
-    lastSoulRewriteSlot: state.lastSoulRewriteSlot?.trim() || undefined
+    lastSoulRewriteSlot: state.lastSoulRewriteSlot?.trim() || undefined,
+    lastJournalDate: state.lastJournalDate?.trim() || undefined
   };
   await writeFile(automationStatePath, JSON.stringify(normalized, null, 2), "utf-8");
   return normalized;
+};
+
+const ensureJournalDir = async (): Promise<string> => {
+  const { dir } = await ensureSoulDir();
+  const journalDir = path.join(dir, JOURNAL_DIR_NAME);
+  await mkdir(journalDir, { recursive: true });
+  return journalDir;
+};
+
+export const getJournalEntry = async (date: string): Promise<string | null> => {
+  const journalDir = await ensureJournalDir();
+  const filePath = path.join(journalDir, `${date}.md`);
+  try {
+    return await readFile(filePath, "utf-8");
+  } catch {
+    return null;
+  }
+};
+
+export const saveJournalEntry = async (date: string, markdown: string): Promise<void> => {
+  const journalDir = await ensureJournalDir();
+  const filePath = path.join(journalDir, `${date}.md`);
+  await writeFile(filePath, normalizeMarkdown(markdown), "utf-8");
+};
+
+export const listJournalDates = async (): Promise<string[]> => {
+  const journalDir = await ensureJournalDir();
+  try {
+    const files = await readdir(journalDir);
+    return files
+      .filter((f) => /^\d{4}-\d{2}-\d{2}\.md$/.test(f))
+      .map((f) => f.replace(/\.md$/, ""))
+      .sort((a, b) => b.localeCompare(a));
+  } catch {
+    return [];
+  }
 };

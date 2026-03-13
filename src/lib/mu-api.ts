@@ -96,6 +96,9 @@ export type MuApi = {
     saveMemoryMarkdown: (markdown: string) => Promise<void>;
     getAutomationState: () => Promise<SoulAutomationState>;
     saveAutomationState: (state: SoulAutomationState) => Promise<SoulAutomationState>;
+    getJournalEntry: (date: string) => Promise<string | null>;
+    saveJournalEntry: (date: string, markdown: string) => Promise<void>;
+    listJournalDates: () => Promise<string[]>;
   };
 };
 
@@ -1171,7 +1174,10 @@ const createBrowserFallbackApi = (): MuApi => {
       saveAutomationState: async (state) => {
         writeLocalStorage(SOUL_AUTOMATION_STATE_KEY, state);
         return state;
-      }
+      },
+      getJournalEntry: async () => null,
+      saveJournalEntry: async () => {},
+      listJournalDates: async () => []
     }
   };
 };
