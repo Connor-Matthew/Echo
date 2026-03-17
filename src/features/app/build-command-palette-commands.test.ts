@@ -33,35 +33,43 @@ const createArgs = () => {
   const agentSession = createAgentSession();
 
   return {
-    activeView: "chat" as const,
-    isSidebarOpen: true,
-    activeSession: chatSession,
-    activeAgentSession: agentSession,
-    orderedChatSessions: [chatSession],
-    agentSessions: [agentSession],
-    isGenerating: true,
-    isAgentRunning: true,
-    closeSidebarIfCompact: () => {},
-    setActiveView: () => {},
-    setActiveSessionId: () => {},
-    setActiveAgentSessionId: () => {},
-    setIsSidebarOpen: () => {},
-    createNewChat: () => {},
-    createNewAgentSession: async () => {},
-    openSettings: () => {},
-    renameChat: () => {},
-    toggleChatPin: () => {},
-    exportSession: () => {},
-    exportSessionMarkdown: () => {},
-    deleteChat: () => {},
-    renameAgentSession: async () => {},
-    deleteAgentSession: async () => {},
-    stopGenerating: async () => {},
-    stopAgentRun: async () => {},
+    shell: {
+      activeView: "chat" as const,
+      isSidebarOpen: true,
+      closeSidebarIfCompact: () => {},
+      setActiveView: () => {},
+      setIsSidebarOpen: () => {},
+      openSettings: () => {}
+    },
+    chat: {
+      activeSession: chatSession,
+      orderedChatSessions: [chatSession],
+      isGenerating: true,
+      setActiveSessionId: () => {},
+      createNewChat: () => {},
+      renameChat: () => {},
+      toggleChatPin: () => {},
+      exportSession: () => {},
+      exportSessionMarkdown: () => {},
+      deleteChat: () => {},
+      stopGenerating: async () => {},
+      exportSessions: () => {},
+      clearAllSessions: () => {}
+    },
+    agent: {
+      activeAgentSession: agentSession,
+      agentSessions: [agentSession],
+      isAgentRunning: true,
+      setActiveAgentSessionId: () => {},
+      createNewAgentSession: async () => {},
+      renameAgentSession: async () => {},
+      deleteAgentSession: async () => {},
+      stopAgentRun: async () => {}
+    },
+    settings: {
+      resetSettings: async () => {}
+    },
     focusComposerInView: () => {},
-    exportSessions: () => {},
-    clearAllSessions: () => {},
-    resetSettings: async () => {}
   };
 };
 

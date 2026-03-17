@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { encodeComposerModelOption } from "../../lib/app-chat-utils";
+import { encodeComposerModelOption } from "../chat/utils/chat-utils";
 import {
   buildAgentRunSettingsSnapshot,
   type AgentMessage,

@@ -1,7 +1,8 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import { createId, nowIso } from "../../../lib/app-chat-utils";
-import { createAgentStreamEnvelopeHandler } from "../../../lib/app-agent-stream";
+import { createId, nowIso } from "../../chat/utils/chat-utils";
+import { createAgentStreamEnvelopeHandler } from "../utils/agent-stream";
 import type { MuApi } from "../../../lib/mu-api";
+import { buildUserProfileSystemMessage } from "../../profile/services/profile-automation";
 import type {
   AgentMessage,
   AgentRunSettingsSnapshot,
@@ -70,42 +71,56 @@ export const runAgentMessageService = async ({
   const sessionId = activeAgentSession.id;
   let runSettings = baseRunSettings;
 
-  let environmentSnapshot: EnvironmentSnapshot | undefined;
-  if (settings.environment.enabled) {
-    try {
-      environmentSnapshot = (await refreshAgentEnvironmentSnapshot()) ?? undefined;
-    } catch {
-      environmentSnapshot = undefined;
-    }
-  }
-
-  if (settings.memos.enabled && input) {
-    try {
-      const result = await api.memos.searchMemory({
-        settings,
-        query: input,
-        conversationId: "echo-global-memory"
-      });
-      if (result.ok && result.memories.length) {
-        const memosMemoryBlock = [
-          "<memos_memory>",
-          ...result.memories.slice(0, settings.memos.topK).map((item) => `- ${item}`),
-          "</memos_memory>"
-        ].join("\n");
-        runSettings = {
-          ...baseRunSettings,
-          systemPrompt: [baseRunSettings.systemPrompt.trim(), memosMemoryBlock]
-            .filter(Boolean)
-            .join("\n\n")
-        };
-      } else if (!result.ok) {
-        console.warn("[memos][search][agent] failed", result.message);
-      }
-    } catch (error) {
+  const [rawEnvironmentSnapshot, memosResult, userProfileSnapshot] = await Promise.all([
+    settings.environment.enabled
+      ? refreshAgentEnvironmentSnapshot().catch(() => null)
+      : Promise.resolve(null),
+    settings.memos.enabled && input
+      ? api.memos
+          .searchMemory({ settings, query: input, conversationId: "echo-global-memory" })
+          .catch((error: unknown) => {
+            console.warn(
+              "[memos][search][agent] failed",
+              error instanceof Error ? error.message : "unknown_error"
+            );
+            return null;
+          })
+      : Promise.resolve(null),
+    api.profile.getSnapshotMarkdown().catch((error: unknown) => {
       console.warn(
-        "[memos][search][agent] failed",
+        "[profile][search][agent] failed",
         error instanceof Error ? error.message : "unknown_error"
       );
+      return "";
+    })
+  ]);
+
+  const environmentSnapshot: EnvironmentSnapshot | undefined =
+    rawEnvironmentSnapshot ?? undefined;
+
+  const userProfileBlock = buildUserProfileSystemMessage(userProfileSnapshot);
+  if (userProfileBlock) {
+    runSettings = {
+      ...runSettings,
+      systemPrompt: [runSettings.systemPrompt.trim(), userProfileBlock].filter(Boolean).join("\n\n")
+    };
+  }
+
+  if (memosResult) {
+    if (memosResult.ok && memosResult.memories.length) {
+      const memosMemoryBlock = [
+        "<memos_memory>",
+        ...memosResult.memories.slice(0, settings.memos.topK).map((item) => `- ${item}`),
+        "</memos_memory>"
+      ].join("\n");
+      runSettings = {
+        ...runSettings,
+        systemPrompt: [runSettings.systemPrompt.trim(), memosMemoryBlock]
+          .filter(Boolean)
+          .join("\n\n")
+      };
+    } else if (!memosResult.ok) {
+      console.warn("[memos][search][agent] failed", memosResult.message);
     }
   }
 

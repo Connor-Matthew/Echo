@@ -1,5 +1,17 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
+import type {
+  Options,
+  PermissionUpdate,
+  Query,
+  SDKAssistantMessage,
+  SDKAuthStatusMessage,
+  SDKHookResponseMessage,
+  SDKMessage,
+  SDKResultMessage,
+  SDKStatusMessage,
+  SDKToolProgressMessage
+} from "@anthropic-ai/claude-agent-sdk";
 import { buildAgentPrompt } from "../agent-prompt-builder";
 import type {
   AgentMessage,
@@ -110,14 +122,13 @@ const pushTextEvent = (
   mode: "delta" | "complete",
   isIntermediate = false
 ) => {
-  const normalized = text.trim();
-  if (!normalized) {
+  if (!text.length) {
     return;
   }
   events.push(
     mode === "delta"
-      ? { type: "text_delta", text: normalized }
-      : { type: "text_complete", text: normalized, isIntermediate }
+      ? { type: "text_delta", text }
+      : { type: "text_complete", text, isIntermediate }
   );
 };
 
@@ -301,16 +312,83 @@ const appendRawStreamEvent = (
   }
 };
 
-const convertSdkMessageToEvents = (sdkMessage: unknown, state: StreamParseState): AgentStreamEvent[] => {
-  if (!sdkMessage || typeof sdkMessage !== "object") {
-    return [];
+const getSdkResultErrorMessage = (message: SDKResultMessage) => {
+  if (message.subtype === "success") {
+    return "";
   }
 
+  const details = Array.isArray(message.errors)
+    ? message.errors.map((item) => item.trim()).filter(Boolean)
+    : [];
+  if (details.length) {
+    return details.join("\n");
+  }
+
+  return `Claude Agent SDK ended with ${message.subtype}.`;
+};
+
+const appendStatusEvents = (message: SDKStatusMessage, events: AgentStreamEvent[]) => {
+  if (message.subtype !== "status") {
+    return;
+  }
+
+  if (message.status === "compacting") {
+    events.push({ type: "compacting" });
+  } else {
+    events.push({ type: "compact_complete" });
+  }
+};
+
+const appendHookResponseEvents = (message: SDKHookResponseMessage, events: AgentStreamEvent[]) => {
+  const stdout = message.stdout.trim();
+  const stderr = message.stderr.trim();
+  const parts = [stdout, stderr].filter(Boolean);
+  if (!parts.length) {
+    return;
+  }
+
+  events.push({
+    type: "task_progress",
+    message: `${message.hook_name}: ${parts.join(" | ")}`
+  });
+};
+
+const appendAuthStatusEvents = (message: SDKAuthStatusMessage, events: AgentStreamEvent[]) => {
+  if (message.error?.trim()) {
+    events.push({
+      type: "error",
+      message: message.error.trim(),
+      code: "authentication_failed"
+    });
+    return;
+  }
+
+  const parts = message.output.map((item) => item.trim()).filter(Boolean);
+  if (parts.length) {
+    events.push({
+      type: "task_progress",
+      message: parts.join(" ")
+    });
+  }
+};
+
+const appendAssistantMessageEvents = (message: SDKAssistantMessage, events: AgentStreamEvent[]) => {
+  appendContentBlockEvents(extractContentBlocks(message), events, "complete");
+
+  if (message.error) {
+    events.push({
+      type: "error",
+      message: `Assistant message reported ${message.error}.`,
+      code: message.error
+    });
+  }
+};
+
+const convertSdkMessageToEvents = (sdkMessage: SDKMessage, state: StreamParseState): AgentStreamEvent[] => {
   const message = sdkMessage as Record<string, unknown>;
-  const type = readString(message.type).toLowerCase();
   const events: AgentStreamEvent[] = [];
 
-  if (type === "stream_event") {
+  if (sdkMessage.type === "stream_event") {
     const streamEvent = asRecord(message.event);
     if (streamEvent) {
       appendRawStreamEvent(streamEvent, events, state);
@@ -323,36 +401,53 @@ const convertSdkMessageToEvents = (sdkMessage: unknown, state: StreamParseState)
     events.push({ type: "usage_update", usage });
   }
 
-  if (type.includes("error")) {
-    const errorValue = message.error;
-    const errorMessage =
-      (errorValue && typeof errorValue === "object"
-        ? readString((errorValue as Record<string, unknown>).message)
-        : "") || readString(message.message);
+  if (sdkMessage.type === "result") {
+    const errorMessage = getSdkResultErrorMessage(sdkMessage);
     if (errorMessage) {
-      events.push({ type: "error", message: errorMessage, code: readString(message.code) || undefined });
-      return events;
+      events.push({
+        type: "error",
+        message: errorMessage,
+        code: sdkMessage.subtype
+      });
     }
+    return events;
   }
 
-  if (type === "tool_progress") {
-    const toolName = readString(message.tool_name) || readString(message.toolName) || "tool";
-    const elapsed =
-      typeof message.elapsed_time_seconds === "number" && Number.isFinite(message.elapsed_time_seconds)
-        ? Math.max(0, message.elapsed_time_seconds)
-        : null;
+  if (sdkMessage.type === "tool_progress") {
+    const toolProgress = sdkMessage as SDKToolProgressMessage;
     events.push({
       type: "task_progress",
-      message: elapsed !== null ? `${toolName} (${elapsed.toFixed(1)}s)` : toolName
+      message: `${toolProgress.tool_name} (${Math.max(0, toolProgress.elapsed_time_seconds).toFixed(1)}s)`
     });
     return events;
   }
 
+  if (sdkMessage.type === "assistant") {
+    appendAssistantMessageEvents(sdkMessage, events);
+    return events;
+  }
+
+  if (sdkMessage.type === "system" && sdkMessage.subtype === "status") {
+    appendStatusEvents(sdkMessage, events);
+    return events;
+  }
+
+  if (sdkMessage.type === "system" && sdkMessage.subtype === "hook_response") {
+    appendHookResponseEvents(sdkMessage, events);
+    return events;
+  }
+
+  if (sdkMessage.type === "auth_status") {
+    appendAuthStatusEvents(sdkMessage as SDKAuthStatusMessage, events);
+    return events;
+  }
+
+  const type = readString(message.type).toLowerCase();
   const toolName = readString(message.toolName) || readString(message.name);
   const toolId = readString(message.toolId) || readString(message.id) || readString(message.tool_call_id);
   const isToolStartSignal = type.includes("tool") && (type.includes("start") || type.includes("use"));
   const isToolResultSignal = type.includes("tool") && (type.includes("result") || type.includes("output"));
-  if (type.includes("tool") && (type.includes("start") || type.includes("use")) && (toolName || toolId)) {
+  if (isToolStartSignal && (toolName || toolId)) {
     events.push({
       type: "tool_start",
       toolId: toolId || toolName,
@@ -361,7 +456,7 @@ const convertSdkMessageToEvents = (sdkMessage: unknown, state: StreamParseState)
     });
   }
 
-  if (type.includes("tool") && (type.includes("result") || type.includes("output")) && (toolName || toolId)) {
+  if (isToolResultSignal && (toolName || toolId)) {
     events.push({
       type: "tool_result",
       toolId: toolId || toolName,
@@ -375,8 +470,7 @@ const convertSdkMessageToEvents = (sdkMessage: unknown, state: StreamParseState)
 
   if (!isToolStartSignal && !isToolResultSignal) {
     const inlineTextCandidates = [readString(message.text), readString(message.delta), readString(message.message)]
-      .map((value) => value.trim())
-      .filter(Boolean);
+      .filter((value) => value.length > 0);
     for (const candidate of inlineTextCandidates) {
       pushTextEvent(events, candidate, type.includes("delta") ? "delta" : "complete", true);
     }
@@ -415,7 +509,32 @@ const convertSdkMessageToEvents = (sdkMessage: unknown, state: StreamParseState)
   return events;
 };
 
+const extractFinalResultText = (sdkMessage: SDKMessage) => {
+  if (sdkMessage.type !== "result" || sdkMessage.subtype !== "success") {
+    return undefined;
+  }
+
+  const result = sdkMessage.result;
+  return typeof result === "string" && result.length ? result : undefined;
+};
+
+type EchoSdkOptions = Omit<Options, "executable"> & {
+  executable?: string;
+  stderr?: (chunk: string) => void;
+};
+
+type ClaudeAgentSdkModule = typeof import("@anthropic-ai/claude-agent-sdk");
+
+// Cache expensive resolution results so they are only computed once per process.
+let _cachedNodeExecutable: string | null | undefined = undefined;
+let _cachedPackagedCli: { path: string; requiresElectronRuntime: boolean } | null | undefined = undefined;
+let _cachedSdkModule: ClaudeAgentSdkModule | undefined;
+
 const resolveNodeExecutable = () => {
+  if (_cachedNodeExecutable !== undefined) {
+    return _cachedNodeExecutable;
+  }
+
   const homeDir = process.env.HOME || process.env.USERPROFILE || "";
   const candidates: string[] = [];
 
@@ -455,15 +574,22 @@ const resolveNodeExecutable = () => {
   candidates.push("/opt/homebrew/bin/node", "/usr/local/bin/node", "/usr/bin/node");
   for (const candidate of candidates) {
     if (candidate && existsSync(candidate)) {
+      _cachedNodeExecutable = candidate;
       return candidate;
     }
   }
+  _cachedNodeExecutable = null;
   return null;
 };
 
 const resolvePackagedClaudeCliPath = (): { path: string; requiresElectronRuntime: boolean } | null => {
+  if (_cachedPackagedCli !== undefined) {
+    return _cachedPackagedCli;
+  }
+
   const resourcesPath = process.resourcesPath?.trim();
   if (!resourcesPath) {
+    _cachedPackagedCli = null;
     return null;
   }
 
@@ -476,7 +602,8 @@ const resolvePackagedClaudeCliPath = (): { path: string; requiresElectronRuntime
     "cli.js"
   );
   if (existsSync(unpackedCli)) {
-    return { path: unpackedCli, requiresElectronRuntime: false };
+    _cachedPackagedCli = { path: unpackedCli, requiresElectronRuntime: false };
+    return _cachedPackagedCli;
   }
 
   // Node cannot execute files inside app.asar directly. If unpacked CLI is missing,
@@ -489,7 +616,8 @@ const resolvePackagedClaudeCliPath = (): { path: string; requiresElectronRuntime
     "claude-agent-sdk",
     "cli.js"
   );
-  return { path: asarCli, requiresElectronRuntime: true };
+  _cachedPackagedCli = { path: asarCli, requiresElectronRuntime: true };
+  return _cachedPackagedCli;
 };
 
 const buildSdkOptions = (
@@ -499,7 +627,7 @@ const buildSdkOptions = (
   resumeSessionId?: string,
   onPermissionRequest?: RunClaudeAgentInput["onPermissionRequest"],
   onStderr?: (chunk: string) => void
-) => {
+): EchoSdkOptions => {
   const abortController = new AbortController();
   if (signal.aborted) {
     abortController.abort();
@@ -532,7 +660,7 @@ const buildSdkOptions = (
   const executable = useElectronAsNodeRuntime && electronExecPath
     ? electronExecPath
     : (systemNodePath || "node");
-  const options: Record<string, unknown> = {
+  const options: EchoSdkOptions = {
     model: settings.model.trim(),
     cwd,
     maxTurns: 30,
@@ -586,7 +714,7 @@ const buildSdkOptions = (
           behavior: "allow",
           updatedInput: response.updatedInput ?? parsedInput,
           updatedPermissions: Array.isArray(response.updatedPermissions)
-            ? response.updatedPermissions
+            ? (response.updatedPermissions as PermissionUpdate[])
             : undefined,
           toolUseID: requestId
         };
@@ -631,14 +759,16 @@ export const runClaudeAgentAdapter = async ({
     settings: request.settings,
     input,
     attachments: request.attachments,
-    history,
+    // Resumed SDK sessions already carry prior turns; replaying recent history here
+    // duplicates context and makes the agent more repetitive.
+    history: resumeSessionId ? [] : history,
     cwd,
     environmentSnapshot: request.environmentSnapshot
   });
 
-  const sdkModule = (await import("@anthropic-ai/claude-agent-sdk")) as {
-    query?: (payload: Record<string, unknown>) => AsyncIterable<unknown>;
-  };
+  const sdkModule =
+    _cachedSdkModule ??
+    ((_cachedSdkModule = await import("@anthropic-ai/claude-agent-sdk")), _cachedSdkModule);
 
   if (typeof sdkModule.query !== "function") {
     throw new Error("Claude Agent SDK is available but query() was not found.");
@@ -649,7 +779,7 @@ export const runClaudeAgentAdapter = async ({
     stderrTail = `${stderrTail}${chunk}`.slice(-4000);
   };
 
-  const iterator = sdkModule.query({
+  const iterator: Query = sdkModule.query({
     prompt,
     options: buildSdkOptions(
       request.settings,
@@ -658,7 +788,7 @@ export const runClaudeAgentAdapter = async ({
       resumeSessionId,
       onPermissionRequest,
       pushStderr
-    )
+    ) as Options
   });
 
   if (!iterator || typeof iterator[Symbol.asyncIterator] !== "function") {
@@ -666,6 +796,7 @@ export const runClaudeAgentAdapter = async ({
   }
 
   let assistantText = "";
+  let finalResultText = "";
   let usage: AgentUsage | undefined;
   let sdkSessionId: string | undefined;
   const streamParseState = createStreamParseState();
@@ -676,15 +807,12 @@ export const runClaudeAgentAdapter = async ({
         throw Object.assign(new Error("Aborted"), { name: "AbortError" });
       }
 
-      if (!sdkMessage || typeof sdkMessage !== "object") {
-        continue;
-      }
-
-      const typedMessage = sdkMessage as Record<string, unknown>;
+      const typedMessage = sdkMessage as SDKMessage;
       usage = extractUsage(typedMessage) ?? usage;
       sdkSessionId = extractSdkSessionId(typedMessage) ?? sdkSessionId;
+      finalResultText = extractFinalResultText(typedMessage) ?? finalResultText;
 
-      const events = convertSdkMessageToEvents(sdkMessage, streamParseState);
+      const events = convertSdkMessageToEvents(typedMessage, streamParseState);
       for (const event of events) {
         if (event.type === "text_delta") {
           assistantText = `${assistantText}${event.text}`;
@@ -697,6 +825,13 @@ export const runClaudeAgentAdapter = async ({
         }
 
         onEvent(event);
+
+        // SDK-level error messages are terminal in the current UI flow.
+        // Propagate them immediately so the orchestrator persists the real cause
+        // instead of falling through to an "empty response" error.
+        if (event.type === "error") {
+          throw new Error(event.message);
+        }
       }
     }
   } catch (error) {
@@ -718,8 +853,14 @@ export const runClaudeAgentAdapter = async ({
   }
 
   return {
-    assistantText: assistantText.trim(),
+    assistantText: assistantText || finalResultText,
     usage,
     sdkSessionId
   };
+};
+
+export const __test__ = {
+  convertSdkMessageToEvents,
+  createStreamParseState,
+  extractFinalResultText
 };

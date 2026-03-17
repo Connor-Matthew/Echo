@@ -147,7 +147,77 @@ export type SoulAutomationState = {
   lastMemoryUpdatedAt?: string;
   lastSoulRewriteAt?: string;
   lastSoulRewriteSlot?: string;
+  lastSoulRewriteSummary?: string;
   lastJournalDate?: string;
+};
+
+export type UserProfileLayer = "preferences" | "background" | "relationship";
+export type UserProfileItemStatus = "active" | "disabled";
+export type UserProfileItemSource = "auto" | "manual";
+
+export type UserProfileDailyNote = {
+  id: string;
+  date: string;
+  summaryMarkdown: string;
+  sourceMessageCount: number;
+  source: "auto" | "manual";
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type UserProfileItem = {
+  id: string;
+  layer: UserProfileLayer;
+  title: string;
+  description: string;
+  confidence: number;
+  status: UserProfileItemStatus;
+  source: UserProfileItemSource;
+  lastConfirmedAt: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type UserProfileEvidence = {
+  id: string;
+  profileItemId: string;
+  dailyNoteDate: string;
+  excerpt: string;
+  weight: number;
+  createdAt: string;
+};
+
+export type UserProfileAutomationState = {
+  lastProcessedUserMessageId?: string;
+  lastProcessedUserMessageCreatedAt?: string;
+  lastProfileUpdatedAt?: string;
+  lastDailyNoteDate?: string;
+};
+
+export type UserProfileItemDraft = {
+  layer: UserProfileLayer;
+  title: string;
+  description: string;
+  confidence: number;
+  evidence: Array<{
+    dailyNoteDate: string;
+    excerpt: string;
+    weight?: number;
+  }>;
+};
+
+export type UserProfileManualItemPayload = {
+  itemId?: string;
+  layer: UserProfileLayer;
+  title: string;
+  description: string;
+  confidence: number;
+  status?: UserProfileItemStatus;
+  evidence: Array<{
+    dailyNoteDate: string;
+    excerpt: string;
+    weight?: number;
+  }>;
 };
 
 export type EnvironmentSettings = {

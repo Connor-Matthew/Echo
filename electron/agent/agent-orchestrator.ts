@@ -12,6 +12,7 @@ import type {
   AgentTypedError
 } from "../../src/shared/agent-contracts";
 import { agentSessionManager } from "./agent-session-manager";
+import { upsertCollectedToolCall } from "./collected-tool-calls";
 import { runClaudeAgentQuery } from "./agent-service";
 import type { ToolCall } from "../../src/shared/contracts";
 
@@ -432,34 +433,10 @@ const runInBackground = async (
           streamedAssistantText = `${streamedAssistantText}${streamEvent.text}`;
         }
         if (streamEvent.type === "tool_start") {
-          const id = `tool:${streamEvent.toolId}`;
-          collectedToolCalls.set(id, {
-            id,
-            serverName: streamEvent.toolName,
-            toolName: streamEvent.toolName,
-            status: "pending",
-            message: streamEvent.input ?? "",
-            contentOffset: Math.max(0, streamedAssistantText.length)
-          });
+          upsertCollectedToolCall(collectedToolCalls, streamEvent, streamedAssistantText);
         }
         if (streamEvent.type === "tool_result") {
-          const id = `tool:${streamEvent.toolId}`;
-          const existing = collectedToolCalls.get(id);
-          collectedToolCalls.set(id, {
-            ...(existing ?? {
-              id,
-              serverName: streamEvent.toolName,
-              toolName: streamEvent.toolName,
-              message: "",
-              contentOffset: Math.max(0, streamedAssistantText.length)
-            }),
-            status: streamEvent.isError ? "error" : "success",
-            message: existing?.message ?? streamEvent.output ?? "",
-            contentOffset:
-              typeof existing?.contentOffset === "number" && Number.isFinite(existing.contentOffset)
-                ? existing.contentOffset
-                : Math.max(0, streamedAssistantText.length)
-          });
+          upsertCollectedToolCall(collectedToolCalls, streamEvent, streamedAssistantText);
         }
         emitEvent(sessionId, runId, state, emitEnvelope, streamEvent);
       },

@@ -29,6 +29,7 @@ export type SettingsSection =
   | "mcp"
   | "chat"
   | "memory"
+  | "profile"
   | "skills"
   | "environment"
   | "theme"
@@ -352,6 +353,7 @@ export const Sidebar = (props: SidebarProps) => {
       { key: "mcp", label: "MCP", icon: Server, group: "基础配置" },
       { key: "chat", label: "对话", icon: MessageSquare, group: "基础配置" },
       { key: "memory", label: "记忆", icon: Database, group: "能力增强" },
+      { key: "profile", label: "画像", icon: PenLine, group: "能力增强" },
       { key: "skills", label: "技能", icon: Sparkles, group: "能力增强" },
       { key: "environment", label: "环境", icon: Cpu, group: "能力增强" },
       { key: "soul", label: "灵魂", icon: Bot, group: "能力增强" },

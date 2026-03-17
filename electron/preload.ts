@@ -80,6 +80,20 @@ const api: MuApi = {
     getJournalEntry: (date) => ipcRenderer.invoke("soul:getJournalEntry", date),
     saveJournalEntry: (date, markdown) => ipcRenderer.invoke("soul:saveJournalEntry", date, markdown),
     listJournalDates: () => ipcRenderer.invoke("soul:listJournalDates")
+  },
+  profile: {
+    listDailyNotes: () => ipcRenderer.invoke("profile:listDailyNotes"),
+    getDailyNote: (date) => ipcRenderer.invoke("profile:getDailyNote", date),
+    upsertDailyNote: (note) => ipcRenderer.invoke("profile:upsertDailyNote", note),
+    listItems: (layer) => ipcRenderer.invoke("profile:listItems", layer),
+    listEvidence: (profileItemId) => ipcRenderer.invoke("profile:listEvidence", profileItemId),
+    replaceAutoProfile: (payload) => ipcRenderer.invoke("profile:replaceAutoProfile", payload),
+    saveManualItem: (payload) => ipcRenderer.invoke("profile:saveManualItem", payload),
+    updateItemStatus: (payload) => ipcRenderer.invoke("profile:updateItemStatus", payload),
+    deleteItem: (itemId) => ipcRenderer.invoke("profile:deleteItem", itemId),
+    getSnapshotMarkdown: () => ipcRenderer.invoke("profile:getSnapshotMarkdown"),
+    getAutomationState: () => ipcRenderer.invoke("profile:getAutomationState"),
+    saveAutomationState: (state) => ipcRenderer.invoke("profile:saveAutomationState", state)
   }
 };
 

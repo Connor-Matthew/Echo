@@ -3,7 +3,9 @@ import { describe, it } from "node:test";
 import type { ChatMessage } from "../../shared/contracts";
 import {
   getActiveGeneratingAssistantId,
-  getFollowTargetTop
+  getLatestUserMessageId,
+  getTopSnapBottomSpacerHeight,
+  getTopSnappedMessageScrollTop
 } from "./use-chat-scroll-follow";
 
 const createMessage = (overrides: Partial<ChatMessage>): ChatMessage => ({
@@ -29,15 +31,43 @@ describe("components/chat/use-chat-scroll-follow helpers", () => {
     assert.equal(getActiveGeneratingAssistantId(messages, false), null);
   });
 
-  it("returns bottomTop for non-streaming follow", () => {
+  it("returns the newest user message id", () => {
+    const messages: ChatMessage[] = [
+      createMessage({ id: "u1", role: "user", content: "first" }),
+      createMessage({ id: "a1", role: "assistant", content: "reply" }),
+      createMessage({ id: "u2", role: "user", content: "latest" })
+    ];
+    assert.equal(getLatestUserMessageId(messages), "u2");
+  });
+
+  it("computes a top-snapped scroll target for the newest user message", () => {
     assert.equal(
-      getFollowTargetTop({ bottomTop: 800, currentTop: 500, streaming: false }),
-      800
+      getTopSnappedMessageScrollTop({
+        contentTop: 20,
+        topInset: 20,
+        messageTop: 540
+      }),
+      540
     );
   });
 
-  it("keeps a stepped tail distance for streaming follow", () => {
-    const target = getFollowTargetTop({ bottomTop: 1000, currentTop: 700, streaming: true });
-    assert.equal(target, 900);
+  it("adds bottom spacer when top snap target exceeds current max scroll", () => {
+    assert.equal(
+      getTopSnapBottomSpacerHeight({
+        targetTop: 540,
+        bottomTop: 420
+      }),
+      120
+    );
+  });
+
+  it("does not add bottom spacer when target is already reachable", () => {
+    assert.equal(
+      getTopSnapBottomSpacerHeight({
+        targetTop: 320,
+        bottomTop: 420
+      }),
+      0
+    );
   });
 });

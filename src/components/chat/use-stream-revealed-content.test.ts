@@ -1,15 +1,16 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  resolveStreamRevealCommitLength,
   resolveStreamRevealCharsPerSecond,
   resolveStreamRevealStep
 } from "./use-stream-revealed-content";
 
 describe("components/chat/use-stream-revealed-content", () => {
   it("selects reveal speed by remaining content length", () => {
-    assert.equal(resolveStreamRevealCharsPerSecond(900), 420);
-    assert.equal(resolveStreamRevealCharsPerSecond(400), 300);
-    assert.equal(resolveStreamRevealCharsPerSecond(120), 170);
+    assert.equal(resolveStreamRevealCharsPerSecond(900), 6400);
+    assert.equal(resolveStreamRevealCharsPerSecond(400), 5200);
+    assert.equal(resolveStreamRevealCharsPerSecond(120), 4200);
   });
 
   it("computes reveal step with max-step and carry behavior", () => {
@@ -26,11 +27,17 @@ describe("components/chat/use-stream-revealed-content", () => {
     near(second.nextCarry, 0.9);
 
     const third = resolveStreamRevealStep(99.2, 100);
-    assert.equal(third.step, 24);
+    assert.equal(third.step, 99);
     near(third.nextCarry, 0.2);
 
     const fourth = resolveStreamRevealStep(10.1, 3);
     assert.equal(fourth.step, 3);
     near(fourth.nextCarry, 0.1);
+  });
+
+  it("commits the full buffered burst without stretching the tail", () => {
+    const target = "Hello world, this lands cleanly";
+    assert.equal(resolveStreamRevealCommitLength(target, 0, 5), 5);
+    assert.equal(resolveStreamRevealCommitLength(target, 6, 12), 12);
   });
 });

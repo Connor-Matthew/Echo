@@ -3,13 +3,13 @@
   --echo-shell-bg-mid: 220 20% 92%;
   --echo-shell-bg-end: 220 22% 94%;
 
-  --echo-shell-frame-border-alpha: 0.35;
-  --echo-shell-frame-bg-alpha: 0.62;
+  --echo-shell-frame-border-alpha: 0.24;
+  --echo-shell-frame-bg-alpha: 0;
   --echo-shell-radius: 22px;
   --echo-shell-panel-radius: 18px;
   --echo-shell-shadow-window: 0 14px 34px rgba(15, 23, 42, 0.06);
-  --echo-shell-padding-compact: 0.375rem;
-  --echo-shell-padding-regular: 0.5rem;
+  --echo-shell-padding-compact: 0rem;
+  --echo-shell-padding-regular: 0rem;
   --echo-shell-column-gap-open: 0.4rem;
 
   --echo-panel-border-alpha: 0.45;
@@ -17,9 +17,11 @@
 
   --echo-sidebar-bg-alpha: 0.35;
   --echo-nav-active-bg-alpha: 0.72;
-  --echo-nav-hover-bg-alpha: 0.55;
-  --echo-session-hover-bg-alpha: 0.85;
+  --echo-nav-hover-bg-alpha: 0.72;
+  --echo-session-hover-bg-alpha: 0.78;
   --echo-session-active-ring-alpha: 0.24;
+  --echo-sidebar-hover-bg: 0 0% 100%;
+  --echo-sidebar-hover-text: 220 18% 12%;
 
   --echo-mode-switch-border-alpha: 0.45;
   --echo-mode-switch-bg-alpha: 0.6;
@@ -60,8 +62,10 @@
 
   --echo-sidebar-bg-alpha: 0.42;
   --echo-nav-active-bg-alpha: 0.62;
-  --echo-nav-hover-bg-alpha: 0.48;
-  --echo-session-hover-bg-alpha: 0.74;
+  --echo-nav-hover-bg-alpha: 0.52;
+  --echo-session-hover-bg-alpha: 0.5;
+  --echo-sidebar-hover-bg: 220 13% 24%;
+  --echo-sidebar-hover-text: 220 12% 92%;
 
   --echo-mode-switch-bg-alpha: 0.48;
   --echo-mode-switch-thumb-bg-alpha: 0.58;

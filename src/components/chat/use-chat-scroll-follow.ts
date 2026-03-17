@@ -1,21 +1,8 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChatMessage } from "../../shared/contracts";
 
 const AUTO_SCROLL_THRESHOLD = 24;
-const STREAM_AUTO_FOLLOW_INTERVAL_MS = 260;
-const STREAM_RESIZE_FOLLOW_INTERVAL_MS = 240;
-const STREAM_RESIZE_FOLLOW_MIN_DELTA_PX = 16;
-const STREAM_FOLLOW_TAIL_MIN_PX = 24;
-const STREAM_FOLLOW_TAIL_MAX_PX = 96;
-const STREAM_FOLLOW_TAIL_RATIO = 0.42;
-const STREAM_FOLLOW_TARGET_STEP_PX = 10;
-const STREAM_FOLLOW_MAGNETIC_SNAP_RANGE = 40;
-const CINEMATIC_FOLLOW_SPRING_STIFFNESS = 330;
-const CINEMATIC_FOLLOW_DAMPING = 38;
-const CINEMATIC_FOLLOW_MAX_DT_SECONDS = 1 / 24;
-const CINEMATIC_FOLLOW_STOP_DISTANCE_PX = 0.6;
-const CINEMATIC_FOLLOW_STOP_VELOCITY = 12;
-const MANUAL_SCROLL_LERP_FACTOR = 0.14;
+const TOP_SNAPPED_MESSAGE_SELECTOR = "[data-chat-message-id]";
 
 type UseChatScrollFollowParams = {
   sessionId: string;
@@ -39,27 +26,28 @@ export const getActiveGeneratingAssistantId = (
   return null;
 };
 
-export const getFollowTargetTop = (payload: {
-  bottomTop: number;
-  currentTop: number;
-  streaming: boolean;
-}) => {
-  if (!payload.streaming) {
-    return payload.bottomTop;
+export const getLatestUserMessageId = (messages: ChatMessage[]) => {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].role === "user") {
+      return messages[index].id;
+    }
   }
-  const distanceToBottom = Math.max(0, payload.bottomTop - payload.currentTop);
-  if (distanceToBottom <= STREAM_FOLLOW_MAGNETIC_SNAP_RANGE) {
-    return payload.bottomTop;
-  }
-  const tailDistance = Math.min(
-    STREAM_FOLLOW_TAIL_MAX_PX,
-    Math.max(STREAM_FOLLOW_TAIL_MIN_PX, distanceToBottom * STREAM_FOLLOW_TAIL_RATIO)
-  );
-  const rawTarget = Math.max(0, payload.bottomTop - tailDistance);
-  const steppedTarget =
-    Math.floor(rawTarget / STREAM_FOLLOW_TARGET_STEP_PX) * STREAM_FOLLOW_TARGET_STEP_PX;
-  return Math.max(0, Math.min(payload.bottomTop, steppedTarget));
+  return null;
 };
+
+export const getTopSnappedMessageScrollTop = (payload: {
+  contentTop: number;
+  messageTop: number;
+  topInset: number;
+}) => Math.max(0, payload.contentTop + payload.messageTop - payload.topInset);
+
+export const getTopSnapBottomSpacerHeight = (payload: {
+  targetTop: number;
+  bottomTop: number;
+}) => Math.max(0, payload.targetTop - payload.bottomTop);
+
+const getBottomScrollTop = (container: HTMLElement) =>
+  Math.max(0, container.scrollHeight - container.clientHeight);
 
 export const useChatScrollFollow = ({
   sessionId,
@@ -69,20 +57,27 @@ export const useChatScrollFollow = ({
 }: UseChatScrollFollowParams) => {
   const scrollContainerRef = useRef<HTMLElement | null>(null);
   const scrollContentRef = useRef<HTMLDivElement | null>(null);
-  const shouldAutoScrollRef = useRef(true);
-  const pendingScrollFrameRef = useRef<number | null>(null);
-  const smoothScrollFrameRef = useRef<number | null>(null);
-  const manualScrollFrameRef = useRef<number | null>(null);
-  const manualScrollTargetRef = useRef<number | null>(null);
-  const cinematicFollowVelocityRef = useRef(0);
-  const cinematicFollowLastTimestampRef = useRef<number | null>(null);
-  const cinematicFollowStreamingRef = useRef(false);
-  const streamResizeLastFollowAtRef = useRef(0);
-  const streamResizeLastHeightRef = useRef(0);
   const isProgrammaticScrollRef = useRef(false);
-  const lastStreamFollowAtRef = useRef(0);
-  const lastScrollTopRef = useRef(0);
   const previousMessageCountRef = useRef(messages.length);
+  const previousLatestUserMessageIdRef = useRef<string | null>(getLatestUserMessageId(messages));
+  const anchoredUserMessageIdRef = useRef<string | null>(null);
+  const resizeFrameRef = useRef<number | null>(null);
+  const sessionScrollFrameRef = useRef<number | null>(null);
+  const shouldAutoScrollRef = useRef(true);
+  const [anchoredUserMessageId, setAnchoredUserMessageId] = useState<string | null>(null);
+
+  const activeGeneratingAssistantId = useMemo(
+    () => getActiveGeneratingAssistantId(messages, isGenerating),
+    [isGenerating, messages]
+  );
+
+  const setBottomSpacer = (height: number) => {
+    const content = scrollContentRef.current;
+    if (!content) {
+      return;
+    }
+    content.style.paddingBottom = height > 0 ? `${height}px` : "";
+  };
 
   const setProgrammaticScrollTop = (container: HTMLElement, nextTop: number) => {
     if (Math.abs(container.scrollTop - nextTop) <= 0.5) {
@@ -92,91 +87,55 @@ export const useChatScrollFollow = ({
     container.scrollTop = nextTop;
   };
 
-  const stopCinematicFollow = () => {
-    if (smoothScrollFrameRef.current !== null) {
-      window.cancelAnimationFrame(smoothScrollFrameRef.current);
-      smoothScrollFrameRef.current = null;
-    }
-    cinematicFollowVelocityRef.current = 0;
-    cinematicFollowLastTimestampRef.current = null;
+  const clearAnchor = () => {
+    anchoredUserMessageIdRef.current = null;
+    setAnchoredUserMessageId(null);
+    setBottomSpacer(0);
   };
 
-  const requestCinematicFollow = (streaming: boolean) => {
-    cinematicFollowStreamingRef.current = streaming;
-    if (!shouldAutoScrollRef.current) {
-      return;
+  const alignBottom = () => {
+    const container = scrollContainerRef.current;
+    if (!container) {
+      return false;
     }
-    if (smoothScrollFrameRef.current !== null) {
-      return;
-    }
-    cinematicFollowLastTimestampRef.current = null;
-
-    const animate = (timestamp: number) => {
-      const container = scrollContainerRef.current;
-      if (!container || !shouldAutoScrollRef.current) {
-        stopCinematicFollow();
-        return;
-      }
-
-      const bottomTop = Math.max(0, container.scrollHeight - container.clientHeight);
-      const targetTop = getFollowTargetTop({
-        bottomTop,
-        currentTop: container.scrollTop,
-        streaming: cinematicFollowStreamingRef.current
-      });
-      const currentTop = container.scrollTop;
-      const delta = targetTop - currentTop;
-      const previousTimestamp = cinematicFollowLastTimestampRef.current;
-      const dt =
-        previousTimestamp === null
-          ? 1 / 60
-          : Math.min(
-              CINEMATIC_FOLLOW_MAX_DT_SECONDS,
-              Math.max(1 / 240, (timestamp - previousTimestamp) / 1000)
-            );
-      cinematicFollowLastTimestampRef.current = timestamp;
-
-      const acceleration =
-        delta * CINEMATIC_FOLLOW_SPRING_STIFFNESS -
-        cinematicFollowVelocityRef.current * CINEMATIC_FOLLOW_DAMPING;
-      cinematicFollowVelocityRef.current += acceleration * dt;
-      const nextTop = Math.max(
-        0,
-        Math.min(bottomTop, currentTop + cinematicFollowVelocityRef.current * dt)
-      );
-      setProgrammaticScrollTop(container, nextTop);
-
-      const distanceToTarget = targetTop - container.scrollTop;
-      const distanceToBottom = bottomTop - container.scrollTop;
-      const shouldMagneticSnap =
-        cinematicFollowStreamingRef.current &&
-        distanceToBottom <= STREAM_FOLLOW_MAGNETIC_SNAP_RANGE &&
-        cinematicFollowVelocityRef.current > -10;
-      if (shouldMagneticSnap) {
-        setProgrammaticScrollTop(container, bottomTop);
-        stopCinematicFollow();
-        return;
-      }
-      if (
-        Math.abs(distanceToTarget) <= CINEMATIC_FOLLOW_STOP_DISTANCE_PX &&
-        Math.abs(cinematicFollowVelocityRef.current) <= CINEMATIC_FOLLOW_STOP_VELOCITY
-      ) {
-        setProgrammaticScrollTop(container, targetTop);
-        stopCinematicFollow();
-        return;
-      }
-      smoothScrollFrameRef.current = window.requestAnimationFrame(animate);
-    };
-
-    smoothScrollFrameRef.current = window.requestAnimationFrame(animate);
+    setBottomSpacer(0);
+    setProgrammaticScrollTop(container, getBottomScrollTop(container));
+    return true;
   };
 
-  const latestMessage = messages[messages.length - 1];
-  const activeGeneratingAssistantId = useMemo(
-    () => getActiveGeneratingAssistantId(messages, isGenerating),
-    [isGenerating, messages]
-  );
-  const hasGeneratingAssistant = isGenerating && Boolean(activeGeneratingAssistantId);
+  const alignAnchoredUserMessage = (messageId: string) => {
+    const container = scrollContainerRef.current;
+    const content = scrollContentRef.current;
+    if (!container || !content) {
+      return false;
+    }
+
+    const messageElement = content.querySelector<HTMLElement>(
+      `${TOP_SNAPPED_MESSAGE_SELECTOR}[data-chat-message-id="${messageId}"]`
+    );
+    if (!messageElement) {
+      return false;
+    }
+
+    const computedStyle = window.getComputedStyle(container);
+    const topInset = Number.parseFloat(computedStyle.paddingTop || "0") || 0;
+    const targetTop = getTopSnappedMessageScrollTop({
+      contentTop: content.offsetTop,
+      messageTop: messageElement.offsetTop,
+      topInset
+    });
+
+    const bottomTop = getBottomScrollTop(container);
+    setBottomSpacer(
+      getTopSnapBottomSpacerHeight({
+        targetTop,
+        bottomTop
+      })
+    );
+
+    setProgrammaticScrollTop(container, Math.min(targetTop, getBottomScrollTop(container)));
+    return true;
+  };
 
   useEffect(() => {
     const container = scrollContainerRef.current;
@@ -184,90 +143,24 @@ export const useChatScrollFollow = ({
       return;
     }
 
-    const isNearBottom = () =>
-      container.scrollHeight - container.scrollTop - container.clientHeight <= AUTO_SCROLL_THRESHOLD;
-
-    const onWheel = (event: WheelEvent) => {
-      let deltaY = event.deltaY;
-      if (event.deltaMode === WheelEvent.DOM_DELTA_LINE) {
-        deltaY *= 16;
-      } else if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE) {
-        deltaY *= container.clientHeight;
-      }
-
-      if (Math.abs(deltaY) < 0.1) {
-        return;
-      }
-
-      event.preventDefault();
-      const nearBottomBeforeScroll = isNearBottom();
-      if (deltaY < 0 || !nearBottomBeforeScroll) {
-        shouldAutoScrollRef.current = false;
-      }
-
-      stopCinematicFollow();
-
-      const maxTop = Math.max(0, container.scrollHeight - container.clientHeight);
-      const baseTarget = manualScrollTargetRef.current ?? container.scrollTop;
-      manualScrollTargetRef.current = Math.max(0, Math.min(maxTop, baseTarget + deltaY));
-
-      if (manualScrollFrameRef.current !== null) {
-        return;
-      }
-
-      const animateManualScroll = () => {
-        const target = manualScrollTargetRef.current;
-        if (target === null) {
-          manualScrollFrameRef.current = null;
-          return;
-        }
-        const current = container.scrollTop;
-        const delta = target - current;
-        if (Math.abs(delta) <= 0.6) {
-          setProgrammaticScrollTop(container, target);
-          lastScrollTopRef.current = target;
-          manualScrollTargetRef.current = null;
-          manualScrollFrameRef.current = null;
-          return;
-        }
-
-        setProgrammaticScrollTop(container, current + delta * MANUAL_SCROLL_LERP_FACTOR);
-        lastScrollTopRef.current = container.scrollTop;
-        manualScrollFrameRef.current = window.requestAnimationFrame(animateManualScroll);
-      };
-
-      manualScrollFrameRef.current = window.requestAnimationFrame(animateManualScroll);
-    };
+    const isNearBottom = () => getBottomScrollTop(container) - container.scrollTop <= AUTO_SCROLL_THRESHOLD;
 
     const onScroll = () => {
-      const currentTop = container.scrollTop;
-
       if (isProgrammaticScrollRef.current) {
         isProgrammaticScrollRef.current = false;
-        lastScrollTopRef.current = currentTop;
         return;
       }
 
-      stopCinematicFollow();
-      if (manualScrollFrameRef.current !== null) {
-        window.cancelAnimationFrame(manualScrollFrameRef.current);
-        manualScrollFrameRef.current = null;
+      shouldAutoScrollRef.current = isNearBottom();
+      if (anchoredUserMessageIdRef.current) {
+        clearAnchor();
       }
-      manualScrollTargetRef.current = null;
-      const nearBottom = isNearBottom();
-
-      shouldAutoScrollRef.current = nearBottom;
-
-      lastScrollTopRef.current = currentTop;
     };
 
-    lastScrollTopRef.current = container.scrollTop;
     shouldAutoScrollRef.current = isNearBottom();
-    container.addEventListener("wheel", onWheel, { passive: false });
     container.addEventListener("scroll", onScroll, { passive: true });
 
     return () => {
-      container.removeEventListener("wheel", onWheel);
       container.removeEventListener("scroll", onScroll);
     };
   }, [isConfigured]);
@@ -279,155 +172,96 @@ export const useChatScrollFollow = ({
       return;
     }
 
-    let frameId: number | null = null;
-    const queueCinematicFollow = () => {
-      frameId = null;
-      if (!shouldAutoScrollRef.current) {
-        return;
-      }
-      requestCinematicFollow(hasGeneratingAssistant);
-    };
-
     const observer = new ResizeObserver(() => {
-      if (!shouldAutoScrollRef.current) {
-        return;
+      if (resizeFrameRef.current !== null) {
+        window.cancelAnimationFrame(resizeFrameRef.current);
       }
-      if (hasGeneratingAssistant) {
-        const now = window.performance.now();
-        const currentHeight = content.scrollHeight;
-        const heightDelta = Math.abs(currentHeight - streamResizeLastHeightRef.current);
-        const intervalElapsed = now - streamResizeLastFollowAtRef.current;
-        if (
-          heightDelta < STREAM_RESIZE_FOLLOW_MIN_DELTA_PX &&
-          intervalElapsed < STREAM_RESIZE_FOLLOW_INTERVAL_MS
-        ) {
+
+      resizeFrameRef.current = window.requestAnimationFrame(() => {
+        resizeFrameRef.current = null;
+        if (anchoredUserMessageIdRef.current) {
+          alignAnchoredUserMessage(anchoredUserMessageIdRef.current);
           return;
         }
-        streamResizeLastHeightRef.current = currentHeight;
-        streamResizeLastFollowAtRef.current = now;
-      }
-      if (frameId !== null) {
-        window.cancelAnimationFrame(frameId);
-      }
-      frameId = window.requestAnimationFrame(queueCinematicFollow);
+        if (shouldAutoScrollRef.current) {
+          alignBottom();
+        }
+      });
     });
+
     observer.observe(content);
-    streamResizeLastHeightRef.current = content.scrollHeight;
-    streamResizeLastFollowAtRef.current = window.performance.now();
 
     return () => {
       observer.disconnect();
-      if (frameId !== null) {
-        window.cancelAnimationFrame(frameId);
+      if (resizeFrameRef.current !== null) {
+        window.cancelAnimationFrame(resizeFrameRef.current);
+        resizeFrameRef.current = null;
       }
     };
-  }, [hasGeneratingAssistant, isConfigured, messages.length, sessionId]);
+  }, [isConfigured]);
 
   useEffect(() => {
-    return () => {
-      if (pendingScrollFrameRef.current !== null) {
-        window.cancelAnimationFrame(pendingScrollFrameRef.current);
-      }
-      stopCinematicFollow();
-      if (manualScrollFrameRef.current !== null) {
-        window.cancelAnimationFrame(manualScrollFrameRef.current);
-      }
-    };
-  }, []);
+    if (sessionScrollFrameRef.current !== null) {
+      window.cancelAnimationFrame(sessionScrollFrameRef.current);
+    }
 
-  useEffect(() => {
-    const container = scrollContainerRef.current;
-    if (!container) {
-      return;
-    }
-    if (pendingScrollFrameRef.current !== null) {
-      window.cancelAnimationFrame(pendingScrollFrameRef.current);
-    }
-    stopCinematicFollow();
-    if (manualScrollFrameRef.current !== null) {
-      window.cancelAnimationFrame(manualScrollFrameRef.current);
-      manualScrollFrameRef.current = null;
-    }
-    manualScrollTargetRef.current = null;
-    lastStreamFollowAtRef.current = 0;
-    cinematicFollowStreamingRef.current = false;
-    streamResizeLastFollowAtRef.current = 0;
-    streamResizeLastHeightRef.current = 0;
+    clearAnchor();
     shouldAutoScrollRef.current = true;
     previousMessageCountRef.current = messages.length;
-    pendingScrollFrameRef.current = window.requestAnimationFrame(() => {
-      pendingScrollFrameRef.current = null;
-      const nextContainer = scrollContainerRef.current;
-      if (!nextContainer) {
-        return;
-      }
-      setProgrammaticScrollTop(nextContainer, nextContainer.scrollHeight);
-      lastScrollTopRef.current = nextContainer.scrollTop;
+    previousLatestUserMessageIdRef.current = getLatestUserMessageId(messages);
+
+    sessionScrollFrameRef.current = window.requestAnimationFrame(() => {
+      sessionScrollFrameRef.current = null;
+      alignBottom();
     });
+
+    return () => {
+      if (sessionScrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(sessionScrollFrameRef.current);
+        sessionScrollFrameRef.current = null;
+      }
+    };
   }, [sessionId]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!messages.length) {
       return;
     }
 
-    const previousMessageCount = previousMessageCountRef.current;
-    const hasNewMessage = messages.length > previousMessageCount;
-    const shouldForceScroll = latestMessage?.role === "user";
-    const isStreamingAssistantUpdate = Boolean(
-      hasGeneratingAssistant &&
-      latestMessage?.role === "assistant" &&
-      latestMessage?.id === activeGeneratingAssistantId &&
-      !hasNewMessage &&
-      !shouldForceScroll
-    );
-    const shouldFollow = shouldAutoScrollRef.current || shouldForceScroll;
-    if (!shouldFollow) {
-      previousMessageCountRef.current = messages.length;
-      return;
-    }
+    const hasNewMessage = messages.length > previousMessageCountRef.current;
+    const latestUserMessageId = getLatestUserMessageId(messages);
+    const latestUserMessageChanged = latestUserMessageId !== previousLatestUserMessageIdRef.current;
 
-    if (isStreamingAssistantUpdate) {
-      const now = window.performance.now();
-      if (now - lastStreamFollowAtRef.current < STREAM_AUTO_FOLLOW_INTERVAL_MS) {
-        previousMessageCountRef.current = messages.length;
-        return;
-      }
-      lastStreamFollowAtRef.current = now;
-    }
-
-    if (pendingScrollFrameRef.current !== null) {
-      window.cancelAnimationFrame(pendingScrollFrameRef.current);
-    }
-    pendingScrollFrameRef.current = window.requestAnimationFrame(() => {
-      pendingScrollFrameRef.current = null;
-      if (manualScrollFrameRef.current !== null) {
-        window.cancelAnimationFrame(manualScrollFrameRef.current);
-        manualScrollFrameRef.current = null;
-      }
-      manualScrollTargetRef.current = null;
-      const shouldUseStreamingTail = isStreamingAssistantUpdate && !shouldForceScroll && !hasNewMessage;
-      if (shouldForceScroll) {
-        cinematicFollowVelocityRef.current = Math.max(cinematicFollowVelocityRef.current, 380);
-      }
-      requestCinematicFollow(shouldUseStreamingTail);
+    if (latestUserMessageChanged && latestUserMessageId) {
+      anchoredUserMessageIdRef.current = latestUserMessageId;
+      setAnchoredUserMessageId(latestUserMessageId);
       shouldAutoScrollRef.current = true;
-    });
+      alignAnchoredUserMessage(latestUserMessageId);
+    } else if (anchoredUserMessageIdRef.current) {
+      alignAnchoredUserMessage(anchoredUserMessageIdRef.current);
+    } else if (shouldAutoScrollRef.current && hasNewMessage) {
+      alignBottom();
+    }
+
     previousMessageCountRef.current = messages.length;
-  }, [
-    messages.length,
-    activeGeneratingAssistantId,
-    hasGeneratingAssistant,
-    latestMessage?.id,
-    latestMessage?.content,
-    latestMessage?.reasoningContent,
-    latestMessage?.toolCalls?.length,
-    latestMessage?.toolCalls?.[latestMessage.toolCalls.length - 1]?.status
-  ]);
+    previousLatestUserMessageIdRef.current = latestUserMessageId;
+  }, [messages]);
+
+  useEffect(() => {
+    return () => {
+      if (resizeFrameRef.current !== null) {
+        window.cancelAnimationFrame(resizeFrameRef.current);
+      }
+      if (sessionScrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(sessionScrollFrameRef.current);
+      }
+    };
+  }, []);
 
   return {
     scrollContainerRef,
     scrollContentRef,
-    activeGeneratingAssistantId
+    activeGeneratingAssistantId,
+    isTopSnapActive: Boolean(anchoredUserMessageId)
   };
 };

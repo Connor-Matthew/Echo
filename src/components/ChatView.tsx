@@ -29,6 +29,8 @@ type EditAttachment = ChatAttachment & {
   error?: string;
 };
 
+type ToolCallItem = NonNullable<ChatMessage["toolCalls"]>[number];
+
 const cloneMessageAttachments = (attachments?: ChatAttachment[]): EditAttachment[] =>
   (attachments ?? []).map((attachment) => ({ ...attachment }));
 
@@ -67,6 +69,7 @@ type ChatViewProps = {
 type MessageBubbleProps = {
   message: ChatMessage;
   isGenerating: boolean;
+  isTopSnapActive: boolean;
   activeGeneratingAssistantId?: string | null;
   mode: "chat" | "agent";
   permissionRequest?: PermissionRequest | null;
@@ -173,9 +176,388 @@ const revokeAttachmentPreview = (attachment: EditAttachment) => {
   }
 };
 
+const AppliedSkillBadge = ({
+  appliedSkill
+}: {
+  appliedSkill?: ChatMessage["appliedSkill"];
+}) => {
+  if (!appliedSkill) {
+    return null;
+  }
+
+  return (
+    <div className="mb-1.5 flex items-center gap-1.5">
+      <span className="text-sm leading-none">{appliedSkill.icon}</span>
+      <span className="text-[11px] font-medium text-primary/80">{appliedSkill.name}</span>
+      <span className="text-[11px] text-muted-foreground">/{appliedSkill.command}</span>
+    </div>
+  );
+};
+
+const PendingToolBanner = ({
+  isVisible,
+  toolCalls
+}: {
+  isVisible: boolean;
+  toolCalls: ChatMessage["toolCalls"];
+}) => {
+  if (!isVisible) {
+    return null;
+  }
+
+  const pendingTool = [...(toolCalls ?? [])].reverse().find((toolCall) => toolCall.status === "pending");
+
+  if (!pendingTool) {
+    return null;
+  }
+
+  return (
+    <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+      <span className="flex gap-[3px]">
+        {[0, 1, 2].map((i) => (
+          <span
+            key={i}
+            className="inline-block h-1 w-1 rounded-full bg-muted-foreground/60"
+            style={{ animation: `mcpDot 1.2s ease-in-out ${i * 0.2}s infinite` }}
+          />
+        ))}
+      </span>
+      <span>
+        [{pendingTool.serverName}] {pendingTool.toolName}
+      </span>
+    </div>
+  );
+};
+
+const AssistantTextContent = ({
+  assistantVisibleContent,
+  clampedGroups,
+  shouldRenderAgentToolInline,
+  shouldUseStreamingTextPresentation,
+  isCurrentGeneratingAssistant,
+  activePendingExecutionCall,
+  activePendingProgressCall,
+  expandedAgentGroupIds,
+  expandedAgentResultIds,
+  permissionRequest,
+  onResolvePermission,
+  onToggleGroupDetail,
+  onToggleResultDetail
+}: {
+  assistantVisibleContent: string;
+  clampedGroups: ReturnType<typeof buildClampedToolAnchorGroups>;
+  shouldRenderAgentToolInline: boolean;
+  shouldUseStreamingTextPresentation: boolean;
+  isCurrentGeneratingAssistant: boolean;
+  activePendingExecutionCall?: ToolCallItem;
+  activePendingProgressCall?: ToolCallItem;
+  expandedAgentGroupIds: Record<string, boolean>;
+  expandedAgentResultIds: Record<string, boolean>;
+  permissionRequest?: PermissionRequest | null;
+  onResolvePermission?: (
+    request: PermissionRequest,
+    decision: "approved" | "denied",
+    applySuggestions: boolean
+  ) => void;
+  onToggleGroupDetail: (groupId: string) => void;
+  onToggleResultDetail: (toolCallId: string) => void;
+}) => {
+  if (!assistantVisibleContent) {
+    return <span className="text-muted-foreground">Generating...</span>;
+  }
+
+  if (!shouldRenderAgentToolInline) {
+    return (
+      <MarkdownContent
+        content={assistantVisibleContent}
+        isUser={false}
+        streaming={shouldUseStreamingTextPresentation}
+      />
+    );
+  }
+
+  const segments: ReactNode[] = [];
+  let cursor = 0;
+
+  for (let i = 0; i < clampedGroups.length; i += 1) {
+    const group = clampedGroups[i];
+    const textSlice = assistantVisibleContent.slice(cursor, group.offset);
+
+    if (textSlice) {
+      segments.push(
+        <MarkdownContent
+          key={`text-${i}`}
+          content={textSlice}
+          isUser={false}
+          streaming={shouldUseStreamingTextPresentation}
+        />
+      );
+    }
+
+    segments.push(
+      <div key={`tools-${i}`} className={i > 0 ? "mt-1" : ""}>
+        <AgentToolItems
+          items={group.items}
+          groupId={group.key}
+          isLastGroup={i === clampedGroups.length - 1}
+          expandedAgentGroupIds={expandedAgentGroupIds}
+          expandedAgentResultIds={expandedAgentResultIds}
+          isCurrentGeneratingAssistant={isCurrentGeneratingAssistant}
+          activePendingExecutionCall={activePendingExecutionCall}
+          activePendingProgressCall={activePendingProgressCall}
+          permissionRequest={permissionRequest}
+          onResolvePermission={onResolvePermission}
+          onToggleGroupDetail={onToggleGroupDetail}
+          onToggleResultDetail={onToggleResultDetail}
+        />
+      </div>
+    );
+
+    cursor = group.offset;
+  }
+
+  const tail = assistantVisibleContent.slice(cursor);
+  if (tail) {
+    segments.push(
+      <div key="text-tail" className="mt-1">
+        <MarkdownContent
+          content={tail}
+          isUser={false}
+          streaming={shouldUseStreamingTextPresentation}
+        />
+      </div>
+    );
+  }
+
+  return <>{segments}</>;
+};
+
+const UserMessageEditor = ({
+  isDragOver,
+  fileInputRef,
+  editDraft,
+  editAttachments,
+  isGenerating,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onFileInputChange,
+  onChangeDraft,
+  onRemoveAttachment,
+  onOpenFilePicker,
+  onCancel,
+  onSave
+}: {
+  isDragOver: boolean;
+  fileInputRef: React.RefObject<HTMLInputElement>;
+  editDraft: string;
+  editAttachments: EditAttachment[];
+  isGenerating: boolean;
+  onDragOver: (event: React.DragEvent<HTMLDivElement>) => void;
+  onDragLeave: () => void;
+  onDrop: (event: React.DragEvent<HTMLDivElement>) => void;
+  onFileInputChange: (files: FileList | null) => void;
+  onChangeDraft: (value: string) => void;
+  onRemoveAttachment: (attachmentId: string) => void;
+  onOpenFilePicker: () => void;
+  onCancel: () => void;
+  onSave: () => void;
+}) => (
+  <MessageEditPanel
+    isDragOver={isDragOver}
+    onDragOver={onDragOver}
+    onDragLeave={onDragLeave}
+    onDrop={onDrop}
+    fileInputRef={fileInputRef}
+    onFileInputChange={onFileInputChange}
+    editDraft={editDraft}
+    onChangeDraft={onChangeDraft}
+    editAttachments={editAttachments}
+    formatBytes={formatBytes}
+    onRemoveAttachment={onRemoveAttachment}
+    onOpenFilePicker={onOpenFilePicker}
+    onCancel={onCancel}
+    onSave={onSave}
+    isGenerating={isGenerating}
+  />
+);
+
+const MessageDisplaySurface = ({
+  message,
+  isUser,
+  isAgentMode,
+  isEditing,
+  isGenerating,
+  isDragOverEdit,
+  fileInputRef,
+  editDraft,
+  editAttachments,
+  hasMcpEvents,
+  hasReasoning,
+  isMcpEventsExpanded,
+  isReasoningExpanded,
+  shouldRenderAgentToolInline,
+  shouldShowAgentToolSection,
+  shouldUseStreamingTextPresentation,
+  assistantVisibleContent,
+  clampedGroups,
+  agentToolRenderItems,
+  expandedAgentGroupIds,
+  expandedAgentResultIds,
+  isCurrentGeneratingAssistant,
+  activePendingExecutionCall,
+  activePendingProgressCall,
+  permissionRequest,
+  onResolvePermission,
+  onDragOverEdit,
+  onDragLeaveEdit,
+  onDropEdit,
+  onFileInputChange,
+  onChangeDraft,
+  onRemoveAttachment,
+  onOpenFilePicker,
+  onCancelEditing,
+  onSaveEdit,
+  onToggleMcpEvents,
+  onToggleReasoning,
+  onToggleGroupDetail,
+  onToggleResultDetail
+}: {
+  message: ChatMessage;
+  isUser: boolean;
+  isAgentMode: boolean;
+  isEditing: boolean;
+  isGenerating: boolean;
+  isDragOverEdit: boolean;
+  fileInputRef: React.RefObject<HTMLInputElement>;
+  editDraft: string;
+  editAttachments: EditAttachment[];
+  hasMcpEvents: boolean;
+  hasReasoning: boolean;
+  isMcpEventsExpanded: boolean;
+  isReasoningExpanded: boolean;
+  shouldRenderAgentToolInline: boolean;
+  shouldShowAgentToolSection: boolean;
+  shouldUseStreamingTextPresentation: boolean;
+  assistantVisibleContent: string;
+  clampedGroups: ReturnType<typeof buildClampedToolAnchorGroups>;
+  agentToolRenderItems: ReturnType<typeof buildAgentToolRenderItems>;
+  expandedAgentGroupIds: Record<string, boolean>;
+  expandedAgentResultIds: Record<string, boolean>;
+  isCurrentGeneratingAssistant: boolean;
+  activePendingExecutionCall?: ToolCallItem;
+  activePendingProgressCall?: ToolCallItem;
+  permissionRequest?: PermissionRequest | null;
+  onResolvePermission?: (
+    request: PermissionRequest,
+    decision: "approved" | "denied",
+    applySuggestions: boolean
+  ) => void;
+  onDragOverEdit: (event: React.DragEvent<HTMLDivElement>) => void;
+  onDragLeaveEdit: () => void;
+  onDropEdit: (event: React.DragEvent<HTMLDivElement>) => void;
+  onFileInputChange: (files: FileList | null) => void;
+  onChangeDraft: (value: string) => void;
+  onRemoveAttachment: (attachmentId: string) => void;
+  onOpenFilePicker: () => void;
+  onCancelEditing: () => void;
+  onSaveEdit: () => void;
+  onToggleMcpEvents: () => void;
+  onToggleReasoning: () => void;
+  onToggleGroupDetail: (groupId: string) => void;
+  onToggleResultDetail: (toolCallId: string) => void;
+}) => {
+  if (isUser && isEditing) {
+    return (
+      <UserMessageEditor
+        isDragOver={isDragOverEdit}
+        fileInputRef={fileInputRef}
+        editDraft={editDraft}
+        editAttachments={editAttachments}
+        isGenerating={isGenerating}
+        onDragOver={onDragOverEdit}
+        onDragLeave={onDragLeaveEdit}
+        onDrop={onDropEdit}
+        onFileInputChange={onFileInputChange}
+        onChangeDraft={onChangeDraft}
+        onRemoveAttachment={onRemoveAttachment}
+        onOpenFilePicker={onOpenFilePicker}
+        onCancel={onCancelEditing}
+        onSave={onSaveEdit}
+      />
+    );
+  }
+
+  return (
+    <div
+      className={[
+        "inline-block w-fit max-w-full break-words rounded-md transition-opacity duration-150",
+        isUser
+          ? "chat-message-surface-user px-3 py-2 sm:px-3.5"
+          : "chat-message-surface-assistant px-2 py-1.5"
+      ].join(" ")}
+    >
+      {!isUser ? <AppliedSkillBadge appliedSkill={message.appliedSkill} /> : null}
+      <PendingToolBanner
+        isVisible={!isUser && !isAgentMode && isCurrentGeneratingAssistant}
+        toolCalls={message.toolCalls}
+      />
+      {hasMcpEvents && !isAgentMode ? (
+        <MessageToolCallsPanel
+          toolCalls={message.toolCalls ?? []}
+          isExpanded={isMcpEventsExpanded}
+          onToggle={onToggleMcpEvents}
+        />
+      ) : null}
+      {hasReasoning ? (
+        <MessageReasoningPanel isExpanded={isReasoningExpanded} onToggle={onToggleReasoning}>
+          <MarkdownContent content={message.reasoningContent ?? ""} isUser={false} />
+        </MessageReasoningPanel>
+      ) : null}
+      <div>
+        {isUser ? (
+          <MarkdownContent content={message.content} isUser={true} />
+        ) : (
+          <AssistantTextContent
+            assistantVisibleContent={assistantVisibleContent}
+            clampedGroups={clampedGroups}
+            shouldRenderAgentToolInline={shouldRenderAgentToolInline}
+            shouldUseStreamingTextPresentation={shouldUseStreamingTextPresentation}
+            isCurrentGeneratingAssistant={isCurrentGeneratingAssistant}
+            activePendingExecutionCall={activePendingExecutionCall}
+            activePendingProgressCall={activePendingProgressCall}
+            expandedAgentGroupIds={expandedAgentGroupIds}
+            expandedAgentResultIds={expandedAgentResultIds}
+            permissionRequest={permissionRequest}
+            onResolvePermission={onResolvePermission}
+            onToggleGroupDetail={onToggleGroupDetail}
+            onToggleResultDetail={onToggleResultDetail}
+          />
+        )}
+      </div>
+      {shouldShowAgentToolSection && !shouldRenderAgentToolInline ? (
+        <AgentToolItems
+          items={agentToolRenderItems}
+          groupId="standalone"
+          expandedAgentGroupIds={expandedAgentGroupIds}
+          expandedAgentResultIds={expandedAgentResultIds}
+          isCurrentGeneratingAssistant={isCurrentGeneratingAssistant}
+          activePendingExecutionCall={activePendingExecutionCall}
+          activePendingProgressCall={activePendingProgressCall}
+          permissionRequest={permissionRequest}
+          onResolvePermission={onResolvePermission}
+          onToggleGroupDetail={onToggleGroupDetail}
+          onToggleResultDetail={onToggleResultDetail}
+        />
+      ) : null}
+    </div>
+  );
+};
+
 const MessageBubble = ({
   message,
   isGenerating,
+  isTopSnapActive,
   activeGeneratingAssistantId,
   mode,
   permissionRequest,
@@ -186,6 +568,9 @@ const MessageBubble = ({
 }: MessageBubbleProps) => {
   const isUser = message.role === "user";
   const isAgentMode = mode === "agent";
+  const isCurrentGeneratingAssistant = Boolean(
+    !isUser && isGenerating && activeGeneratingAssistantId === message.id
+  );
   const [copied, setCopied] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editDraft, setEditDraft] = useState(message.content);
@@ -199,7 +584,8 @@ const MessageBubble = ({
   const [expandedAgentGroupIds, setExpandedAgentGroupIds] = useState<Record<string, boolean>>({});
   const displayedContent = useStreamRevealedContent({
     content: message.content,
-    role: message.role
+    role: message.role,
+    disabled: isCurrentGeneratingAssistant && isTopSnapActive
   });
   const editAttachmentsRef = useRef<EditAttachment[]>(editAttachments);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -327,9 +713,8 @@ const MessageBubble = ({
   const activePendingProgressCall = [...agentProgressCalls]
     .reverse()
     .find((toolCall) => toolCall.status === "pending");
-  const isCurrentGeneratingAssistant = Boolean(
-    !isUser && isGenerating && activeGeneratingAssistantId === message.id
-  );
+  const shouldUseStreamingTextPresentation =
+    !isUser && (isCurrentGeneratingAssistant || displayedContent !== message.content);
   const shouldShowAgentToolSection = isAgentMode && !isUser && hasMcpEvents;
   const assistantVisibleContent = isUser ? message.content : displayedContent;
 
@@ -513,164 +898,69 @@ const MessageBubble = ({
   };
 
   return (
-    <div className={`group paper-message-enter flex items-start gap-3 ${isUser ? "justify-end" : "justify-start"}`}>
+    <div
+      data-chat-message-id={message.id}
+      data-chat-message-role={message.role}
+      className={`group paper-message-enter flex items-start gap-3 ${isUser ? "justify-end" : "justify-start"}`}
+    >
       <div
         className={`flex flex-none flex-col ${
           isUser ? "chat-message-column-user" : "chat-message-column-assistant"
         }`}
       >
-        {isUser && isEditing ? (
-          <MessageEditPanel
-            isDragOver={isDragOverEdit}
-            onDragOver={(event) => {
-              event.preventDefault();
-              event.dataTransfer.dropEffect = "copy";
-              setIsDragOverEdit(true);
-            }}
-            onDragLeave={() => setIsDragOverEdit(false)}
-            onDrop={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              setIsDragOverEdit(false);
-              addEditFiles(event.dataTransfer.files);
-            }}
-            fileInputRef={fileInputRef}
-            onFileInputChange={addEditFiles}
-            editDraft={editDraft}
-            onChangeDraft={setEditDraft}
-            editAttachments={editAttachments}
-            formatBytes={formatBytes}
-            onRemoveAttachment={removeEditAttachment}
-            onOpenFilePicker={() => fileInputRef.current?.click()}
-            onCancel={() => {
-              setIsEditing(false);
-              resetEditState();
-            }}
-            onSave={saveEdit}
-            isGenerating={isGenerating}
-          />
-        ) : (
-          <div
-            className={[
-              "inline-block w-fit max-w-full break-words rounded-md transition-opacity duration-150",
-              isUser
-                ? "chat-message-surface-user px-3 py-2 sm:px-3.5"
-                : "chat-message-surface-assistant px-2 py-1.5"
-            ].join(" ")}
-          >
-            {!isUser && message.appliedSkill ? (
-              <div className="mb-1.5 flex items-center gap-1.5">
-                <span className="text-sm leading-none">{message.appliedSkill.icon}</span>
-                <span className="text-[11px] font-medium text-primary/80">{message.appliedSkill.name}</span>
-                <span className="text-[11px] text-muted-foreground">/{message.appliedSkill.command}</span>
-              </div>
-            ) : null}
-            {!isAgentMode && isCurrentGeneratingAssistant && (() => {
-              const pendingTool = [...(message.toolCalls ?? [])].reverse().find((tc) => tc.status === "pending");
-              return pendingTool ? (
-                <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
-                  <span className="flex gap-[3px]">
-                    {[0, 1, 2].map((i) => (
-                      <span
-                        key={i}
-                        className="inline-block h-1 w-1 rounded-full bg-muted-foreground/60"
-                        style={{ animation: `mcpDot 1.2s ease-in-out ${i * 0.2}s infinite` }}
-                      />
-                    ))}
-                  </span>
-                  <span>
-                    [{pendingTool.serverName}] {pendingTool.toolName}
-                  </span>
-                </div>
-              ) : null;
-            })()}
-            {hasMcpEvents && !isAgentMode ? (
-              <MessageToolCallsPanel
-                toolCalls={message.toolCalls ?? []}
-                isExpanded={isMcpEventsExpanded}
-                onToggle={() => setIsMcpEventsExpanded((previous) => !previous)}
-              />
-            ) : null}
-            {hasReasoning ? (
-              <MessageReasoningPanel
-                isExpanded={isReasoningExpanded}
-                onToggle={() => setIsReasoningExpanded((previous) => !previous)}
-              >
-                <MarkdownContent content={message.reasoningContent ?? ""} isUser={false} />
-              </MessageReasoningPanel>
-            ) : null}
-            <div>
-              {assistantVisibleContent ? (
-                shouldRenderAgentToolInline ? (
-                  <>
-                    {(() => {
-                      const segments: ReactNode[] = [];
-                      let cursor = 0;
-                      for (let i = 0; i < clampedGroups.length; i++) {
-                        const group = clampedGroups[i];
-                        const textSlice = assistantVisibleContent.slice(cursor, group.offset);
-                        if (textSlice) {
-                          segments.push(
-                            <MarkdownContent key={`text-${i}`} content={textSlice} isUser={isUser} />
-                          );
-                        }
-                        segments.push(
-                          <div key={`tools-${i}`} className={i > 0 ? "mt-1" : ""}>
-                            <AgentToolItems
-                              items={group.items}
-                              groupId={group.key}
-                              isLastGroup={i === clampedGroups.length - 1}
-                              expandedAgentGroupIds={expandedAgentGroupIds}
-                              expandedAgentResultIds={expandedAgentResultIds}
-                              isCurrentGeneratingAssistant={isCurrentGeneratingAssistant}
-                              activePendingExecutionCall={activePendingExecutionCall}
-                              activePendingProgressCall={activePendingProgressCall}
-                              permissionRequest={permissionRequest}
-                              onResolvePermission={onResolvePermission}
-                              onToggleGroupDetail={toggleAgentGroupDetail}
-                              onToggleResultDetail={toggleAgentResultDetail}
-                            />
-                          </div>
-                        );
-                        cursor = group.offset;
-                      }
-                      const tail = assistantVisibleContent.slice(cursor);
-                      if (tail) {
-                        segments.push(
-                          <div key="text-tail" className="mt-1">
-                            <MarkdownContent content={tail} isUser={isUser} />
-                          </div>
-                        );
-                      }
-                      return segments;
-                    })()}
-                  </>
-                ) : (
-                  <MarkdownContent content={assistantVisibleContent} isUser={isUser} />
-                )
-              ) : (
-                <span className="text-muted-foreground">Generating...</span>
-              )}
-            </div>
-            {shouldShowAgentToolSection && !shouldRenderAgentToolInline
-              ? (
-                  <AgentToolItems
-                    items={agentToolRenderItems}
-                    groupId={nonInlineGroupId}
-                    expandedAgentGroupIds={expandedAgentGroupIds}
-                    expandedAgentResultIds={expandedAgentResultIds}
-                    isCurrentGeneratingAssistant={isCurrentGeneratingAssistant}
-                    activePendingExecutionCall={activePendingExecutionCall}
-                    activePendingProgressCall={activePendingProgressCall}
-                    permissionRequest={permissionRequest}
-                    onResolvePermission={onResolvePermission}
-                    onToggleGroupDetail={toggleAgentGroupDetail}
-                    onToggleResultDetail={toggleAgentResultDetail}
-                  />
-                )
-              : null}
-          </div>
-        )}
+        <MessageDisplaySurface
+          message={message}
+          isUser={isUser}
+          isAgentMode={isAgentMode}
+          isEditing={isEditing}
+          isGenerating={isGenerating}
+          isDragOverEdit={isDragOverEdit}
+          fileInputRef={fileInputRef}
+          editDraft={editDraft}
+          editAttachments={editAttachments}
+          hasMcpEvents={hasMcpEvents}
+          hasReasoning={hasReasoning}
+          isMcpEventsExpanded={isMcpEventsExpanded}
+          isReasoningExpanded={isReasoningExpanded}
+          shouldRenderAgentToolInline={shouldRenderAgentToolInline}
+          shouldShowAgentToolSection={shouldShowAgentToolSection}
+          shouldUseStreamingTextPresentation={shouldUseStreamingTextPresentation}
+          assistantVisibleContent={assistantVisibleContent}
+          clampedGroups={clampedGroups}
+          agentToolRenderItems={agentToolRenderItems}
+          expandedAgentGroupIds={expandedAgentGroupIds}
+          expandedAgentResultIds={expandedAgentResultIds}
+          isCurrentGeneratingAssistant={isCurrentGeneratingAssistant}
+          activePendingExecutionCall={activePendingExecutionCall}
+          activePendingProgressCall={activePendingProgressCall}
+          permissionRequest={permissionRequest}
+          onResolvePermission={onResolvePermission}
+          onDragOverEdit={(event) => {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "copy";
+            setIsDragOverEdit(true);
+          }}
+          onDragLeaveEdit={() => setIsDragOverEdit(false)}
+          onDropEdit={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            setIsDragOverEdit(false);
+            addEditFiles(event.dataTransfer.files);
+          }}
+          onFileInputChange={addEditFiles}
+          onChangeDraft={setEditDraft}
+          onRemoveAttachment={removeEditAttachment}
+          onOpenFilePicker={() => fileInputRef.current?.click()}
+          onCancelEditing={() => {
+            setIsEditing(false);
+            resetEditState();
+          }}
+          onSaveEdit={saveEdit}
+          onToggleMcpEvents={() => setIsMcpEventsExpanded((previous) => !previous)}
+          onToggleReasoning={() => setIsReasoningExpanded((previous) => !previous)}
+          onToggleGroupDetail={toggleAgentGroupDetail}
+          onToggleResultDetail={toggleAgentResultDetail}
+        />
 
         <MessageAttachmentList attachments={attachments} isUser={isUser} />
         <MessageUsageStats usage={assistantUsage} formatTokenCount={formatTokenCount} />
@@ -703,6 +993,9 @@ const areMessageBubblePropsEqual = (prev: MessageBubbleProps, next: MessageBubbl
     return false;
   }
   if (prev.mode !== next.mode) {
+    return false;
+  }
+  if (prev.isTopSnapActive !== next.isTopSnapActive) {
     return false;
   }
 
@@ -746,7 +1039,7 @@ export const ChatView = ({
   onDeleteMessage,
   onResendMessage
 }: ChatViewProps) => {
-  const { scrollContainerRef, scrollContentRef, activeGeneratingAssistantId } = useChatScrollFollow({
+  const { scrollContainerRef, scrollContentRef, activeGeneratingAssistantId, isTopSnapActive } = useChatScrollFollow({
     sessionId,
     messages,
     isConfigured,
@@ -797,6 +1090,7 @@ export const ChatView = ({
             key={message.id}
             message={message}
             isGenerating={isGenerating}
+            isTopSnapActive={isTopSnapActive}
             activeGeneratingAssistantId={activeGeneratingAssistantId}
             mode={mode}
             permissionRequest={permissionRequest}

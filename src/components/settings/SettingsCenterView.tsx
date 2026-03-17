@@ -20,6 +20,12 @@ import {
   X
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+import {
+  JOURNAL_UPDATED_EVENT,
+  getTodayDateString
+} from "../../features/chat/services/soul-automation";
+import { USER_PROFILE_UPDATED_EVENT } from "../../features/profile/services/profile-automation";
 import { getMuApi } from "../../lib/mu-api";
 import { cn } from "../../lib/utils";
 import {
@@ -40,13 +46,19 @@ import type {
   ModelListResult,
   McpServerConfig,
   McpServerStatusListResult,
-  Skill
+  SoulAutomationState,
+  Skill,
+  UserProfileDailyNote,
+  UserProfileEvidence,
+  UserProfileItem,
+  UserProfileLayer
 } from "../../shared/contracts";
 import { useSettingsCenterController } from "./use-settings-center-controller";
 import { McpServerList } from "./McpServerList";
 import { Button } from "../ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Input } from "../ui/input";
+import { Textarea } from "../ui/textarea";
 import { SkillsPanel } from "../SkillsPanel";
 import { MarkdownContent } from "../chat/message-markdown-content";
 import type { SettingsSection } from "../Sidebar";
@@ -67,6 +79,10 @@ type SettingsCenterProps = {
   onImportSessions: (sessions: ChatSession[]) => void;
   onClearSessions: () => void;
   onResetSettings: () => Promise<void>;
+  onGenerateTodayJournal: () => Promise<boolean>;
+  isJournalGenerating: boolean;
+  onRefreshUserProfile: (options?: { force?: boolean }) => Promise<boolean>;
+  isUserProfileRefreshing: boolean;
 };
 
 const SETTINGS_CARD_CLASS = "surface-1 rounded-[24px]";
@@ -84,12 +100,86 @@ const SETTINGS_TOGGLE_INACTIVE = "border-border/70 bg-card hover:bg-accent/35";
 const STATUS_NOTE_CLASS = "state-note px-3 py-2 text-sm";
 const STATUS_SUCCESS_CLASS = "state-success px-3 py-2 text-sm";
 const STATUS_ERROR_CLASS = "state-error px-3 py-2 text-sm";
+const INLINE_STATUS_BASE_CLASS =
+  "inline-flex min-w-0 max-w-[320px] items-center rounded-md border px-2.5 py-1 text-[11px] leading-none";
+
+const formatAutomationTimestamp = (value?: string) => {
+  if (!value) {
+    return null;
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString("zh-CN", {
+    hour12: false,
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+};
 
 const settingsOptionClass = (active: boolean) =>
   cn(SETTINGS_OPTION_BASE, active ? SETTINGS_OPTION_ACTIVE : SETTINGS_OPTION_INACTIVE);
 
 const settingsToggleClass = (active: boolean) =>
   cn(SETTINGS_TOGGLE_BASE, active ? SETTINGS_TOGGLE_ACTIVE : SETTINGS_TOGGLE_INACTIVE);
+
+const inlineStatusClass = (tone: "note" | "success" | "error") =>
+  cn(
+    INLINE_STATUS_BASE_CLASS,
+    tone === "success" && "border-emerald-200 bg-emerald-50 text-emerald-700",
+    tone === "error" && "border-destructive/20 bg-destructive/10 text-destructive",
+    tone === "note" && "border-border/80 bg-accent/35 text-muted-foreground"
+  );
+
+type ProfileItemFormState = {
+  itemId?: string;
+  layer: UserProfileLayer;
+  title: string;
+  description: string;
+  confidence: string;
+  evidenceText: string;
+};
+
+type ProfileDailyNoteFormState = {
+  date: string;
+  summaryMarkdown: string;
+  sourceMessageCount: string;
+};
+
+const createEmptyProfileItemForm = (): ProfileItemFormState => ({
+  layer: "preferences",
+  title: "",
+  description: "",
+  confidence: "0.72",
+  evidenceText: ""
+});
+
+const createEmptyProfileDailyNoteForm = (): ProfileDailyNoteFormState => ({
+  date: getTodayDateString(new Date()),
+  summaryMarkdown: "",
+  sourceMessageCount: "0"
+});
+
+const formatProfileEvidenceText = (evidence: UserProfileEvidence[]) =>
+  evidence.map((entry) => `${entry.dailyNoteDate} | ${entry.excerpt}`).join("\n");
+
+const parseProfileEvidenceText = (value: string) =>
+  value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .flatMap((line) => {
+      const [date, ...rest] = line.split("|");
+      const dailyNoteDate = date?.trim() || "";
+      const excerpt = rest.join("|").trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dailyNoteDate) || !excerpt) {
+        return [];
+      }
+      return [{ dailyNoteDate, excerpt, weight: 1 }];
+    });
 
 export const SettingsCenterView = (props: SettingsCenterProps) => {
   const {
@@ -179,30 +269,90 @@ export const SettingsCenterView = (props: SettingsCenterProps) => {
   const [soulDraft, setSoulDraft] = useState("");
   const [soulMemoryMarkdown, setSoulMemoryMarkdown] = useState("");
   const [soulMemoryDraft, setSoulMemoryDraft] = useState("");
+  const [soulAutomationState, setSoulAutomationState] = useState<SoulAutomationState>({});
 
   const [journalDates, setJournalDates] = useState<string[]>([]);
   const [selectedJournalDate, setSelectedJournalDate] = useState<string | null>(null);
   const [journalContent, setJournalContent] = useState<string | null>(null);
   const [isLoadingJournal, setIsLoadingJournal] = useState(false);
+  const [profileItems, setProfileItems] = useState<UserProfileItem[]>([]);
+  const [profileSnapshotMarkdown, setProfileSnapshotMarkdown] = useState("");
+  const [profileDailyNotes, setProfileDailyNotes] = useState<UserProfileDailyNote[]>([]);
+  const [selectedProfileNoteDate, setSelectedProfileNoteDate] = useState<string | null>(null);
+  const [selectedProfileNote, setSelectedProfileNote] = useState<UserProfileDailyNote | null>(null);
+  const [profileEvidenceByItemId, setProfileEvidenceByItemId] = useState<
+    Record<string, UserProfileEvidence[]>
+  >({});
+  const [isLoadingProfile, setIsLoadingProfile] = useState(false);
+  const [isProfileItemDialogOpen, setIsProfileItemDialogOpen] = useState(false);
+  const [isSavingProfileItem, setIsSavingProfileItem] = useState(false);
+  const [profileItemForm, setProfileItemForm] = useState<ProfileItemFormState>(
+    createEmptyProfileItemForm()
+  );
+  const [profileItemFormError, setProfileItemFormError] = useState<string | null>(null);
+  const [isProfileDailyNoteDialogOpen, setIsProfileDailyNoteDialogOpen] = useState(false);
+  const [isSavingProfileDailyNote, setIsSavingProfileDailyNote] = useState(false);
+  const [profileDailyNoteForm, setProfileDailyNoteForm] = useState<ProfileDailyNoteFormState>(
+    createEmptyProfileDailyNoteForm()
+  );
+  const [profileDailyNoteFormError, setProfileDailyNoteFormError] = useState<string | null>(null);
   const [isSavingSoul, setIsSavingSoul] = useState(false);
   const [soulSaveStatus, setSoulSaveStatus] = useState<"idle" | "saved" | "error">("idle");
+  const [isModelEditDialogOpen, setIsModelEditDialogOpen] = useState(false);
+  const todayJournalDate = getTodayDateString(new Date());
+  const hasTodayJournal = journalDates.includes(todayJournalDate);
 
   const isSoulDirty = soulDraft !== soulMarkdown;
   const isSoulMemoryDirty = soulMemoryDraft !== soulMemoryMarkdown;
   const isSoulEvolutionDirty =
     JSON.stringify(draft.soulEvolution) !== JSON.stringify(settings.soulEvolution);
+  const profileLayerOrder: UserProfileLayer[] = ["preferences", "background", "relationship"];
+  const profileLayerLabels: Record<UserProfileLayer, string> = {
+    preferences: "偏好与习惯",
+    background: "人生背景与长期状态",
+    relationship: "关系画像"
+  };
+
+  useEffect(() => {
+    if (!isModelEditDialogOpen) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsModelEditDialogOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isModelEditDialogOpen]);
   const isSoulAnythingDirty = isSoulDirty || isSoulMemoryDirty || isSoulEvolutionDirty;
+
+  const openModelEditDialog = useCallback(
+    (modelId?: string) => {
+      if (typeof modelId === "string") {
+        setActiveProviderModel(modelId, false);
+      }
+      setIsModelEditDialogOpen(true);
+    },
+    [setActiveProviderModel]
+  );
 
   const loadSoul = useCallback(async () => {
     const api = getMuApi();
-    const [content, memoryContent] = await Promise.all([
+    const [content, memoryContent, automationState] = await Promise.all([
       api.soul.getMarkdown(),
-      api.soul.getMemoryMarkdown()
+      api.soul.getMemoryMarkdown(),
+      api.soul.getAutomationState()
     ]);
     setSoulMarkdown(content);
     setSoulDraft(content);
     setSoulMemoryMarkdown(memoryContent);
     setSoulMemoryDraft(memoryContent);
+    setSoulAutomationState(automationState);
   }, []);
 
   useEffect(() => {
@@ -211,26 +361,234 @@ export const SettingsCenterView = (props: SettingsCenterProps) => {
     }
   }, [section, loadSoul]);
 
-  useEffect(() => {
-    if (section !== "journal") return;
+  const loadJournalDates = useCallback(async (preferredDate?: string) => {
     const api = getMuApi();
-    void api.soul.listJournalDates().then((dates) => {
-      setJournalDates(dates);
-      if (dates.length > 0 && selectedJournalDate === null) {
-        setSelectedJournalDate(dates[0]);
+    const dates = await api.soul.listJournalDates();
+    setJournalDates(dates);
+    setSelectedJournalDate((current) => {
+      if (preferredDate && dates.includes(preferredDate)) {
+        return preferredDate;
       }
+      if (current && dates.includes(current)) {
+        return current;
+      }
+      return dates[0] ?? null;
     });
-  }, [section, selectedJournalDate]);
+    if (dates.length === 0) {
+      setJournalContent(null);
+    }
+  }, []);
 
-  useEffect(() => {
-    if (!selectedJournalDate) return;
+  const loadJournalEntry = useCallback(async (date: string | null) => {
+    if (!date) {
+      setJournalContent(null);
+      setIsLoadingJournal(false);
+      return;
+    }
     const api = getMuApi();
     setIsLoadingJournal(true);
-    void api.soul.getJournalEntry(selectedJournalDate).then((content) => {
-      setJournalContent(content);
-      setIsLoadingJournal(false);
+    const content = await api.soul.getJournalEntry(date);
+    setJournalContent(content);
+    setIsLoadingJournal(false);
+  }, []);
+
+  useEffect(() => {
+    if (section !== "journal") return;
+
+    void loadJournalDates();
+    const handleJournalUpdated = (event: Event) => {
+      const date =
+        event instanceof CustomEvent && typeof event.detail?.date === "string"
+          ? event.detail.date
+          : undefined;
+      void loadJournalDates(date);
+      if (date && date === selectedJournalDate) {
+        void loadJournalEntry(date);
+      }
+    };
+
+    window.addEventListener(JOURNAL_UPDATED_EVENT, handleJournalUpdated);
+    return () => {
+      window.removeEventListener(JOURNAL_UPDATED_EVENT, handleJournalUpdated);
+    };
+  }, [section, loadJournalDates, loadJournalEntry, selectedJournalDate]);
+
+  useEffect(() => {
+    void loadJournalEntry(selectedJournalDate);
+  }, [selectedJournalDate, loadJournalEntry]);
+
+  const loadUserProfile = useCallback(async () => {
+    const api = getMuApi();
+    setIsLoadingProfile(true);
+    try {
+      const [items, snapshot, notes] = await Promise.all([
+        api.profile.listItems(),
+        api.profile.getSnapshotMarkdown(),
+        api.profile.listDailyNotes()
+      ]);
+      const evidenceEntries = await Promise.all(
+        items.map(async (item) => [item.id, await api.profile.listEvidence(item.id)] as const)
+      );
+      setProfileItems(items);
+      setProfileSnapshotMarkdown(snapshot);
+      setProfileDailyNotes(notes);
+      setProfileEvidenceByItemId(Object.fromEntries(evidenceEntries));
+      setSelectedProfileNoteDate((current) => {
+        if (current && notes.some((note) => note.date === current)) {
+          return current;
+        }
+        return notes[0]?.date ?? null;
+      });
+    } finally {
+      setIsLoadingProfile(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (section !== "profile") {
+      return;
+    }
+
+    void loadUserProfile();
+    const handleProfileUpdated = () => {
+      void loadUserProfile();
+    };
+    window.addEventListener(USER_PROFILE_UPDATED_EVENT, handleProfileUpdated);
+    return () => {
+      window.removeEventListener(USER_PROFILE_UPDATED_EVENT, handleProfileUpdated);
+    };
+  }, [section, loadUserProfile]);
+
+  useEffect(() => {
+    if (!selectedProfileNoteDate) {
+      setSelectedProfileNote(null);
+      return;
+    }
+    setSelectedProfileNote(
+      profileDailyNotes.find((note) => note.date === selectedProfileNoteDate) ?? null
+    );
+  }, [profileDailyNotes, selectedProfileNoteDate]);
+
+  const toggleProfileItemStatus = async (item: UserProfileItem) => {
+    const api = getMuApi();
+    await api.profile.updateItemStatus({
+      itemId: item.id,
+      status: item.status === "active" ? "disabled" : "active"
     });
-  }, [selectedJournalDate]);
+    await loadUserProfile();
+  };
+
+  const removeProfileItem = async (itemId: string) => {
+    const api = getMuApi();
+    await api.profile.deleteItem(itemId);
+    await loadUserProfile();
+  };
+
+  const openCreateProfileItemDialog = () => {
+    setProfileItemForm(createEmptyProfileItemForm());
+    setProfileItemFormError(null);
+    setIsProfileItemDialogOpen(true);
+  };
+
+  const openEditProfileItemDialog = (item: UserProfileItem) => {
+    setProfileItemForm({
+      itemId: item.id,
+      layer: item.layer,
+      title: item.title,
+      description: item.description,
+      confidence: String(item.confidence),
+      evidenceText: formatProfileEvidenceText(profileEvidenceByItemId[item.id] ?? [])
+    });
+    setProfileItemFormError(null);
+    setIsProfileItemDialogOpen(true);
+  };
+
+  const saveProfileItem = async () => {
+    const title = profileItemForm.title.trim();
+    const description = profileItemForm.description.trim();
+    const confidence = Number(profileItemForm.confidence);
+    if (!title || !description) {
+      setProfileItemFormError("标题和描述不能为空。");
+      return;
+    }
+    if (!Number.isFinite(confidence) || confidence < 0.2 || confidence > 0.98) {
+      setProfileItemFormError("置信度需在 0.20 到 0.98 之间。");
+      return;
+    }
+
+    setIsSavingProfileItem(true);
+    setProfileItemFormError(null);
+    try {
+      const api = getMuApi();
+      await api.profile.saveManualItem({
+        itemId: profileItemForm.itemId,
+        layer: profileItemForm.layer,
+        title,
+        description,
+        confidence,
+        evidence: parseProfileEvidenceText(profileItemForm.evidenceText)
+      });
+      setIsProfileItemDialogOpen(false);
+      await loadUserProfile();
+    } catch (error) {
+      setProfileItemFormError(error instanceof Error ? error.message : "保存画像项失败。");
+    } finally {
+      setIsSavingProfileItem(false);
+    }
+  };
+
+  const openCreateProfileDailyNoteDialog = () => {
+    setProfileDailyNoteForm(createEmptyProfileDailyNoteForm());
+    setProfileDailyNoteFormError(null);
+    setIsProfileDailyNoteDialogOpen(true);
+  };
+
+  const openEditProfileDailyNoteDialog = (note: UserProfileDailyNote) => {
+    setProfileDailyNoteForm({
+      date: note.date,
+      summaryMarkdown: note.summaryMarkdown,
+      sourceMessageCount: String(note.sourceMessageCount)
+    });
+    setProfileDailyNoteFormError(null);
+    setIsProfileDailyNoteDialogOpen(true);
+  };
+
+  const saveProfileDailyNote = async () => {
+    const date = profileDailyNoteForm.date.trim();
+    const summaryMarkdown = profileDailyNoteForm.summaryMarkdown.trim();
+    const sourceMessageCount = Number(profileDailyNoteForm.sourceMessageCount);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      setProfileDailyNoteFormError("日期格式必须是 YYYY-MM-DD。");
+      return;
+    }
+    if (!summaryMarkdown) {
+      setProfileDailyNoteFormError("每日记录内容不能为空。");
+      return;
+    }
+    if (!Number.isInteger(sourceMessageCount) || sourceMessageCount < 0) {
+      setProfileDailyNoteFormError("来源消息数必须是大于等于 0 的整数。");
+      return;
+    }
+
+    setIsSavingProfileDailyNote(true);
+    setProfileDailyNoteFormError(null);
+    try {
+      const api = getMuApi();
+      await api.profile.upsertDailyNote({
+        date,
+        summaryMarkdown,
+        sourceMessageCount,
+        source: "manual"
+      });
+      setIsProfileDailyNoteDialogOpen(false);
+      await props.onRefreshUserProfile({ force: true });
+      await loadUserProfile();
+    } catch (error) {
+      setProfileDailyNoteFormError(error instanceof Error ? error.message : "保存每日记录失败。");
+    } finally {
+      setIsSavingProfileDailyNote(false);
+    }
+  };
 
   const saveSoul = async () => {
     const api = getMuApi();
@@ -412,47 +770,7 @@ export const SettingsCenterView = (props: SettingsCenterProps) => {
                     />
                   </div>
 
-                  {!isAcpProvider ? (
-                    <div className="space-y-1.5">
-                      <label htmlFor="apiKey" className="text-sm text-muted-foreground">
-                        API Key
-                      </label>
-                      <div className="flex gap-2">
-                        <Input
-                          id="apiKey"
-                          type={isApiKeyVisible ? "text" : "password"}
-                          placeholder="sk-..."
-                          value={activeProvider.apiKey}
-                          onChange={(event) => updateActiveProviderField("apiKey", event.target.value)}
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="px-2"
-                          onClick={() => setIsApiKeyVisible((previous) => !previous)}
-                          aria-label={isApiKeyVisible ? "Hide API key" : "Show API key"}
-                        >
-                          {isApiKeyVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="px-2"
-                          onClick={copyApiKey}
-                          disabled={!activeProvider.apiKey.trim()}
-                          aria-label="Copy API key"
-                        >
-                          {isApiKeyCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                        </Button>
-                        <Button type="button" variant="outline" onClick={testConnection} disabled={isTesting}>
-                          {isTesting ? "测试中..." : "测试连接"}
-                        </Button>
-                      </div>
-                      <p className="text-xs text-muted-foreground">多个 API Key 可用英文逗号分隔。</p>
-                    </div>
-                  ) : (
+                  {isAcpProvider ? (
                     <div className="rounded-xl border border-border bg-accent/20 p-3 text-sm text-muted-foreground">
                       <p>ACP 使用本地 Codex CLI 登录态与配置。</p>
                       <div className="mt-2">
@@ -466,7 +784,7 @@ export const SettingsCenterView = (props: SettingsCenterProps) => {
                         </Button>
                       </div>
                     </div>
-                  )}
+                  ) : null}
 
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-1.5">
@@ -545,6 +863,61 @@ export const SettingsCenterView = (props: SettingsCenterProps) => {
                       </div>
                     </div>
                   )}
+
+                  {!isAcpProvider ? (
+                    <div className="space-y-1.5">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <label htmlFor="apiKey" className="shrink-0 text-sm text-muted-foreground">
+                          API Key
+                        </label>
+                        {testResult ? (
+                          <p
+                            className={cn(
+                              inlineStatusClass(testResult.ok ? "success" : "error"),
+                              "min-w-0 truncate"
+                            )}
+                            title={testResult.message}
+                          >
+                            {testResult.message}
+                          </p>
+                        ) : null}
+                      </div>
+                      <div className="flex gap-2">
+                        <Input
+                          id="apiKey"
+                          type={isApiKeyVisible ? "text" : "password"}
+                          placeholder="sk-..."
+                          value={activeProvider.apiKey}
+                          onChange={(event) => updateActiveProviderField("apiKey", event.target.value)}
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="px-2"
+                          onClick={() => setIsApiKeyVisible((previous) => !previous)}
+                          aria-label={isApiKeyVisible ? "Hide API key" : "Show API key"}
+                        >
+                          {isApiKeyVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="px-2"
+                          onClick={copyApiKey}
+                          disabled={!activeProvider.apiKey.trim()}
+                          aria-label="Copy API key"
+                        >
+                          {isApiKeyCopied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                        </Button>
+                        <Button type="button" variant="outline" onClick={testConnection} disabled={isTesting}>
+                          {isTesting ? "测试中..." : "测试连接"}
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">多个 API Key 可用英文逗号分隔。</p>
+                    </div>
+                  ) : null}
 
                   {isAcpProvider ? (
                     <div className="space-y-2 rounded-xl border border-border bg-accent/20 p-3">
@@ -646,9 +1019,19 @@ export const SettingsCenterView = (props: SettingsCenterProps) => {
 
                   <div className="space-y-2">
                     <div className="flex items-center justify-between gap-3">
-                      <label htmlFor="model" className="text-sm text-muted-foreground">
-                        模型
-                      </label>
+                      <div className="flex min-w-0 items-center gap-3">
+                        <label htmlFor="model" className="shrink-0 text-sm text-muted-foreground">
+                          模型
+                        </label>
+                        {providerMessage ? (
+                          <p
+                            className={cn(inlineStatusClass("note"), "min-w-0 truncate")}
+                            title={providerMessage}
+                          >
+                            {providerMessage}
+                          </p>
+                        ) : null}
+                      </div>
                       <div className="flex items-center gap-2">
                         <span className="rounded-[4px] bg-secondary px-2 py-0.5 text-xs text-muted-foreground">
                           {filteredModelOptions.length}
@@ -694,121 +1077,6 @@ export const SettingsCenterView = (props: SettingsCenterProps) => {
                       value={activeProvider.model}
                       onChange={(event) => setActiveProviderModel(event.target.value, false)}
                     />
-                    <div className="space-y-1.5 rounded-xl border border-border bg-accent/20 p-2.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-                          模型能力
-                        </p>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={resetActiveModelCapabilities}
-                          disabled={!activeProvider.model.trim() || !hasActiveModelCapabilityOverride}
-                        >
-                          自动识别
-                        </Button>
-                      </div>
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        <button
-                          type="button"
-                          className={cn(
-                            "rounded-lg border px-2.5 py-2 text-left text-xs transition-colors",
-                            activeModelCapabilities.imageInput
-                              ? "border-border bg-accent/55 text-foreground"
-                              : "border-border/70 bg-card text-muted-foreground hover:bg-accent/35"
-                          )}
-                          onClick={() =>
-                            updateActiveModelCapability("imageInput", !activeModelCapabilities.imageInput)
-                          }
-                        >
-                          图片输入
-                        </button>
-                        <button
-                          type="button"
-                          className={cn(
-                            "rounded-lg border px-2.5 py-2 text-left text-xs transition-colors",
-                            activeModelCapabilities.audioInput
-                              ? "border-border bg-accent/55 text-foreground"
-                              : "border-border/70 bg-card text-muted-foreground hover:bg-accent/35"
-                          )}
-                          onClick={() =>
-                            updateActiveModelCapability("audioInput", !activeModelCapabilities.audioInput)
-                          }
-                        >
-                          音频输入
-                        </button>
-                        <button
-                          type="button"
-                          className={cn(
-                            "rounded-lg border px-2.5 py-2 text-left text-xs transition-colors",
-                            activeModelCapabilities.videoInput
-                              ? "border-border bg-accent/55 text-foreground"
-                              : "border-border/70 bg-card text-muted-foreground hover:bg-accent/35"
-                          )}
-                          onClick={() =>
-                            updateActiveModelCapability("videoInput", !activeModelCapabilities.videoInput)
-                          }
-                        >
-                          视频输入
-                        </button>
-                        <button
-                          type="button"
-                          className={cn(
-                            "rounded-lg border px-2.5 py-2 text-left text-xs transition-colors",
-                            activeModelCapabilities.reasoningDisplay
-                              ? "border-border bg-accent/55 text-foreground"
-                              : "border-border/70 bg-card text-muted-foreground hover:bg-accent/35"
-                          )}
-                          onClick={() =>
-                            updateActiveModelCapability(
-                              "reasoningDisplay",
-                              !activeModelCapabilities.reasoningDisplay
-                            )
-                          }
-                        >
-                          思维链显示
-                        </button>
-                      </div>
-                      <p className="text-[11px] text-muted-foreground">
-                        默认按模型名自动推断；你可以手动覆盖。输入窗口会按这些能力限制附件并给出提示。
-                      </p>
-                    </div>
-                    <div className="space-y-1.5 rounded-xl border border-border bg-accent/20 p-2.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
-                          上下文窗口（tokens）
-                        </p>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={resetActiveModelContextWindow}
-                          disabled={!activeProvider.model.trim() || !hasActiveModelContextWindowOverride}
-                        >
-                          自动识别
-                        </Button>
-                      </div>
-                      <Input
-                        value={modelContextWindowDraft}
-                        onChange={(event) => setModelContextWindowDraft(event.target.value)}
-                        onBlur={() => {
-                          const parsed = Number.parseInt(modelContextWindowDraft, 10);
-                          if (!Number.isFinite(parsed)) {
-                            setModelContextWindowDraft(String(activeModelContextWindow));
-                            return;
-                          }
-                          setActiveModelContextWindow(parsed);
-                        }}
-                        type="number"
-                        min={1024}
-                        max={2_000_000}
-                        step={1}
-                      />
-                      <p className="text-[11px] text-muted-foreground">
-                        这里是模型可用上下文窗口。输入框右下角的 usage 监控会显示“已用 / 这个上限”。
-                      </p>
-                    </div>
                     <div className="space-y-1.5">
                       <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
                         此渠道已保存模型
@@ -830,7 +1098,7 @@ export const SettingsCenterView = (props: SettingsCenterProps) => {
                                 <button
                                   type="button"
                                   className="max-w-[220px] truncate text-left"
-                                  onClick={() => setActiveProviderModel(modelId, false)}
+                                  onClick={() => openModelEditDialog(modelId)}
                                   aria-label={`Select saved model ${modelId}`}
                                   aria-pressed={isActiveModel}
                                   title={modelId}
@@ -913,12 +1181,6 @@ export const SettingsCenterView = (props: SettingsCenterProps) => {
                 </div>
               </div>
 
-              {testResult ? (
-                <p className={testResult.ok ? STATUS_SUCCESS_CLASS : STATUS_ERROR_CLASS}>
-                  {testResult.message}
-                </p>
-              ) : null}
-              {providerMessage ? <p className={STATUS_NOTE_CLASS}>{providerMessage}</p> : null}
               {saveError ? <p className={STATUS_ERROR_CLASS}>{saveError}</p> : null}
             </CardContent>
           </Card>
@@ -1271,6 +1533,232 @@ export const SettingsCenterView = (props: SettingsCenterProps) => {
                 <Button onClick={save} disabled={isSaving || !isDirty}>
                   {isSaving ? "保存中..." : "保存"}
                 </Button>
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {section === "profile" ? (
+          <Card className={SETTINGS_CARD_CLASS}>
+            <CardHeader>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Database className="h-4 w-4" />
+                    <span className="text-xs font-medium uppercase tracking-[0.16em]">Profile</span>
+                  </div>
+                  <CardTitle className="text-2xl">用户画像</CardTitle>
+                  <CardDescription>
+                    Echo 在本地维护的用户画像真源。它会从每日记录中提炼稳定模式，并在聊天时谨慎注入。
+                  </CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      void props.onRefreshUserProfile().then((updated) => {
+                        if (updated) {
+                          void loadUserProfile();
+                        }
+                      });
+                    }}
+                    disabled={props.isUserProfileRefreshing}
+                  >
+                    {props.isUserProfileRefreshing ? "更新中..." : "立即刷新画像"}
+                  </Button>
+                  <Button type="button" size="sm" onClick={openCreateProfileItemDialog}>
+                    手动新增
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="grid gap-3 md:grid-cols-3">
+                {profileLayerOrder.map((layer) => {
+                  const count = profileItems.filter((item) => item.layer === layer).length;
+                  const activeCount = profileItems.filter(
+                    (item) => item.layer === layer && item.status === "active"
+                  ).length;
+                  return (
+                    <div key={layer} className="rounded-xl border border-border/70 bg-card px-4 py-3">
+                      <p className="text-sm font-semibold text-foreground">{profileLayerLabels[layer]}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {activeCount} 条启用画像 / {count} 条总画像
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="rounded-xl border border-border/70 bg-card p-4">
+                <p className="text-sm font-semibold text-foreground">当前画像快照</p>
+                <div className="mt-3 max-h-[320px] overflow-auto rounded-lg border border-border/60 bg-background px-4 py-3">
+                  {profileSnapshotMarkdown.trim() ? (
+                    <MarkdownContent content={profileSnapshotMarkdown} isUser={false} />
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      还没有画像快照。等有足够的用户消息后，Echo 会自动沉淀第一版人物画像。
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {profileLayerOrder.map((layer) => {
+                  const layerItems = profileItems.filter((item) => item.layer === layer);
+                  return (
+                    <div key={layer} className="space-y-2">
+                      <p className="text-sm font-semibold text-foreground">{profileLayerLabels[layer]}</p>
+                      {layerItems.length ? (
+                        layerItems.map((item) => (
+                          <div
+                            key={item.id}
+                            className="rounded-xl border border-border/70 bg-card px-4 py-4"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <p className="text-sm font-semibold text-foreground">{item.title}</p>
+                                  <span
+                                    className={inlineStatusClass(
+                                      item.status === "active" ? "success" : "note"
+                                    )}
+                                  >
+                                    {item.status === "active" ? "已启用" : "已停用"}
+                                  </span>
+                                  <span className={inlineStatusClass("note")}>
+                                    {item.source === "manual" ? "手动" : "自动"}
+                                  </span>
+                                </div>
+                                <p className="text-sm text-muted-foreground">{item.description}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  置信度 {Math.round(item.confidence * 100)}% · 最近确认于{" "}
+                                  {formatAutomationTimestamp(item.lastConfirmedAt) ?? item.lastConfirmedAt}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => openEditProfileItemDialog(item)}
+                                >
+                                  编辑
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    void toggleProfileItemStatus(item);
+                                  }}
+                                >
+                                  {item.status === "active" ? "停用" : "启用"}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    void removeProfileItem(item.id);
+                                  }}
+                                >
+                                  删除
+                                </Button>
+                              </div>
+                            </div>
+                            {profileEvidenceByItemId[item.id]?.length ? (
+                              <div className="mt-3 space-y-2 rounded-lg border border-border/60 bg-background px-3 py-3">
+                                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                                  依据
+                                </p>
+                                {profileEvidenceByItemId[item.id].map((evidence) => (
+                                  <div key={evidence.id} className="text-sm text-muted-foreground">
+                                    <p className="font-medium text-foreground/90">{evidence.dailyNoteDate}</p>
+                                    <p>{evidence.excerpt}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                        ))
+                      ) : (
+                        <p className="rounded-xl border border-dashed border-border/70 px-4 py-4 text-sm text-muted-foreground">
+                          这一层还没有稳定画像。
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="rounded-xl border border-border/70 bg-card p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">每日记录</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      这是画像系统的原材料层，用来记录你每天主要在做什么、关注什么、呈现出什么状态。
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className={inlineStatusClass("note")}>{profileDailyNotes.length} 天</span>
+                    <Button type="button" variant="outline" size="sm" onClick={openCreateProfileDailyNoteDialog}>
+                      新增记录
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        if (selectedProfileNote) {
+                          openEditProfileDailyNoteDialog(selectedProfileNote);
+                        }
+                      }}
+                      disabled={!selectedProfileNote}
+                    >
+                      编辑当前
+                    </Button>
+                  </div>
+                </div>
+                <div className="mt-4 min-h-[320px] gap-4 md:flex">
+                  <div className="flex w-full shrink-0 gap-1 overflow-auto md:w-40 md:flex-col">
+                    {profileDailyNotes.length ? (
+                      profileDailyNotes.map((note) => (
+                        <button
+                          key={note.date}
+                          type="button"
+                          onClick={() => setSelectedProfileNoteDate(note.date)}
+                          className={cn(
+                            "rounded-lg px-3 py-2 text-left text-sm transition-colors",
+                            selectedProfileNoteDate === note.date
+                              ? "bg-accent text-accent-foreground font-medium"
+                              : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                          )}
+                        >
+                          <div>{note.date}</div>
+                          <div className="text-[11px] opacity-80">
+                            {note.source === "manual" ? "手动" : "自动"}
+                          </div>
+                        </button>
+                      ))
+                    ) : (
+                      <p className="px-1 text-sm text-muted-foreground">暂无每日记录</p>
+                    )}
+                  </div>
+                  <div className="mt-4 min-w-0 flex-1 border-t border-border pt-4 md:mt-0 md:border-l md:border-t-0 md:pl-4 md:pt-0">
+                    {isLoadingProfile ? (
+                      <p className="text-sm text-muted-foreground">加载中...</p>
+                    ) : selectedProfileNote?.summaryMarkdown ? (
+                      <MarkdownContent content={selectedProfileNote.summaryMarkdown} isUser={false} />
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        还没有用户日摘要。发起几轮聊天后，这里会逐步开始按天沉淀。
+                      </p>
+                    )}
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -1633,7 +2121,7 @@ export const SettingsCenterView = (props: SettingsCenterProps) => {
               </div>
               <CardTitle className="text-2xl">SOUL.md</CardTitle>
               <CardDescription>
-                定义当前灵魂的核心身份、价值观与行为准则。内容会存储在本地，并在开启 SOUL 模式时作为唯一人格源。
+                记录这个 AI 已经稳定下来的长期人格结构。内容会存储在本地，并在开启 SOUL 模式时作为唯一人格源。
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -1659,20 +2147,22 @@ export const SettingsCenterView = (props: SettingsCenterProps) => {
                   <label htmlFor="soulEvolutionModel" className="text-sm text-muted-foreground">
                     SOUL 演化模型
                   </label>
-                  <input
+                  <select
                     id="soulEvolutionModel"
-                    list="soul-evolution-model-options"
                     className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm text-foreground outline-none transition focus:border-primary"
                     value={draft.soulEvolution.model}
                     onChange={(event) => updateSoulEvolutionField("model", event.target.value)}
-                    placeholder="选择或输入模型 ID"
-                    spellCheck={false}
-                  />
-                  <datalist id="soul-evolution-model-options">
-                    {soulEvolutionModelOptions.map((modelId) => (
-                      <option key={modelId} value={modelId} />
-                    ))}
-                  </datalist>
+                  >
+                    {soulEvolutionModelOptions.length ? (
+                      soulEvolutionModelOptions.map((modelId) => (
+                        <option key={modelId} value={modelId}>
+                          {modelId}
+                        </option>
+                      ))
+                    ) : (
+                      <option value="">当前渠道还没有可选模型</option>
+                    )}
+                  </select>
                   <p className="text-xs text-muted-foreground">
                     当前渠道：{soulEvolutionProvider?.name ?? "未选择"}。不可用时会静默回退到当前聊天模型。
                   </p>
@@ -1689,7 +2179,7 @@ export const SettingsCenterView = (props: SettingsCenterProps) => {
                 <div>
                   <p className="text-sm font-medium text-foreground">memory.md</p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    本地沉淀摘要。不会直接注入普通聊天，但会参与定时 SOUL 重写。
+                    外部事实档案。按天记录互动、反馈、重复模式与少量证据性原话，不直接下人格结论。
                   </p>
                 </div>
                 <textarea
@@ -1708,7 +2198,15 @@ export const SettingsCenterView = (props: SettingsCenterProps) => {
               <div className="flex items-center justify-between">
                 <div className="space-y-1 text-xs text-muted-foreground">
                   <p>存储路径：~/.echo/memory/soul.md</p>
-                  <p>自动沉淀：~/.echo/memory/memory.md</p>
+                  <p>外部事实档案：~/.echo/memory/memory.md</p>
+                  {soulAutomationState.lastSoulRewriteAt ? (
+                    <p>最近自动重写：{formatAutomationTimestamp(soulAutomationState.lastSoulRewriteAt)}</p>
+                  ) : null}
+                  {soulAutomationState.lastSoulRewriteSummary ? (
+                    <p className="max-w-[420px] text-foreground/80">
+                      最近内化方向：{soulAutomationState.lastSoulRewriteSummary}
+                    </p>
+                  ) : null}
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
@@ -1733,19 +2231,36 @@ export const SettingsCenterView = (props: SettingsCenterProps) => {
         {section === "journal" ? (
           <Card className={SETTINGS_CARD_CLASS}>
             <CardHeader>
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <BookOpen className="h-4 w-4" />
-                <span className="text-xs font-medium uppercase tracking-[0.16em]">日记</span>
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <BookOpen className="h-4 w-4" />
+                  <span className="text-xs font-medium uppercase tracking-[0.16em]">日记</span>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    void props.onGenerateTodayJournal();
+                  }}
+                  disabled={props.isJournalGenerating}
+                >
+                  {props.isJournalGenerating
+                    ? "生成中..."
+                    : hasTodayJournal
+                      ? "重新生成今天"
+                      : "立即生成今天"}
+                </Button>
               </div>
               <CardTitle>今日手记</CardTitle>
               <CardDescription>
-                每天 22:00 自动生成，回顾当天对话的 AI 视角手记
+                AI 的夜间主观反思层。每天 22:00 自动生成，也可以手动立即生成今天的版本。
               </CardDescription>
             </CardHeader>
             <CardContent>
               {journalDates.length === 0 ? (
                 <p className="text-sm text-muted-foreground py-4 text-center">
-                  还没有日记，今天的对话结束后会在 22:00 自动生成第一篇
+                  还没有手记。今天的对话结束后，会在 22:00 自动生成第一篇夜间反思。
                 </p>
               ) : (
                 <div className="flex gap-4 min-h-[400px]">
@@ -1772,9 +2287,9 @@ export const SettingsCenterView = (props: SettingsCenterProps) => {
                       <MarkdownContent content={journalContent} isUser={false} />
                     ) : selectedJournalDate ? (
                       <p className="text-sm text-muted-foreground pt-2">
-                        {new Date().toISOString().startsWith(selectedJournalDate) &&
+                        {selectedJournalDate === getTodayDateString(new Date()) &&
                         new Date().getHours() < 22
-                          ? "今日手记将在 22:00 自动生成"
+                          ? "今日手记将在 22:00 自动生成，并作为后续 SOUL 演化的主观材料之一"
                           : "暂无内容"}
                       </p>
                     ) : null}
@@ -1785,6 +2300,461 @@ export const SettingsCenterView = (props: SettingsCenterProps) => {
           </Card>
         ) : null}
       </div>
+      {isProfileItemDialogOpen
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[215] flex items-center justify-center bg-background/40 px-4 py-8 backdrop-blur-md"
+              onMouseDown={(event) => {
+                if (event.target === event.currentTarget) {
+                  setIsProfileItemDialogOpen(false);
+                }
+              }}
+              data-no-drag="true"
+              role="presentation"
+            >
+              <div
+                className="surface-1 w-full max-w-[640px] rounded-[24px] border border-border/80 shadow-[0_32px_120px_rgba(15,23,42,0.28)]"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="profile-item-editor-title"
+              >
+                <div className="flex items-start justify-between gap-4 border-b border-border/70 px-5 py-4">
+                  <div className="space-y-1">
+                    <p id="profile-item-editor-title" className="text-base font-semibold text-foreground">
+                      {profileItemForm.itemId ? "编辑画像项" : "新增画像项"}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      手动保存后，这条画像会转为受你控制的 `manual` 项，不再被自动刷新覆盖。
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setIsProfileItemDialogOpen(false)}
+                    aria-label="关闭画像项编辑弹窗"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+
+                <div className="space-y-4 px-5 py-5">
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <label htmlFor="profileItemLayer" className="text-sm text-muted-foreground">
+                        所属层级
+                      </label>
+                      <select
+                        id="profileItemLayer"
+                        className={SETTINGS_SELECT_CLASS}
+                        value={profileItemForm.layer}
+                        onChange={(event) =>
+                          setProfileItemForm((current) => ({
+                            ...current,
+                            layer: event.target.value as UserProfileLayer
+                          }))
+                        }
+                      >
+                        {profileLayerOrder.map((layer) => (
+                          <option key={layer} value={layer}>
+                            {profileLayerLabels[layer]}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <label htmlFor="profileItemConfidence" className="text-sm text-muted-foreground">
+                        置信度
+                      </label>
+                      <Input
+                        id="profileItemConfidence"
+                        value={profileItemForm.confidence}
+                        onChange={(event) =>
+                          setProfileItemForm((current) => ({
+                            ...current,
+                            confidence: event.target.value
+                          }))
+                        }
+                        placeholder="0.72"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label htmlFor="profileItemTitle" className="text-sm text-muted-foreground">
+                      标题
+                    </label>
+                    <Input
+                      id="profileItemTitle"
+                      value={profileItemForm.title}
+                      onChange={(event) =>
+                        setProfileItemForm((current) => ({ ...current, title: event.target.value }))
+                      }
+                      placeholder="例如：偏好先对齐方向"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label htmlFor="profileItemDescription" className="text-sm text-muted-foreground">
+                      描述
+                    </label>
+                    <Textarea
+                      id="profileItemDescription"
+                      className="min-h-[110px]"
+                      value={profileItemForm.description}
+                      onChange={(event) =>
+                        setProfileItemForm((current) => ({
+                          ...current,
+                          description: event.target.value
+                        }))
+                      }
+                      placeholder="用一句稳定、克制的话描述这条画像。"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label htmlFor="profileItemEvidence" className="text-sm text-muted-foreground">
+                      依据
+                    </label>
+                    <Textarea
+                      id="profileItemEvidence"
+                      className="min-h-[140px] font-mono text-xs"
+                      value={profileItemForm.evidenceText}
+                      onChange={(event) =>
+                        setProfileItemForm((current) => ({
+                          ...current,
+                          evidenceText: event.target.value
+                        }))
+                      }
+                      placeholder={"每行一条：YYYY-MM-DD | 依据说明\n例如：2026-03-17 | 连续要求先把设计目标对齐。"}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      可选。建议按 `YYYY-MM-DD | 依据说明` 填写，方便后续追溯。
+                    </p>
+                  </div>
+
+                  {profileItemFormError ? (
+                    <p className={STATUS_ERROR_CLASS}>{profileItemFormError}</p>
+                  ) : null}
+
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => setIsProfileItemDialogOpen(false)}
+                      disabled={isSavingProfileItem}
+                    >
+                      取消
+                    </Button>
+                    <Button type="button" onClick={() => void saveProfileItem()} disabled={isSavingProfileItem}>
+                      {isSavingProfileItem ? "保存中..." : "保存画像项"}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
+      {isProfileDailyNoteDialogOpen
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[214] flex items-center justify-center bg-background/40 px-4 py-8 backdrop-blur-md"
+              onMouseDown={(event) => {
+                if (event.target === event.currentTarget) {
+                  setIsProfileDailyNoteDialogOpen(false);
+                }
+              }}
+              data-no-drag="true"
+              role="presentation"
+            >
+              <div
+                className="surface-1 w-full max-w-[720px] rounded-[24px] border border-border/80 shadow-[0_32px_120px_rgba(15,23,42,0.28)]"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="profile-daily-note-editor-title"
+              >
+                <div className="flex items-start justify-between gap-4 border-b border-border/70 px-5 py-4">
+                  <div className="space-y-1">
+                    <p
+                      id="profile-daily-note-editor-title"
+                      className="text-base font-semibold text-foreground"
+                    >
+                      {profileDailyNotes.some((note) => note.date === profileDailyNoteForm.date)
+                        ? "编辑每日记录"
+                        : "新增每日记录"}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      手动保存后，这一天的记录会标记为 `manual`，后续自动沉淀不会覆盖它。
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setIsProfileDailyNoteDialogOpen(false)}
+                    aria-label="关闭每日记录编辑弹窗"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+
+                <div className="space-y-4 px-5 py-5">
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="space-y-1.5">
+                      <label htmlFor="profileDailyNoteDate" className="text-sm text-muted-foreground">
+                        日期
+                      </label>
+                      <Input
+                        id="profileDailyNoteDate"
+                        value={profileDailyNoteForm.date}
+                        onChange={(event) =>
+                          setProfileDailyNoteForm((current) => ({
+                            ...current,
+                            date: event.target.value
+                          }))
+                        }
+                        placeholder="YYYY-MM-DD"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label
+                        htmlFor="profileDailyNoteMessageCount"
+                        className="text-sm text-muted-foreground"
+                      >
+                        来源消息数
+                      </label>
+                      <Input
+                        id="profileDailyNoteMessageCount"
+                        value={profileDailyNoteForm.sourceMessageCount}
+                        onChange={(event) =>
+                          setProfileDailyNoteForm((current) => ({
+                            ...current,
+                            sourceMessageCount: event.target.value
+                          }))
+                        }
+                        placeholder="0"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label htmlFor="profileDailyNoteMarkdown" className="text-sm text-muted-foreground">
+                      Markdown 内容
+                    </label>
+                    <Textarea
+                      id="profileDailyNoteMarkdown"
+                      className="min-h-[260px] font-mono text-xs leading-relaxed"
+                      value={profileDailyNoteForm.summaryMarkdown}
+                      onChange={(event) =>
+                        setProfileDailyNoteForm((current) => ({
+                          ...current,
+                          summaryMarkdown: event.target.value
+                        }))
+                      }
+                      placeholder={"# 用户日摘要 · 2026-03-17\n\n## 今日在做什么\n- ...\n\n## 关注与状态\n- ..."}
+                      spellCheck={false}
+                    />
+                  </div>
+
+                  {profileDailyNoteFormError ? (
+                    <p className={STATUS_ERROR_CLASS}>{profileDailyNoteFormError}</p>
+                  ) : null}
+
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => setIsProfileDailyNoteDialogOpen(false)}
+                      disabled={isSavingProfileDailyNote}
+                    >
+                      取消
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={() => void saveProfileDailyNote()}
+                      disabled={isSavingProfileDailyNote}
+                    >
+                      {isSavingProfileDailyNote ? "保存中..." : "保存每日记录"}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
+      {isModelEditDialogOpen
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[220] flex items-center justify-center bg-background/40 px-4 py-8 backdrop-blur-md"
+              onMouseDown={(event) => {
+                if (event.target === event.currentTarget) {
+                  setIsModelEditDialogOpen(false);
+                }
+              }}
+              data-no-drag="true"
+              role="presentation"
+            >
+              <div
+                className="surface-1 w-full max-w-[560px] rounded-[24px] border border-border/80 shadow-[0_32px_120px_rgba(15,23,42,0.28)]"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="model-editor-title"
+              >
+                <div className="flex items-start justify-between gap-4 border-b border-border/70 px-5 py-4">
+                  <div className="space-y-1">
+                    <p id="model-editor-title" className="text-base font-semibold text-foreground">
+                      模型编辑
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      当前模型：{activeProvider.model.trim() || "未填写"}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setIsModelEditDialogOpen(false)}
+                    aria-label="关闭模型编辑弹窗"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+
+                <div className="space-y-4 px-5 py-5">
+                  <div className="space-y-1.5 rounded-xl border border-border bg-accent/20 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                        模型能力
+                      </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={resetActiveModelCapabilities}
+                        disabled={!activeProvider.model.trim() || !hasActiveModelCapabilityOverride}
+                      >
+                        自动识别
+                      </Button>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <button
+                        type="button"
+                        className={cn(
+                          "rounded-lg border px-2.5 py-2 text-left text-xs transition-colors",
+                          activeModelCapabilities.imageInput
+                            ? "border-border bg-accent/55 text-foreground"
+                            : "border-border/70 bg-card text-muted-foreground hover:bg-accent/35"
+                        )}
+                        onClick={() =>
+                          updateActiveModelCapability("imageInput", !activeModelCapabilities.imageInput)
+                        }
+                      >
+                        图片输入
+                      </button>
+                      <button
+                        type="button"
+                        className={cn(
+                          "rounded-lg border px-2.5 py-2 text-left text-xs transition-colors",
+                          activeModelCapabilities.audioInput
+                            ? "border-border bg-accent/55 text-foreground"
+                            : "border-border/70 bg-card text-muted-foreground hover:bg-accent/35"
+                        )}
+                        onClick={() =>
+                          updateActiveModelCapability("audioInput", !activeModelCapabilities.audioInput)
+                        }
+                      >
+                        音频输入
+                      </button>
+                      <button
+                        type="button"
+                        className={cn(
+                          "rounded-lg border px-2.5 py-2 text-left text-xs transition-colors",
+                          activeModelCapabilities.videoInput
+                            ? "border-border bg-accent/55 text-foreground"
+                            : "border-border/70 bg-card text-muted-foreground hover:bg-accent/35"
+                        )}
+                        onClick={() =>
+                          updateActiveModelCapability("videoInput", !activeModelCapabilities.videoInput)
+                        }
+                      >
+                        视频输入
+                      </button>
+                      <button
+                        type="button"
+                        className={cn(
+                          "rounded-lg border px-2.5 py-2 text-left text-xs transition-colors",
+                          activeModelCapabilities.reasoningDisplay
+                            ? "border-border bg-accent/55 text-foreground"
+                            : "border-border/70 bg-card text-muted-foreground hover:bg-accent/35"
+                        )}
+                        onClick={() =>
+                          updateActiveModelCapability(
+                            "reasoningDisplay",
+                            !activeModelCapabilities.reasoningDisplay
+                          )
+                        }
+                      >
+                        思维链显示
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      默认按模型名自动推断；你可以手动覆盖。输入窗口会按这些能力限制附件并给出提示。
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5 rounded-xl border border-border bg-accent/20 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs uppercase tracking-[0.12em] text-muted-foreground">
+                        上下文窗口（tokens）
+                      </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={resetActiveModelContextWindow}
+                        disabled={!activeProvider.model.trim() || !hasActiveModelContextWindowOverride}
+                      >
+                        自动识别
+                      </Button>
+                    </div>
+                    <Input
+                      value={modelContextWindowDraft}
+                      onChange={(event) => setModelContextWindowDraft(event.target.value)}
+                      onBlur={() => {
+                        const parsed = Number.parseInt(modelContextWindowDraft, 10);
+                        if (!Number.isFinite(parsed)) {
+                          setModelContextWindowDraft(String(activeModelContextWindow));
+                          return;
+                        }
+                        setActiveModelContextWindow(parsed);
+                      }}
+                      type="number"
+                      min={1024}
+                      max={2_000_000}
+                      step={1}
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      这里是模型可用上下文窗口。输入框右下角的 usage 监控会显示“已用 / 这个上限”。
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex justify-end border-t border-border/70 px-5 py-4">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsModelEditDialogOpen(false)}
+                  >
+                    完成
+                  </Button>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
     </section>
   );
 };

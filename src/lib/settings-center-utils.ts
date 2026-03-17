@@ -15,6 +15,7 @@ export type SettingsValidationSection =
   | "mcp"
   | "chat"
   | "memory"
+  | "profile"
   | "skills"
   | "environment"
   | "theme"

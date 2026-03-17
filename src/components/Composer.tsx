@@ -3,7 +3,8 @@ import {
   useMemo,
   useRef,
   type ClipboardEventHandler,
-  type KeyboardEventHandler
+  type KeyboardEventHandler,
+  type ReactNode
 } from "react";
 import {
   ArrowUp,
@@ -69,6 +70,7 @@ type ComposerProps = {
   disabled: boolean;
   disabledPlaceholder?: string;
   isGenerating: boolean;
+  leadingControl?: ReactNode;
 };
 
 const MIN_TEXTAREA_HEIGHT = 40;
@@ -109,7 +111,8 @@ export const Composer = ({
   usageLabel,
   disabled,
   disabledPlaceholder,
-  isGenerating
+  isGenerating,
+  leadingControl
 }: ComposerProps) => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -142,6 +145,7 @@ export const Composer = ({
     () => Boolean(value.trim() || attachmentCount),
     [value, attachmentCount]
   );
+  const enableSkills = skills.length > 0;
   const contextWindowIndex = useMemo(
     () => findContextWindowIndex(chatContextWindow),
     [chatContextWindow]
@@ -194,7 +198,7 @@ export const Composer = ({
     if (!canSubmit || disabled) {
       return;
     }
-    if (activeSkill) {
+    if (enableSkills && activeSkill) {
       onApplySkill(activeSkill, {}, value.trim());
     } else {
       onSubmit(value.trim());
@@ -206,7 +210,7 @@ export const Composer = ({
       return;
     }
 
-    if (handleSkillsNavigationKeyDown(event)) {
+    if (enableSkills && handleSkillsNavigationKeyDown(event)) {
       return;
     }
 
@@ -276,7 +280,9 @@ export const Composer = ({
           onChange={(event) => {
             const next = event.target.value;
             onChange(next);
-            updateSkillsQueryFromInput(next);
+            if (enableSkills) {
+              updateSkillsQueryFromInput(next);
+            }
           }}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
@@ -289,16 +295,18 @@ export const Composer = ({
           }
         />
 
-        <SkillsSlashPopover
-          isOpen={isSkillsOpen}
-          popoverRef={skillsPopoverRef}
-          filteredSkills={filteredSkills}
-          selectedIndex={skillsSelectedIndex}
-          onHoverIndex={setSkillsSelectedIndex}
-          onSelectSkill={selectSkill}
-        />
+        {enableSkills ? (
+          <SkillsSlashPopover
+            isOpen={isSkillsOpen}
+            popoverRef={skillsPopoverRef}
+            filteredSkills={filteredSkills}
+            selectedIndex={skillsSelectedIndex}
+            onHoverIndex={setSkillsSelectedIndex}
+            onSelectSkill={selectSkill}
+          />
+        ) : null}
 
-        {skillParamState ? (
+        {enableSkills && skillParamState ? (
           <SkillParamForm
             skillParamState={skillParamState}
             setSkillParamState={setSkillParamState}
@@ -342,6 +350,7 @@ export const Composer = ({
               popoverRef={mcpPopoverRef}
               onToggleMcp={toggleMcp}
             />
+            {leadingControl ? leadingControl : null}
             <SkillsPickerPopover
               skills={skills}
               activeSkill={activeSkill}

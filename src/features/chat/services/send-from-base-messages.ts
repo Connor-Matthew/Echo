@@ -11,9 +11,11 @@ import {
   sessionToCompletionMessages,
   toModelUsageKey,
   type StreamUsageSnapshot
-} from "../../../lib/app-chat-utils";
+} from "../utils/chat-utils";
 import type { MuApi } from "../../../lib/mu-api";
 import { buildSoulSystemMessage } from "./soul-automation";
+import { buildUserProfileSystemMessage } from "../../profile/services/profile-automation";
+import { splitStreamBufferForCommit } from "../../../lib/stream-text-utils";
 import type {
   AppliedSkillMeta,
   AppSettings,
@@ -23,6 +25,8 @@ import type {
   ChatStreamRequest,
   ToolCall
 } from "../../../shared/contracts";
+
+const STREAM_FLUSH_INTERVAL_MS = 88;
 
 export type SendFromBaseMessagesOptions = {
   completionMessagesOverride?: ChatStreamRequest["messages"];
@@ -159,6 +163,17 @@ export const sendFromBaseMessagesService = async ({
           })
       : Promise.resolve<string | null>(null);
 
+    const userProfileSystemPromise = api.profile
+      .getSnapshotMarkdown()
+      .then((markdown) => buildUserProfileSystemMessage(markdown) || null)
+      .catch((error) => {
+        console.warn(
+          "[chat][profile][injected] failed",
+          error instanceof Error ? error.message : "unknown_error"
+        );
+        return null;
+      });
+
     const environmentSystemPromise = buildChatEnvironmentSystemMessage().catch((error) => {
       console.warn(
         "[chat][environment][injected] failed",
@@ -196,8 +211,10 @@ export const sendFromBaseMessagesService = async ({
             })
         : Promise.resolve<string | null>(null);
 
-    const [soulSystemContent, environmentSystemContent, memosMemoryContent] = await Promise.all([
+    const [soulSystemContent, userProfileSystemContent, environmentSystemContent, memosMemoryContent] =
+      await Promise.all([
       soulSystemPromise,
+      userProfileSystemPromise,
       environmentSystemPromise,
       memosMemoryPromise
     ]);
@@ -210,6 +227,9 @@ export const sendFromBaseMessagesService = async ({
         : systemPrompt
           ? [{ role: "system" as const, content: systemPrompt }]
           : []),
+      ...(userProfileSystemContent
+        ? [{ role: "system" as const, content: userProfileSystemContent }]
+        : []),
       ...(environmentSystemContent ? [{ role: "system" as const, content: environmentSystemContent }] : []),
       ...(memosMemoryContent ? [{ role: "system" as const, content: memosMemoryContent }] : [])
     ];
@@ -279,19 +299,22 @@ export const sendFromBaseMessagesService = async ({
       );
     };
 
-    const flushPendingDelta = () => {
+    const flushPendingDelta = (force = false) => {
+      const nextContent = splitStreamBufferForCommit(streamState.pendingDelta, { force });
+      const nextReasoning = splitStreamBufferForCommit(streamState.pendingReasoningDelta, { force });
+
       if (
-        !streamState.pendingDelta &&
-        !streamState.pendingReasoningDelta &&
+        !nextContent.commit &&
+        !nextReasoning.commit &&
         !streamState.pendingStatusEvents.length
       ) {
         return;
       }
-      const chunk = streamState.pendingDelta;
-      const reasoningChunk = streamState.pendingReasoningDelta;
+      const chunk = nextContent.commit;
+      const reasoningChunk = nextReasoning.commit;
       const statusEvents = streamState.pendingStatusEvents;
-      streamState.pendingDelta = "";
-      streamState.pendingReasoningDelta = "";
+      streamState.pendingDelta = nextContent.remainder;
+      streamState.pendingReasoningDelta = nextReasoning.remainder;
       streamState.pendingStatusEvents = [];
       upsertSession(streamState.sessionId, (current) => ({
         ...current,
@@ -319,7 +342,7 @@ export const sendFromBaseMessagesService = async ({
           streamState.flushTimeoutId = window.setTimeout(() => {
             streamState.flushTimeoutId = null;
             flushPendingDelta();
-          }, 24);
+          }, STREAM_FLUSH_INTERVAL_MS);
         }
         return;
       }
@@ -333,7 +356,7 @@ export const sendFromBaseMessagesService = async ({
           streamState.flushTimeoutId = window.setTimeout(() => {
             streamState.flushTimeoutId = null;
             flushPendingDelta();
-          }, 24);
+          }, STREAM_FLUSH_INTERVAL_MS);
         }
         return;
       }
@@ -343,7 +366,7 @@ export const sendFromBaseMessagesService = async ({
           streamState.flushTimeoutId = window.setTimeout(() => {
             streamState.flushTimeoutId = null;
             flushPendingDelta();
-          }, 24);
+          }, STREAM_FLUSH_INTERVAL_MS);
         }
         return;
       }
@@ -368,7 +391,7 @@ export const sendFromBaseMessagesService = async ({
       }
 
       if (event.type === "error") {
-        flushPendingDelta();
+        flushPendingDelta(true);
         applyEstimatedUsageFallback();
         removeAssistantPlaceholderIfEmpty(streamState.sessionId, streamState.assistantMessageId);
         setErrorBanner(event.message);
@@ -376,7 +399,7 @@ export const sendFromBaseMessagesService = async ({
         return;
       }
 
-      flushPendingDelta();
+      flushPendingDelta(true);
       applyEstimatedUsageFallback();
       removeAssistantPlaceholderIfEmpty(streamState.sessionId, streamState.assistantMessageId);
       if (!streamState.stoppedByUser && settings.memos.enabled) {

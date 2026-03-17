@@ -1,7 +1,7 @@
 import {
   inferModelCapabilities,
   toModelCapabilityKey
-} from "../../lib/model-capabilities";
+} from "../../domain/model/capabilities";
 import {
   normalizeSettings,
   type AppSettings

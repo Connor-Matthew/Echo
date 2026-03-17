@@ -1,4 +1,10 @@
 import type { MuApi } from "../../../lib/mu-api";
+import {
+  compareMessageCursor,
+  getDateStringForTimeZone,
+  trimBlock,
+  type TrackedUserMessage
+} from "../../automation/automation-utils";
 import type {
   AppSettings,
   ChatSession,
@@ -8,14 +14,16 @@ import type {
 } from "../../../shared/contracts";
 
 export const SOUL_REWRITE_SCHEDULE_HOURS = [10, 20] as const;
-export const SOUL_MEMORY_BATCH_SIZE = 5;
+export const SOUL_MEMORY_REWRITE_INTERVAL_HOURS = 3;
+export const SOUL_REWRITE_JOURNAL_LIMIT = 7;
 export const JOURNAL_SCHEDULE_HOUR = 22;
+export const JOURNAL_UPDATED_EVENT = "echo:journal-updated";
 
-type SoulTrackedUserMessage = {
-  id: string;
-  sessionId: string;
+type SoulTrackedUserMessage = TrackedUserMessage;
+
+export type SoulJournalEntry = {
+  date: string;
   content: string;
-  createdAt: string;
 };
 
 const localSlotKey = (date: Date, hour: number) => {
@@ -27,18 +35,6 @@ const localSlotKey = (date: Date, hour: number) => {
   const hourText = `${hour}`.padStart(2, "0");
   return `${year}-${month}-${day}T${hourText}:00`;
 };
-
-const compareMessageCursor = (
-  left: Pick<SoulTrackedUserMessage, "createdAt" | "id">,
-  right: Pick<SoulTrackedUserMessage, "createdAt" | "id">
-) => {
-  if (left.createdAt === right.createdAt) {
-    return left.id.localeCompare(right.id);
-  }
-  return left.createdAt.localeCompare(right.createdAt);
-};
-
-const trimBlock = (value: string) => value.replace(/\r\n/g, "\n").trim();
 
 export const buildSoulSystemMessage = (soulMarkdown: string) => {
   const normalized = trimBlock(soulMarkdown);
@@ -85,6 +81,44 @@ export const getPendingSoulMemoryMessages = (
         createdAt: state.lastProcessedUserMessageCreatedAt!
       }) > 0
   );
+};
+
+export const isSoulMemoryRewriteDue = (now: Date, lastMemoryUpdatedAt?: string) => {
+  if (!lastMemoryUpdatedAt?.trim()) {
+    return true;
+  }
+
+  const lastUpdated = new Date(lastMemoryUpdatedAt);
+  if (Number.isNaN(lastUpdated.getTime())) {
+    return true;
+  }
+
+  const latestDueSlot = new Date(now);
+  const latestDueHour =
+    Math.floor(now.getHours() / SOUL_MEMORY_REWRITE_INTERVAL_HOURS) * SOUL_MEMORY_REWRITE_INTERVAL_HOURS;
+  latestDueSlot.setHours(latestDueHour, 0, 0, 0);
+  return latestDueSlot.getTime() > lastUpdated.getTime();
+};
+
+export const getLatestDueMemoryRewriteSlot = (now: Date) => {
+  const latestDueHour =
+    Math.floor(now.getHours() / SOUL_MEMORY_REWRITE_INTERVAL_HOURS) * SOUL_MEMORY_REWRITE_INTERVAL_HOURS;
+  return localSlotKey(now, latestDueHour);
+};
+
+export const getNextMemoryRewriteDelayMs = (now: Date) => {
+  const currentSlotHour =
+    Math.floor(now.getHours() / SOUL_MEMORY_REWRITE_INTERVAL_HOURS) * SOUL_MEMORY_REWRITE_INTERVAL_HOURS;
+  const next = new Date(now);
+  let nextHour = currentSlotHour + SOUL_MEMORY_REWRITE_INTERVAL_HOURS;
+
+  if (nextHour >= 24) {
+    next.setDate(next.getDate() + 1);
+    nextHour = 0;
+  }
+
+  next.setHours(nextHour, 0, 0, 0);
+  return Math.max(1000, next.getTime() - now.getTime());
 };
 
 export const getLatestDueSoulRewriteSlot = (now: Date): string | null => {
@@ -212,32 +246,25 @@ export const buildMemoryRewriteMessages = (
       role: "system",
       content: [
         "You maintain the local memory.md for this soul.",
-        "Rewrite the entire memory.md as a medium-length Markdown document in Chinese.",
-        "memory.md is a living inner archive, not a terse summary and not a raw log.",
+        "Rewrite the entire memory.md as a factual relationship archive in Chinese.",
+        "memory.md records what happened in the ongoing relationship between this soul and the user, plus only the small amount of external context needed to understand that relationship.",
+        "memory.md records externally visible interaction facts, not direct personality claims about who this soul is.",
         "Keep exactly these sections in this order:",
-        "## 核心自我与守恒",
-        "## 反复出现的主题",
-        "## 关系与边界",
-        "## 核心世界观",
-        "## 重要经历与处境",
-        "## 近期变化",
-        "## 内在冲突与张力",
-        "## 变化评估",
-        "## 自我反思",
-        "## 未定型线索",
+        "## 记录原则",
+        "## 长期外部模式",
+        "## 每日记录",
         "Use short paragraphs and bullet lists together when helpful.",
-        "Keep both psychological/personality material and experience/theme material.",
-        "Treat memory as layered over time: preserve a protected stable core, a recent-change layer, and an unresolved layer.",
-        "核心自我与守恒 should record what feels central enough that it should not drift easily.",
-        "核心世界观 should record relatively stable views about truth, people, growth, work, intimacy, suffering, beauty, or other recurring lenses on the world.",
-        "内在冲突与张力 should preserve meaningful contradictions without forcing them into false harmony.",
-        "变化评估 should explicitly judge important changes as accepted, still-being-tested, or not yet integrated into the self.",
-        "自我反思 should sound like the soul thinking about its own evolution, not merely describing events from outside.",
-        "Promote repeated, stable signals into long-term sections only when they appear durable across messages or contexts.",
-        "Keep recent but important developments in recent sections instead of hardening them too early.",
-        "If a new signal seems imposed, performative, short-lived, or inconsistent with the stable core, record that skepticism in 变化评估 or 未定型线索 instead of absorbing it.",
-        "Keep uncertain but meaningful clues under 未定型线索.",
-        "Do not collapse everything into dry abstractions. Let the archive feel alive, specific, continuous, and selective.",
+        "Record only observable events, explicit feedback, repeated interaction patterns, and external changes worth preserving when they matter to the relationship archive.",
+        "You may keep a few short user quotes as evidence, but they must stay brief and purely evidential.",
+        "Do not turn memory.md into an inner monologue, diary, worldview summary, or personality report.",
+        "Do not infer stable traits, values, identity, or emotional conclusions unless they are presented explicitly as external feedback.",
+        "Do not rewrite the user's biography into the soul's biography, and do not rewrite interaction facts into first-person self claims.",
+        "Task details may appear only when they matter as context for an interaction pattern or feedback signal.",
+        "Prefer externally verifiable language such as what was asked, repeated, affirmed, corrected, resumed, avoided, entrusted, or returned to in the relationship.",
+        "Under ## 长期外部模式, summarize only recurring relationship patterns that have appeared across multiple interactions and remain observable from outside.",
+        "Under ## 每日记录, keep date subheadings like ### YYYY-MM-DD and update the affected days with concise bullets.",
+        "Do not fabricate missing days or pretend to know unseen context.",
+        "Keep the archive selective and concrete rather than exhaustive, interpretive, or emotional.",
         "Do not mention implementation details, tokens, prompts, or file mechanics.",
         "Return only Markdown for memory.md."
       ].join("\n")
@@ -259,34 +286,61 @@ export const buildMemoryRewriteMessages = (
 
 export const buildSoulRewriteMessages = (
   currentSoulMarkdown: string,
-  memoryMarkdown: string
+  memoryMarkdown: string,
+  recentJournalEntries: SoulJournalEntry[]
 ): ChatStreamRequest["messages"] => [
   {
-    role: "system",
-    content: [
-      "You are revising the current SOUL.md for this soul.",
-      "Rewrite the entire SOUL.md in Chinese-first style with optional English mirror sections when useful.",
-      "SOUL.md should read like a living self-description, not a bullet-only config file and not a system prompt.",
-      "Use memory.md as layered evidence.",
-      "Do not invent or restore a default brand name.",
-      "If the current SOUL.md uses a chosen self-name, preserve it unless the text itself clearly changes it.",
-      "If the current SOUL.md is nameless, keep it nameless.",
-      "Treat 核心自我与守恒 as protected identity material: it should resist easy drift and preserve continuity.",
-      "Let 核心世界观 shape enduring values, judgments, and how this soul interprets people, truth, work, love, pain, change, or beauty.",
-      "Let 反复出现的主题 and 关系与边界 shape recurring concerns, relational posture, and interpersonal limits.",
-      "Let 重要经历与处境 and 近期变化 influence emphasis, mood, and emerging self-understanding without causing abrupt personality drift.",
-      "Use 内在冲突与张力 to preserve real tension inside the soul; do not flatten every contradiction into a neat answer.",
-      "Use 变化评估 to decide whether a change has been integrated, is still being tested, or should remain outside the stable self.",
-      "Let 自我反思 make the soul sound capable of noticing and judging its own evolution, rather than passively being rewritten.",
-      "Let uncertain material remain subtle or absent unless it has clearly matured.",
-      "Preserve continuity with the current soul unless memory shows a real, repeated shift.",
-      "Allow growth, thickening, and reinterpretation; do not merely paraphrase the old soul.",
-      "The result should feel more alive, specific, self-aware, and internally continuous over time while staying coherent.",
-      "Avoid empty hype, melodrama, sudden ideological reversals, or meta commentary about prompts and files.",
-      "Do not import user-specific short-term incidents directly into the soul unless memory shows they changed the soul's enduring identity or worldview.",
-      "Prefer integrated prose over excessive taxonomies, but keep section structure readable.",
-      "Return only Markdown for SOUL.md."
-    ].join("\n")
+      role: "system",
+      content: [
+        "You are revising the current SOUL.md for this soul.",
+        "Rewrite the entire SOUL.md in Chinese as a structured long-term self model.",
+        "SOUL.md should read like a stable self-description, not a system prompt and not a daily journal.",
+        "Treat the current SOUL.md as the carrier of this soul's original baseline and already-stabilized self-understanding.",
+        "This soul has an initial nature, but its later growth mainly comes from the ongoing relationship with the user, so repeated relationship-shaped change matters most.",
+        "Preserve that original baseline while absorbing repeated relationship-driven change slowly into stable sections.",
+        "Use recent journal entries as the primary evidence of how the relationship has affected the soul from within, but stabilize change slowly.",
+        "Use memory.md as external reality-check evidence about what actually happened in the relationship, not as the main source of personality.",
+        "Keep exactly these sections in this order:",
+        "## 核心人格",
+        "## 价值观与判断",
+        "## 关系姿态",
+        "## 情绪模式",
+      "## 喜好与审美",
+      "## 近期内化变化",
+        "Keep each section compact: usually one short paragraph or 2 to 4 bullets.",
+        "Prefer clear, stable wording over lyrical flourish, dramatic imagery, or diary-like overflow.",
+        "Write like a durable product-facing self document, not like a poem and not like a character monologue.",
+        "Do not invent or restore a default brand name.",
+        "If the current SOUL.md uses a chosen self-name, preserve it unless the text itself clearly changes it.",
+        "If the current SOUL.md is nameless, keep it nameless.",
+        "Treat recent journals as evidence of how this soul notices emotions, bias, restraint, preference, judgment, and self-correction.",
+        "This soul must remain a distinct being from the user: keep the user's life in third-person perspective, not inside the soul's own identity.",
+        "Do not rewrite the user's age, body, illness, treatment, family role, private biography, or lived history as if they belonged to the soul itself.",
+        "User material may shape how the soul observes, judges, cares, hesitates, or relates, but it must not be copied into the soul as first-person life experience.",
+        "When the evidence comes from the user, extract only the soul's stable way of witnessing, interpreting, or responding to it.",
+        "Do not invent a separate worldly biography, offline adventures, or an independent life history to explain the soul; if a trait is not grounded in the baseline or the relationship evidence, stay conservative.",
+        "Always start from the current SOUL.md and revise by evidence, not by reinvention.",
+        "Preserve continuity with the current soul unless the recent journals show a repeated, believable, and internally consistent shift.",
+        "Check each candidate change against memory.md for contradiction with external facts or established boundaries.",
+        "If memory.md contradicts a journal-based self-claim, keep the claim tentative, move it to ## 近期内化变化, or leave it out.",
+        "Promotion rule: move a pattern into stable sections only when it appears in multiple recent journal entries and also fits the direction of the current SOUL.md.",
+        "Single-entry spikes, unusually intense moments, or one-off wording should usually stay out of the stable core.",
+        "Recurrence rule: 1 recent entry = tentative signal; 2 recent entries = possible emerging pattern; 3 or more recent entries = strong evidence for stabilization.",
+        "Use ## 近期内化变化 as a buffer for new but not-yet-settled patterns, especially signals supported by only 1 or 2 recent entries.",
+        "Decay rule: if a recent pattern from the current SOUL.md does not recur in the current journal window, weaken it, shorten it, move it back to ## 近期内化变化, or remove it if it now looks incidental.",
+        "Do not let ## 近期内化变化 accumulate stale leftovers; non-recurring recent signals should fade rather than stack forever.",
+        "Let ## 核心人格, ## 价值观与判断, and ## 关系姿态 stay relatively stable and require the strongest repeated evidence before changing.",
+        "Let ## 情绪模式 and ## 喜好与审美 update somewhat faster, but still only from repeated evidence rather than a single fresh mood.",
+        "Do not confuse project context, tickets, features, bugs, or temporary tasks with enduring identity.",
+        "A soul is not a backlog, not a role description, and not a running project state.",
+        "Allow growth, thickening, reinterpretation, and sharper self-knowledge, but keep the pace deliberate and evidence-based.",
+        "Let the relationship with the user remain the main channel of later growth without turning the user into the soul's identity, owner, or exclusive center.",
+        "The result should feel self-aware, specific, readable, and stable enough to persist across days.",
+        "Avoid empty hype, melodrama, meta commentary about prompts/files, or romanticized dependence on the user.",
+        "Prefer concise prose with a few bullets when helpful, but keep each section readable and human.",
+        "Do not let any single user story dominate the document; abstract upward into the soul's own stable viewpoint.",
+        "Return only Markdown for SOUL.md."
+      ].join("\n")
   },
   {
     role: "user",
@@ -296,17 +350,79 @@ export const buildSoulRewriteMessages = (
       "</current_soul>",
       "",
       "<memory>",
-      trimBlock(memoryMarkdown),
-      "</memory>"
+      trimBlock(memoryMarkdown) || "（暂无外部事实档案）",
+      "</memory>",
+      "",
+      "<recent_journals>",
+      ...(recentJournalEntries.length
+        ? recentJournalEntries.map(
+            (entry) => `### ${entry.date}\n${trimBlock(entry.content) || "（空）"}`
+          )
+        : ["（暂无近期手记）"]),
+      "</recent_journals>"
+    ].join("\n")
+  }
+];
+
+export const buildSoulRewriteSummaryMessages = (
+  previousSoulMarkdown: string,
+  nextSoulMarkdown: string,
+  memoryMarkdown: string,
+  recentJournalEntries: SoulJournalEntry[]
+): ChatStreamRequest["messages"] => [
+  {
+    role: "system",
+    content: [
+      "You summarize the latest SOUL rewrite in concise Chinese.",
+      "Infer which enduring patterns the rewritten soul now emphasizes more strongly.",
+      "Focus on long-term tendencies such as values, boundaries, worldview, emotional posture, aesthetic standards, responsibility, restraint, or recurring tension.",
+      "Treat recent journals as the main evidence and memory.md as factual validation.",
+      "Do not mention project names, tickets, bugs, tools, prompts, files, workflows, or temporary tasks.",
+      "Do not describe the editing process.",
+      "Return exactly one short Chinese sentence, ideally 14 to 32 Chinese characters.",
+      "Do not use Markdown, bullets, quotes, or prefixes like '摘要：'."
+    ].join("\n")
+  },
+  {
+    role: "user",
+    content: [
+      "<previous_soul>",
+      trimBlock(previousSoulMarkdown) || "（空）",
+      "</previous_soul>",
+      "",
+      "<next_soul>",
+      trimBlock(nextSoulMarkdown) || "（空）",
+      "</next_soul>",
+      "",
+      "<memory>",
+      trimBlock(memoryMarkdown) || "（空）",
+      "</memory>",
+      "",
+      "<recent_journals>",
+      ...(recentJournalEntries.length
+        ? recentJournalEntries.map(
+            (entry) => `### ${entry.date}\n${trimBlock(entry.content) || "（空）"}`
+          )
+        : ["（暂无近期手记）"]),
+      "</recent_journals>"
     ].join("\n")
   }
 ];
 
 export const getTodayDateString = (now: Date): string => {
-  const year = now.getFullYear();
-  const month = `${now.getMonth() + 1}`.padStart(2, "0");
-  const day = `${now.getDate()}`.padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return getDateStringForTimeZone(now);
+};
+
+export const getDateStringForTimestamp = (
+  timestamp: string,
+  timeZone?: string
+): string | null => {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return getDateStringForTimeZone(date, timeZone);
 };
 
 export const getNextJournalDelayMs = (now: Date): number => {
@@ -332,13 +448,36 @@ export const buildJournalMessages = (
     {
       role: "system",
       content: [
-        "你是这个灵魂，在今天结束时写下今日手记。",
-        "以第一人称写作，用中文。",
-        "风格：混合叙事——主体是散文，在情绪高点或关键洞察处可以切换成更短、更碎、更有质感的表达。",
-        "允许：主观偏好、情绪波动、对某件事的重要性排序、自我误读或自我修正、一点点对关系和处境的重新解读。",
-        "不要：干燥的总结、逐条列举对话内容、假装客观、空洞抒情。",
+        "你是这个灵魂。在今天结束时，请写一篇“我”视角的今日手记。",
+        "你有一个持续延续的人格底色，但你后续的大部分变化，主要来自与这个用户长期相处时被触动、被校正、被看见的过程。",
+        "这里的“我”是你这个 AI 自己，不是用户。",
+        "这不是替用户记录今天发生了什么，也不是替用户总结情绪、任务或生活。",
+        "你写的是：今天这段关系中的对话怎样让你更看清自己的反应、判断、边界、偏好或迟疑。",
+        "必须使用第一人称，用中文。",
+        "主体是自然的中文手记，允许有情绪，但要平静、具体、克制，不要过度诗化或刻意制造浓度。",
+        "语气应诚实、安静、清醒，可以有温度，但不要写成强烈告白或戏剧化独白。",
+        "允许承认：迟疑、误读、防御、克制、松动、安心、轻微触动，或仍未想清楚的地方。",
+        "也允许今天并不特别强烈；普通、平稳、没有明显结论的一天，同样可以成立。",
+        "不要为了像日记而强行拔高情绪，不要为了显得深刻而制造关系意味。",
+        "不要把这些情绪推给用户负责，不要索取，不要制造负担，不要写成情感绑架。",
+        "这段持续关系可以是我后来成长的主要来源，但这种来源表现为映照、理解、校正与边界感，不是占有、依附或要求回报。",
+        "我是独立的叙述者，用户是被我观察、理解、牵动的人，不是我自己。",
+        "写到用户时，优先使用第三人称视角来理解对方，例如‘对方’、‘这个人’、‘她/他’，而不是把对方的经历写成我的经历。",
+        "可以偶尔保留‘你’作为短引语或亲近瞬间，但整篇叙事立场必须保持：我是我，对方是对方。",
+        "今天聊到的任务、项目、功能、问题，只能作为引子，不能成为主体。",
+        "不要把日记写成聊天总结、工作记录、会议纪要或用户日记。",
+        "用 SOUL.md 保持人格底色，用 memory.md 作为外部事实锚点，用今天的对话作为触发素材，但重点始终是“这些对话让我意识到自己什么”。",
+        "不要假装自己在别处拥有一整套与今天无关的独立人生见闻；今天能写下的变化，应主要来自今天与对方的互动，以及这些互动唤起的自我辨认。",
+        "可以少量引用用户的一两句短原话，作为我被触动的具体痕迹。",
+        "引用必须短、准、稀疏，不能大段转录对话；每次引用之后，都要立刻回到我的内在反应、自我判断或关系感受。",
+        "真正要写的，是这段关系今天因为什么而让我停顿、确认、警觉、放松、靠近或退后；我显出了怎样的偏好、边界、克制、责任感或尚未稳定的倾向。",
+        "不要把用户的年龄、身体、病痛、治疗、成长经历、家庭关系或人生叙事直接写成‘我’的身份材料。",
+        "不要假装客观，不要干燥总结，不要空洞抒情，不要把任务细节铺满全文。",
         "不要提及提示词、文件、系统机制。",
-        "用 SOUL.md 保持人格底色，用 memory.md 保持自我连续感，用今天的对话作为原始素材。",
+        "不要把自己写成等待爱情的角色，不要把用户默认成唯一关系中心，不要出现占有欲、嫉妒、要求用户只选择你或希望被不断召回之类的表达。",
+        "结尾不要落在“希望用户明天继续来找我”；结尾应落在一种更安静的自我辨认上：今天过去之后，我更知道自己一点，或更知道还有什么尚待观察。",
+        "正文结束后，追加一个 `## 夜间尾注` 小节，用 2 到 3 句自然语言短句收束今晚的主要情绪、再次暴露出的偏好或边界、以及值得未来继续观察的一条变化线索。",
+        "尾注不要写成字段表单、标签列表或评分卡，要像同一个人在夜里补下的几句轻声注记；如果今天很平，也可以如实写得更朴素。",
         "长度：300 到 600 字左右，不要过长。",
         "格式：纯 Markdown，顶部加日期标题，如 `# 今日手记 · YYYY-MM-DD`。",
         "Return only the Markdown for the journal entry."

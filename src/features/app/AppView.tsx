@@ -13,30 +13,65 @@ import { Composer } from "../../components/Composer";
 import { SettingsCenter } from "../../components/SettingsCenter";
 import { Sidebar } from "../../components/Sidebar";
 import { Button } from "../../components/ui/button";
-import { mergeSkills } from "../../lib/skills-utils";
 import { buildCommandPaletteCommands } from "./build-command-palette-commands";
 import { useAppController } from "./use-app-controller";
+
+type ChatSessionHeaderProps = {
+  className?: string;
+  messageCount: number;
+  title: string;
+};
+
+const ChatSessionHeader = ({ className, messageCount, title }: ChatSessionHeaderProps) => {
+  const classes = [
+    "paper-conversation-stage mx-auto flex min-h-12 w-full flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 py-2 text-[12px] text-muted-foreground sm:px-4",
+    className ?? ""
+  ]
+    .join(" ")
+    .trim();
+
+  return (
+    <div className={classes}>
+      <div className="min-w-0">
+        <p className="truncate text-[13px] font-medium text-foreground">{title}</p>
+      </div>
+      <div className="shrink-0 text-right leading-none">消息 {messageCount}</div>
+    </div>
+  );
+};
 
 export const AppView = () => {
   const controller = useAppController();
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const {
-    TOP_FRAME_HEIGHT_PX,
+    shell,
+    chat,
+    agent,
+    settings,
+    automation
+  } = controller;
+  const {
+    topFrameHeightPx,
     activeView,
     setActiveView,
     activeSettingsSection,
     setActiveSettingsSection,
+    errorBanner,
+    soulStatusToast,
+    isHydrated,
+    isSidebarOpen,
+    setIsSidebarOpen,
+    sidebarWidth,
+    showFloatingSidebarToggle,
+    closeSidebarIfCompact,
+    openSettings
+  } = shell;
+  const {
     activeSession,
     activeSessionId,
     setActiveSessionId,
     orderedChatSessions,
-    userSkills,
-    saveUserSkills,
-    activeSkill,
-    setActiveSkill,
     activeEnabledMcpServers,
-    updateSessionMcpServers,
-    settings,
     isConfigured,
     composerModelOptions,
     activeComposerModelValue,
@@ -44,6 +79,7 @@ export const AppView = () => {
     composerUsageLabel,
     selectComposerModel,
     updateChatContextWindow,
+    updateSessionMcpServers,
     isGenerating,
     draft,
     setDraft,
@@ -57,8 +93,6 @@ export const AppView = () => {
     handleApplySkill,
     stopGenerating,
     removedSession,
-    errorBanner,
-    soulStatusToast,
     undoDelete,
     createNewChat,
     renameChat,
@@ -70,6 +104,17 @@ export const AppView = () => {
     exportSessions,
     importSessions,
     clearAllSessions,
+    isChatDragOver,
+    showCenteredChatLanding,
+    activeChatMessageCount,
+    handleChatDragEnter,
+    handleChatDragOver,
+    handleChatDragLeave,
+    handleChatDrop,
+    activeSkill,
+    setActiveSkill
+  } = chat;
+  const {
     agentSessions,
     activeAgentSessionId,
     setActiveAgentSessionId,
@@ -92,21 +137,12 @@ export const AppView = () => {
     agentErrorBanner,
     createNewAgentSession,
     renameAgentSession,
-    deleteAgentSession,
-    isHydrated,
-    isSidebarOpen,
-    setIsSidebarOpen,
-    isChatDragOver,
-    sidebarWidth,
-    showFloatingSidebarToggle,
-    showCenteredChatLanding,
-    activeChatMessageCount,
-    closeSidebarIfCompact,
-    openSettings,
-    handleChatDragEnter,
-    handleChatDragOver,
-    handleChatDragLeave,
-    handleChatDrop,
+    deleteAgentSession
+  } = agent;
+  const {
+    userSkills,
+    saveUserSkills,
+    settings: appSettings,
     saveSettings,
     testConnection,
     testMemosConnection,
@@ -115,7 +151,13 @@ export const AppView = () => {
     listMcpServerStatus,
     reloadMcpServers,
     resetSettings
-  } = controller;
+  } = settings;
+  const {
+    isJournalGenerating,
+    generateTodayJournal,
+    isUserProfileRefreshing,
+    refreshUserProfile
+  } = automation;
 
   const focusComposerInView = (view: "chat" | "agent") => {
     window.requestAnimationFrame(() => {
@@ -127,74 +169,29 @@ export const AppView = () => {
     });
   };
 
-  const activeAgentSession = useMemo(
-    () => agentSessions.find((session) => session.id === activeAgentSessionId) ?? null,
-    [agentSessions, activeAgentSessionId]
-  );
+  const isSoulModeEnabled = activeSession?.soulModeEnabled !== false;
+  const toggleSoulMode = () => {
+    if (!activeSession) {
+      return;
+    }
+    updateSessionSoulMode(activeSession.id, activeSession.soulModeEnabled === false);
+  };
   const isMacPlatform = useMemo(() => detectIsMacPlatform(), []);
 
   const commandPaletteCommands = useMemo(
     () =>
       buildCommandPaletteCommands({
-        activeView,
-        isSidebarOpen,
-        activeSession,
-        activeAgentSession,
-        orderedChatSessions,
-        agentSessions,
-        isGenerating,
-        isAgentRunning,
-        closeSidebarIfCompact,
-        setActiveView,
-        setActiveSessionId,
-        setActiveAgentSessionId,
-        setIsSidebarOpen,
-        createNewChat,
-        createNewAgentSession,
-        openSettings,
-        renameChat,
-        toggleChatPin,
-        exportSession,
-        exportSessionMarkdown,
-        deleteChat,
-        renameAgentSession,
-        deleteAgentSession,
-        stopGenerating,
-        stopAgentRun,
+        shell,
+        chat,
+        agent,
+        settings,
         focusComposerInView,
-        exportSessions,
-        clearAllSessions,
-        resetSettings
       }),
     [
-      activeView,
-      activeAgentSession,
-      activeSession,
-      agentSessions,
-      createNewAgentSession,
-      createNewChat,
-      clearAllSessions,
-      deleteAgentSession,
-      deleteChat,
-      exportSession,
-      exportSessionMarkdown,
-      exportSessions,
-      isAgentRunning,
-      isGenerating,
-      isSidebarOpen,
-      openSettings,
-      orderedChatSessions,
-      renameAgentSession,
-      renameChat,
-      resetSettings,
-      closeSidebarIfCompact,
-      setActiveView,
-      setActiveAgentSessionId,
-      setActiveSessionId,
-      setIsSidebarOpen,
-      stopAgentRun,
-      stopGenerating,
-      toggleChatPin
+      agent,
+      chat,
+      settings,
+      shell
     ]
   );
 
@@ -324,7 +321,7 @@ export const AppView = () => {
       className="app-shell relative h-screen min-w-0 overflow-hidden bg-background p-1.5 sm:p-2"
       data-file-dragging={activeView === "chat" && isChatDragOver ? "true" : "false"}
     >
-      <div className="app-window-drag-layer" style={{ left: 0, height: TOP_FRAME_HEIGHT_PX }} aria-hidden />
+      <div className="app-window-drag-layer" style={{ left: 0, height: topFrameHeightPx }} aria-hidden />
 
       <div
         className="app-shell-frame relative grid h-full transition-[grid-template-columns,column-gap] duration-300 ease-out"
@@ -334,7 +331,7 @@ export const AppView = () => {
         }}
       >
         <div
-          className={`sketch-panel app-shell-panel overflow-hidden transition-[transform,opacity] duration-250 ease-out ${
+          className={`app-shell-panel app-shell-panel-sidebar overflow-hidden transition-[transform,opacity] duration-250 ease-out ${
             !isSidebarOpen
               ? "-translate-x-[110%] opacity-0 pointer-events-none"
               : "translate-x-0 opacity-100"
@@ -345,7 +342,7 @@ export const AppView = () => {
 
         <main
           className={[
-            "sketch-panel app-shell-panel relative flex min-h-0 flex-col overflow-hidden transition-colors",
+            "app-shell-panel relative flex min-h-0 flex-col overflow-hidden transition-colors",
             activeView === "chat" && isChatDragOver
               ? "border-primary bg-accent/30"
               : ""
@@ -364,7 +361,7 @@ export const AppView = () => {
           ) : null}
           {activeView === "chat" && soulStatusToast ? (
             <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center px-4">
-              <div className="state-note min-w-[220px] max-w-[360px] rounded-2xl px-4 py-2 text-center text-sm shadow-[0_16px_40px_rgba(15,23,42,0.12)]">
+              <div className="state-note min-w-[220px] max-w-[420px] whitespace-pre-line rounded-2xl px-4 py-2 text-center text-sm shadow-[0_16px_40px_rgba(15,23,42,0.12)]">
                 {soulStatusToast}
               </div>
             </div>
@@ -410,119 +407,79 @@ export const AppView = () => {
               ) : null}
 
               {showCenteredChatLanding ? (
-                <section className="flex h-full w-full items-center justify-center px-4 py-6 sm:px-6">
-                  <div className="w-full max-w-[920px]">
-                    <div className="paper-conversation-stage mx-auto mb-10 grid h-12 w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 px-3 text-[12px] text-muted-foreground sm:px-4">
-                      <div className="min-w-0">
-                        <p className="truncate text-[13px] font-medium text-foreground">
-                          {activeSession?.title ?? "New Chat"}
-                        </p>
-                      </div>
-                      <div className="flex justify-center">
-                        <Button
-                          type="button"
-                          variant={activeSession?.soulModeEnabled !== false ? "default" : "outline"}
-                          size="sm"
-                          className="h-8 rounded-full px-3"
-                          onClick={() => {
-                            if (!activeSession) {
-                              return;
-                            }
-                            updateSessionSoulMode(
-                              activeSession.id,
-                              activeSession.soulModeEnabled === false
-                            );
+                <section className="flex h-full w-full flex-col px-4 py-6 sm:px-6">
+                  <div className="w-full max-w-[920px] self-center">
+                    <ChatSessionHeader
+                      className="mb-10"
+                      title={activeSession?.title ?? "New Chat"}
+                      messageCount={activeChatMessageCount}
+                    />
+                  </div>
+                  <div className="flex min-h-0 flex-1 items-center justify-center">
+                    <div className="w-full max-w-[920px]">
+                      <h2 className="mb-14 text-center text-[36px] font-semibold leading-tight text-foreground sm:mb-16 sm:text-[44px] md:mb-20">
+                        今天有什么可以帮到你？
+                      </h2>
+                      <div className="mx-auto w-full max-w-[720px]" data-chat-composer-root="true">
+                        <AttachmentTray
+                          attachments={draftAttachments}
+                          onRemoveAttachment={removeAttachment}
+                        />
+                        <Composer
+                          value={draft}
+                          modelLabel={appSettings.model || "模型"}
+                          modelValue={activeComposerModelValue}
+                          modelOptions={composerModelOptions}
+                          modelCapabilities={activeModelCapabilities}
+                          sendWithEnter={appSettings.sendWithEnter}
+                          chatContextWindow={appSettings.chatContextWindow}
+                          attachmentCount={draftAttachments.length}
+                          mcpServers={appSettings.mcpServers ?? []}
+                          enabledMcpServers={activeEnabledMcpServers}
+                          skills={userSkills}
+                          activeSkill={activeSkill}
+                          onChangeActiveSkill={setActiveSkill}
+                          onAddFiles={addFiles}
+                          onChangeChatContextWindow={updateChatContextWindow}
+                          onSelectModel={selectComposerModel}
+                          onChangeMcpServers={updateSessionMcpServers}
+                          onChange={setDraft}
+                          onSubmit={(value) => {
+                            void sendMessage(value);
                           }}
-                        >
-                          <Bot className="mr-1.5 h-3.5 w-3.5" />
-                          {activeSession?.soulModeEnabled !== false ? "SOUL 模式" : "系统提示词"}
-                        </Button>
+                          onApplySkill={handleApplySkill}
+                          onStop={() => {
+                            void stopGenerating();
+                          }}
+                          usageLabel={composerUsageLabel}
+                          disabled={!isConfigured}
+                          isGenerating={isGenerating}
+                          leadingControl={
+                            <Button
+                              type="button"
+                              variant={isSoulModeEnabled ? "default" : "outline"}
+                              className="h-[32px] rounded-full px-3 text-xs"
+                              onClick={toggleSoulMode}
+                              aria-pressed={isSoulModeEnabled}
+                              title={isSoulModeEnabled ? "当前为 SOUL 模式" : "当前为系统提示词模式"}
+                            >
+                              <Bot className="mr-1.5 h-3.5 w-3.5" />
+                              SOUL
+                            </Button>
+                          }
+                        />
                       </div>
-                      <div className="text-right leading-none">
-                        消息 {activeChatMessageCount}
-                      </div>
-                    </div>
-                    <h2 className="mb-14 text-center text-[36px] font-semibold leading-tight text-foreground sm:mb-16 sm:text-[44px] md:mb-20">
-                      今天有什么可以帮到你？
-                    </h2>
-                    <div className="mx-auto w-full max-w-[720px]" data-chat-composer-root="true">
-                      <AttachmentTray
-                        attachments={draftAttachments}
-                        onRemoveAttachment={removeAttachment}
-                      />
-                      <Composer
-                        value={draft}
-                        modelLabel={settings.model || "模型"}
-                        modelValue={activeComposerModelValue}
-                        modelOptions={composerModelOptions}
-                        modelCapabilities={activeModelCapabilities}
-                        sendWithEnter={settings.sendWithEnter}
-                        chatContextWindow={settings.chatContextWindow}
-                        attachmentCount={draftAttachments.length}
-                        mcpServers={settings.mcpServers ?? []}
-                        enabledMcpServers={activeEnabledMcpServers}
-                        skills={mergeSkills(userSkills)}
-                        activeSkill={activeSkill}
-                        onChangeActiveSkill={setActiveSkill}
-                        onAddFiles={addFiles}
-                        onChangeChatContextWindow={updateChatContextWindow}
-                        onSelectModel={selectComposerModel}
-                        onChangeMcpServers={updateSessionMcpServers}
-                        onChange={setDraft}
-                        onSubmit={(value) => {
-                          void sendMessage(value);
-                        }}
-                        onApplySkill={(skill, params, input) => {
-                          handleApplySkill(skill, params, input);
-                        }}
-                        onStop={() => {
-                          void stopGenerating();
-                        }}
-                        usageLabel={composerUsageLabel}
-                        disabled={!isConfigured}
-                        isGenerating={isGenerating}
-                      />
                     </div>
                   </div>
                 </section>
               ) : (
                 <div className="flex h-full min-h-0 flex-col">
                   <div className="flex min-h-0 flex-1 flex-col bg-transparent">
-                    <div
-                      className={[
-                        "paper-conversation-stage mx-auto mt-0 grid h-12 w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 px-3 text-[12px] text-muted-foreground sm:px-4",
-                        showFloatingSidebarToggle ? "pl-[132px] sm:pl-[136px]" : ""
-                      ].join(" ")}
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-[13px] font-medium text-foreground">
-                          {activeSession?.title ?? "New Chat"}
-                        </p>
-                      </div>
-                      <div className="flex justify-center">
-                        <Button
-                          type="button"
-                          variant={activeSession?.soulModeEnabled !== false ? "default" : "outline"}
-                          size="sm"
-                          className="h-8 rounded-full px-3"
-                          onClick={() => {
-                            if (!activeSession) {
-                              return;
-                            }
-                            updateSessionSoulMode(
-                              activeSession.id,
-                              activeSession.soulModeEnabled === false
-                            );
-                          }}
-                        >
-                          <Bot className="mr-1.5 h-3.5 w-3.5" />
-                          {activeSession?.soulModeEnabled !== false ? "SOUL 模式" : "系统提示词"}
-                        </Button>
-                      </div>
-                      <div className="text-right leading-none">
-                        消息 {activeChatMessageCount}
-                      </div>
-                    </div>
+                    <ChatSessionHeader
+                      className={showFloatingSidebarToggle ? "pl-[132px] sm:pl-[136px]" : undefined}
+                      title={activeSession?.title ?? "New Chat"}
+                      messageCount={activeChatMessageCount}
+                    />
                     <div className="min-h-0 flex-1">
                       <ChatView
                         sessionId={activeSessionId}
@@ -547,16 +504,16 @@ export const AppView = () => {
                       />
                       <Composer
                         value={draft}
-                        modelLabel={settings.model || "模型"}
+                        modelLabel={appSettings.model || "模型"}
                         modelValue={activeComposerModelValue}
                         modelOptions={composerModelOptions}
                         modelCapabilities={activeModelCapabilities}
-                        sendWithEnter={settings.sendWithEnter}
-                        chatContextWindow={settings.chatContextWindow}
+                        sendWithEnter={appSettings.sendWithEnter}
+                        chatContextWindow={appSettings.chatContextWindow}
                         attachmentCount={draftAttachments.length}
-                        mcpServers={settings.mcpServers ?? []}
+                        mcpServers={appSettings.mcpServers ?? []}
                         enabledMcpServers={activeEnabledMcpServers}
-                        skills={mergeSkills(userSkills)}
+                        skills={userSkills}
                         activeSkill={activeSkill}
                         onChangeActiveSkill={setActiveSkill}
                         onAddFiles={addFiles}
@@ -567,15 +524,26 @@ export const AppView = () => {
                         onSubmit={(value) => {
                           void sendMessage(value);
                         }}
-                        onApplySkill={(skill, params, input) => {
-                          handleApplySkill(skill, params, input);
-                        }}
+                        onApplySkill={handleApplySkill}
                         onStop={() => {
                           void stopGenerating();
                         }}
                         usageLabel={composerUsageLabel}
                         disabled={!isConfigured}
                         isGenerating={isGenerating}
+                        leadingControl={
+                          <Button
+                            type="button"
+                            variant={isSoulModeEnabled ? "default" : "outline"}
+                            className="h-[32px] rounded-full px-3 text-xs"
+                            onClick={toggleSoulMode}
+                            aria-pressed={isSoulModeEnabled}
+                            title={isSoulModeEnabled ? "当前为 SOUL 模式" : "当前为系统提示词模式"}
+                          >
+                            <Bot className="mr-1.5 h-3.5 w-3.5" />
+                            SOUL
+                          </Button>
+                        }
                       />
                     </div>
                   </div>
@@ -626,6 +594,77 @@ export const AppView = () => {
                 )}
               </div>
 
+              {activeAgentPermissionRequest ? (
+                <div className="mx-2 mb-1 overflow-hidden rounded-lg border border-amber-500/40 bg-amber-50/80 dark:bg-amber-950/30 sm:mx-3 md:mx-4">
+                  <div className="flex items-start justify-between gap-3 px-3 py-2.5">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[12.5px] font-semibold text-amber-800 dark:text-amber-300">
+                        ⚠ Agent 请求权限
+                        {activeAgentPermissionRequest.toolName
+                          ? ` · ${activeAgentPermissionRequest.toolName}`
+                          : ""}
+                      </p>
+                      {activeAgentPermissionRequest.reason ? (
+                        <p className="mt-0.5 text-[12px] text-amber-800/80 dark:text-amber-300/75">
+                          {activeAgentPermissionRequest.reason}
+                        </p>
+                      ) : null}
+                      {activeAgentPermissionRequest.blockedPath ? (
+                        <p className="mt-0.5 truncate font-mono text-[11.5px] text-amber-700/80 dark:text-amber-400/70">
+                          {activeAgentPermissionRequest.blockedPath}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-3 pt-0.5">
+                      <button
+                        type="button"
+                        className="text-[12px] font-medium text-amber-800 underline-offset-2 transition-colors hover:underline dark:text-amber-300 disabled:opacity-40"
+                        disabled={activeAgentPermissionRequest.resolving}
+                        onClick={() =>
+                          resolveAgentPermissionRequest(
+                            activeAgentPermissionRequest,
+                            "approved",
+                            false
+                          )
+                        }
+                      >
+                        允许
+                      </button>
+                      {activeAgentPermissionRequest.supportsAlwaysAllow ? (
+                        <button
+                          type="button"
+                          className="text-[12px] font-medium text-amber-800/80 underline-offset-2 transition-colors hover:underline dark:text-amber-300/80 disabled:opacity-40"
+                          disabled={activeAgentPermissionRequest.resolving}
+                          onClick={() =>
+                            resolveAgentPermissionRequest(
+                              activeAgentPermissionRequest,
+                              "approved",
+                              true
+                            )
+                          }
+                        >
+                          始终允许
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="text-[12px] font-medium text-red-600/80 underline-offset-2 transition-colors hover:underline dark:text-red-400/80 disabled:opacity-40"
+                        disabled={activeAgentPermissionRequest.resolving}
+                        onClick={() =>
+                          resolveAgentPermissionRequest(
+                            activeAgentPermissionRequest,
+                            "denied",
+                            false
+                          )
+                        }
+                      >
+                        拒绝
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
               <div
                 className="px-2 pb-2 pt-0 sm:px-3 sm:pb-3 md:px-4 md:pb-4"
                 data-agent-composer-root="true"
@@ -641,8 +680,8 @@ export const AppView = () => {
                     modelValue={activeAgentModelValue}
                     modelOptions={agentModelOptions}
                     modelCapabilities={activeModelCapabilities}
-                    sendWithEnter={settings.sendWithEnter}
-                    chatContextWindow={settings.chatContextWindow}
+                    sendWithEnter={appSettings.sendWithEnter}
+                    chatContextWindow={appSettings.chatContextWindow}
                     attachmentCount={agentDraftAttachments.length}
                     mcpServers={[]}
                     enabledMcpServers={[]}
@@ -687,7 +726,7 @@ export const AppView = () => {
                 section={activeSettingsSection}
                 userSkills={userSkills}
                 onSaveUserSkills={saveUserSkills}
-                settings={settings}
+                settings={appSettings}
                 onSave={saveSettings}
                 onTest={testConnection}
                 onTestMemos={testMemosConnection}
@@ -699,6 +738,10 @@ export const AppView = () => {
                 onImportSessions={importSessions}
                 onClearSessions={clearAllSessions}
                 onResetSettings={resetSettings}
+                onGenerateTodayJournal={generateTodayJournal}
+                isJournalGenerating={isJournalGenerating}
+                onRefreshUserProfile={refreshUserProfile}
+                isUserProfileRefreshing={isUserProfileRefreshing}
               />
             </>
           )}

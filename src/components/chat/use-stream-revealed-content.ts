@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { startTransition, useEffect, useRef, useState } from "react";
 import type { ChatMessage } from "../../shared/contracts";
 
-const STREAM_REVEAL_MAX_STEP = 24;
-const STREAM_REVEAL_FAST_CPS = 420;
-const STREAM_REVEAL_MEDIUM_CPS = 300;
-const STREAM_REVEAL_SLOW_CPS = 170;
-const STREAM_REVEAL_COMMIT_INTERVAL_MS = 40;
+const STREAM_REVEAL_MAX_STEP = 9999;
+const STREAM_REVEAL_FAST_CPS = 6400;
+const STREAM_REVEAL_MEDIUM_CPS = 5200;
+const STREAM_REVEAL_SLOW_CPS = 4200;
+const STREAM_REVEAL_COMMIT_INTERVAL_MS = 72;
 
 export const resolveStreamRevealCharsPerSecond = (remaining: number) =>
   remaining > 600
@@ -25,29 +25,41 @@ export const resolveStreamRevealStep = (carry: number, remaining: number) => {
   };
 };
 
+export const resolveStreamRevealCommitLength = (
+  _content: string,
+  _displayedLength: number,
+  targetLength: number
+) => targetLength;
+
 export const useStreamRevealedContent = ({
   content,
-  role
+  role,
+  disabled = false
 }: {
   content: string;
   role: ChatMessage["role"];
+  disabled?: boolean;
 }) => {
   const [displayedContent, setDisplayedContent] = useState(content);
   const displayedContentRef = useRef(content);
   const targetContentRef = useRef(content);
+  const commitDisplayedContent = (next: string) => {
+    displayedContentRef.current = next;
+    startTransition(() => {
+      setDisplayedContent(next);
+    });
+  };
 
   useEffect(() => {
     targetContentRef.current = content;
 
-    if (role !== "assistant") {
-      displayedContentRef.current = content;
-      setDisplayedContent(content);
+    if (role !== "assistant" || disabled) {
+      commitDisplayedContent(content);
       return;
     }
 
     if (content.length <= displayedContentRef.current.length) {
-      displayedContentRef.current = content;
-      setDisplayedContent(content);
+      commitDisplayedContent(content);
       return;
     }
 
@@ -79,16 +91,21 @@ export const useStreamRevealedContent = ({
       const shouldCommit =
         timestamp - lastCommitAt >= STREAM_REVEAL_COMMIT_INTERVAL_MS || virtualLength >= target.length;
       if (shouldCommit && virtualLength > displayedContentRef.current.length) {
-        const next = target.slice(0, virtualLength);
-        displayedContentRef.current = next;
-        setDisplayedContent(next);
-        lastCommitAt = timestamp;
+        const commitLength = resolveStreamRevealCommitLength(
+          target,
+          displayedContentRef.current.length,
+          virtualLength
+        );
+        if (commitLength > displayedContentRef.current.length) {
+          const next = target.slice(0, commitLength);
+          commitDisplayedContent(next);
+          lastCommitAt = timestamp;
+        }
       }
 
       if (virtualLength >= target.length) {
         if (displayedContentRef.current.length < target.length) {
-          displayedContentRef.current = target;
-          setDisplayedContent(target);
+          commitDisplayedContent(target);
         }
         frameId = null;
         return;
@@ -104,7 +121,7 @@ export const useStreamRevealedContent = ({
         window.cancelAnimationFrame(frameId);
       }
     };
-  }, [content, role]);
+  }, [content, disabled, role]);
 
   return displayedContent;
 };

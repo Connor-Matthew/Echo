@@ -20,7 +20,15 @@ import {
   type McpServerListResult,
   type McpServerStatusListResult,
   type SoulAutomationState,
-  type Skill
+  type Skill,
+  type UserProfileAutomationState,
+  type UserProfileDailyNote,
+  type UserProfileEvidence,
+  type UserProfileItem,
+  type UserProfileItemDraft,
+  type UserProfileManualItemPayload,
+  type UserProfileItemStatus,
+  type UserProfileLayer
 } from "../shared/contracts";
 import {
   clampInteger,
@@ -100,6 +108,31 @@ export type MuApi = {
     saveJournalEntry: (date: string, markdown: string) => Promise<void>;
     listJournalDates: () => Promise<string[]>;
   };
+  profile: {
+    listDailyNotes: () => Promise<UserProfileDailyNote[]>;
+    getDailyNote: (date: string) => Promise<UserProfileDailyNote | null>;
+    upsertDailyNote: (note: {
+      date: string;
+      summaryMarkdown: string;
+      sourceMessageCount: number;
+      source?: "auto" | "manual";
+    }) => Promise<UserProfileDailyNote>;
+    listItems: (layer?: UserProfileLayer) => Promise<UserProfileItem[]>;
+    listEvidence: (profileItemId: string) => Promise<UserProfileEvidence[]>;
+    replaceAutoProfile: (payload: {
+      items: UserProfileItemDraft[];
+      snapshotMarkdown: string;
+    }) => Promise<UserProfileItem[]>;
+    saveManualItem: (payload: UserProfileManualItemPayload) => Promise<UserProfileItem>;
+    updateItemStatus: (payload: {
+      itemId: string;
+      status: UserProfileItemStatus;
+    }) => Promise<UserProfileItem | null>;
+    deleteItem: (itemId: string) => Promise<void>;
+    getSnapshotMarkdown: () => Promise<string>;
+    getAutomationState: () => Promise<UserProfileAutomationState>;
+    saveAutomationState: (state: UserProfileAutomationState) => Promise<UserProfileAutomationState>;
+  };
 };
 
 const SETTINGS_KEY = "mu.settings.v1";
@@ -109,6 +142,11 @@ const AGENT_MESSAGES_KEY = "mu.agent.messages.v1";
 const SOUL_MARKDOWN_KEY = "mu.soul.markdown.v1";
 const SOUL_MEMORY_MARKDOWN_KEY = "mu.soul.memory.markdown.v1";
 const SOUL_AUTOMATION_STATE_KEY = "mu.soul.automation.state.v1";
+const PROFILE_SNAPSHOT_MARKDOWN_KEY = "mu.profile.snapshot.markdown.v1";
+const PROFILE_DAILY_NOTES_KEY = "mu.profile.daily-notes.v1";
+const PROFILE_ITEMS_KEY = "mu.profile.items.v1";
+const PROFILE_EVIDENCE_KEY = "mu.profile.evidence.v1";
+const PROFILE_AUTOMATION_STATE_KEY = "mu.profile.automation.state.v1";
 const MIN_REQUEST_TIMEOUT_MS = 5000;
 const MAX_REQUEST_TIMEOUT_MS = 180000;
 const MIN_RETRY_COUNT = 0;
@@ -131,6 +169,34 @@ const writeLocalStorage = (key: string, value: unknown) => {
 };
 
 const createFallbackSoulAutomationState = (): SoulAutomationState => ({});
+const createFallbackProfileAutomationState = (): UserProfileAutomationState => ({});
+
+const renderFallbackProfileSnapshot = (items: UserProfileItem[]) => {
+  const labels: Record<UserProfileLayer, string> = {
+    preferences: "偏好与习惯",
+    background: "人生背景与长期状态",
+    relationship: "关系画像"
+  };
+  const activeItems = items.filter((item) => item.status === "active");
+  if (!activeItems.length) {
+    return "";
+  }
+  const sections = (Object.keys(labels) as UserProfileLayer[])
+    .map((layer) => {
+      const layerItems = activeItems.filter((item) => item.layer === layer);
+      if (!layerItems.length) {
+        return "";
+      }
+      return `## ${labels[layer]}\n\n${layerItems
+        .map(
+          (item) =>
+            `- **${item.title}**（置信度 ${Math.round(item.confidence * 100)}%）：${item.description}`
+        )
+        .join("\n")}`;
+    })
+    .filter(Boolean);
+  return `${[`# 用户画像快照`, "", ...sections].join("\n")}\n`;
+};
 
 const normalizeRequestTimeoutMs = (value: number) =>
   clampInteger(value, MIN_REQUEST_TIMEOUT_MS, MAX_REQUEST_TIMEOUT_MS, DEFAULT_SETTINGS.requestTimeoutMs);
@@ -1178,6 +1244,159 @@ const createBrowserFallbackApi = (): MuApi => {
       getJournalEntry: async () => null,
       saveJournalEntry: async () => {},
       listJournalDates: async () => []
+    },
+    profile: {
+      listDailyNotes: async () => readLocalStorage<UserProfileDailyNote[]>(PROFILE_DAILY_NOTES_KEY, []),
+      getDailyNote: async (date) =>
+        readLocalStorage<UserProfileDailyNote[]>(PROFILE_DAILY_NOTES_KEY, []).find((note) => note.date === date) ??
+        null,
+      upsertDailyNote: async (note) => {
+        const existing = readLocalStorage<UserProfileDailyNote[]>(PROFILE_DAILY_NOTES_KEY, []);
+        const now = nowIso();
+        const source = note.source ?? "auto";
+        const current = existing.find((entry) => entry.date === note.date);
+        if (current?.source === "manual" && source === "auto") {
+          return current;
+        }
+        const nextNote: UserProfileDailyNote = current
+          ? {
+              ...current,
+              summaryMarkdown: note.summaryMarkdown,
+              sourceMessageCount: note.sourceMessageCount,
+              source,
+              updatedAt: now
+            }
+          : {
+              id: createId(),
+              date: note.date,
+              summaryMarkdown: note.summaryMarkdown,
+              sourceMessageCount: note.sourceMessageCount,
+              source,
+              createdAt: now,
+              updatedAt: now
+            };
+        const nextNotes = [...existing.filter((entry) => entry.date !== note.date), nextNote].sort((left, right) =>
+          right.date.localeCompare(left.date)
+        );
+        writeLocalStorage(PROFILE_DAILY_NOTES_KEY, nextNotes);
+        return nextNote;
+      },
+      listItems: async (layer) => {
+        const items = readLocalStorage<UserProfileItem[]>(PROFILE_ITEMS_KEY, []);
+        return layer ? items.filter((item) => item.layer === layer) : items;
+      },
+      listEvidence: async (profileItemId) =>
+        readLocalStorage<UserProfileEvidence[]>(PROFILE_EVIDENCE_KEY, []).filter(
+          (evidence) => evidence.profileItemId === profileItemId
+        ),
+      replaceAutoProfile: async (payload) => {
+        const now = nowIso();
+        const existingItems = readLocalStorage<UserProfileItem[]>(PROFILE_ITEMS_KEY, []);
+        const existingEvidence = readLocalStorage<UserProfileEvidence[]>(PROFILE_EVIDENCE_KEY, []);
+        const manualItems = existingItems.filter((item) => item.source === "manual");
+        const manualEvidence = existingEvidence.filter((entry) =>
+          manualItems.some((item) => item.id === entry.profileItemId)
+        );
+        const autoItems: UserProfileItem[] = payload.items.map((item) => ({
+          id: createId(),
+          layer: item.layer,
+          title: item.title,
+          description: item.description,
+          confidence: item.confidence,
+          status: "active",
+          source: "auto",
+          lastConfirmedAt: now,
+          createdAt: now,
+          updatedAt: now
+        }));
+        const autoEvidence: UserProfileEvidence[] = autoItems.flatMap((item, index) =>
+          payload.items[index].evidence.map((entry) => ({
+            id: createId(),
+            profileItemId: item.id,
+            dailyNoteDate: entry.dailyNoteDate,
+            excerpt: entry.excerpt,
+            weight: entry.weight ?? 1,
+            createdAt: now
+          }))
+        );
+        const nextItems = [...manualItems, ...autoItems];
+        writeLocalStorage(PROFILE_ITEMS_KEY, nextItems);
+        writeLocalStorage(PROFILE_EVIDENCE_KEY, [...manualEvidence, ...autoEvidence]);
+        writeLocalStorage(PROFILE_SNAPSHOT_MARKDOWN_KEY, renderFallbackProfileSnapshot(nextItems));
+        return nextItems;
+      },
+      saveManualItem: async (payload) => {
+        const now = nowIso();
+        const items = readLocalStorage<UserProfileItem[]>(PROFILE_ITEMS_KEY, []);
+        const evidence = readLocalStorage<UserProfileEvidence[]>(PROFILE_EVIDENCE_KEY, []);
+        const itemId = payload.itemId?.trim() || createId();
+        const current = items.find((item) => item.id === itemId);
+        const nextItem: UserProfileItem = {
+          id: itemId,
+          layer: payload.layer,
+          title: payload.title.trim(),
+          description: payload.description.trim(),
+          confidence: payload.confidence,
+          status: payload.status ?? current?.status ?? "active",
+          source: "manual",
+          lastConfirmedAt: now,
+          createdAt: current?.createdAt ?? now,
+          updatedAt: now
+        };
+        const nextItems = [...items.filter((item) => item.id !== itemId), nextItem];
+        const nextEvidence = [
+          ...evidence.filter((entry) => entry.profileItemId !== itemId),
+          ...payload.evidence
+            .filter((entry) => entry.dailyNoteDate.trim() && entry.excerpt.trim())
+            .map((entry) => ({
+              id: createId(),
+              profileItemId: itemId,
+              dailyNoteDate: entry.dailyNoteDate.trim(),
+              excerpt: entry.excerpt.trim(),
+              weight: entry.weight ?? 1,
+              createdAt: now
+            }))
+        ];
+        writeLocalStorage(PROFILE_ITEMS_KEY, nextItems);
+        writeLocalStorage(PROFILE_EVIDENCE_KEY, nextEvidence);
+        writeLocalStorage(PROFILE_SNAPSHOT_MARKDOWN_KEY, renderFallbackProfileSnapshot(nextItems));
+        return nextItem;
+      },
+      updateItemStatus: async ({ itemId, status }) => {
+        const items = readLocalStorage<UserProfileItem[]>(PROFILE_ITEMS_KEY, []);
+        let updated: UserProfileItem | null = null;
+        const nextItems = items.map((item) => {
+          if (item.id !== itemId) {
+            return item;
+          }
+          updated = { ...item, status, updatedAt: nowIso() };
+          return updated;
+        });
+        writeLocalStorage(PROFILE_ITEMS_KEY, nextItems);
+        writeLocalStorage(PROFILE_SNAPSHOT_MARKDOWN_KEY, renderFallbackProfileSnapshot(nextItems));
+        return updated;
+      },
+      deleteItem: async (itemId) => {
+        const items = readLocalStorage<UserProfileItem[]>(PROFILE_ITEMS_KEY, []).filter(
+          (item) => item.id !== itemId
+        );
+        const evidence = readLocalStorage<UserProfileEvidence[]>(PROFILE_EVIDENCE_KEY, []).filter(
+          (item) => item.profileItemId !== itemId
+        );
+        writeLocalStorage(PROFILE_ITEMS_KEY, items);
+        writeLocalStorage(PROFILE_EVIDENCE_KEY, evidence);
+        writeLocalStorage(PROFILE_SNAPSHOT_MARKDOWN_KEY, renderFallbackProfileSnapshot(items));
+      },
+      getSnapshotMarkdown: async () => readLocalStorage<string>(PROFILE_SNAPSHOT_MARKDOWN_KEY, ""),
+      getAutomationState: async () =>
+        readLocalStorage<UserProfileAutomationState>(
+          PROFILE_AUTOMATION_STATE_KEY,
+          createFallbackProfileAutomationState()
+        ),
+      saveAutomationState: async (state) => {
+        writeLocalStorage(PROFILE_AUTOMATION_STATE_KEY, state);
+        return state;
+      }
     }
   };
 };
@@ -1199,7 +1418,8 @@ export const getMuApi = (): MuApi => {
       chat: runtimeApi.chat ?? fallbackApi.chat,
       agent: runtimeApi.agent ?? fallbackApi.agent,
       skills: runtimeApi.skills ?? fallbackApi.skills,
-      soul: runtimeApi.soul ?? fallbackApi.soul
+      soul: runtimeApi.soul ?? fallbackApi.soul,
+      profile: runtimeApi.profile ?? fallbackApi.profile
     };
     return cachedApi as MuApi;
   }

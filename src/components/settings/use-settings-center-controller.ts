@@ -2,11 +2,11 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import {
   resolveProviderModelContextWindow,
   toModelContextWindowKey
-} from "../../lib/model-context-window";
+} from "../../domain/model/context-window";
 import {
   resolveProviderModelCapabilities,
   toModelCapabilityKey
-} from "../../lib/model-capabilities";
+} from "../../domain/model/capabilities";
 import {
   areSettingsEqual,
   clamp,
@@ -55,6 +55,10 @@ export type SettingsCenterProps = {
   onImportSessions: (sessions: ChatSession[]) => void;
   onClearSessions: () => void;
   onResetSettings: () => Promise<void>;
+  onGenerateTodayJournal: () => Promise<boolean>;
+  isJournalGenerating: boolean;
+  onRefreshUserProfile: (options?: { force?: boolean }) => Promise<boolean>;
+  isUserProfileRefreshing: boolean;
 };
 
 export const useSettingsCenterController = ({
@@ -115,7 +119,23 @@ export const useSettingsCenterController = ({
     setModelContextWindowDraft("");
     setMemosTestResult(null);
     setIsTestingMemos(false);
-  }, [settings, section]);
+  }, [settings]);
+
+  useEffect(() => {
+    setTestResult(null);
+    setSaveError(null);
+    setDataMessage(null);
+    setProviderMessage(null);
+    setProviderSearch("");
+    setModelSearch("");
+    setCollapsedModelGroups({});
+    setIsFetchingModels(false);
+    setIsApiKeyVisible(false);
+    setIsApiKeyCopied(false);
+    setModelContextWindowDraft("");
+    setMemosTestResult(null);
+    setIsTestingMemos(false);
+  }, [section]);
 
   const isDirty = useMemo(() => !areSettingsEqual(draft, settings), [draft, settings]);
   const activeProvider = useMemo(() => getActiveProvider(draft), [draft]);
@@ -272,6 +292,67 @@ export const useSettingsCenterController = ({
       };
     });
     setSaveError(null);
+  };
+
+  const buildSettingsForProvider = (source: AppSettings, providerId: string) => {
+    const normalized = normalizeDraft(source);
+    const provider =
+      normalized.providers.find((candidate) => candidate.id === providerId) ?? normalized.providers[0];
+    if (!provider) {
+      return normalized;
+    }
+    return {
+      ...normalized,
+      activeProviderId: provider.id,
+      baseUrl: provider.baseUrl,
+      apiKey: provider.apiKey,
+      providerType: provider.providerType,
+      model: provider.model
+    };
+  };
+
+  const fetchProviderModels = async (providerId: string) => {
+    const source = buildSettingsForProvider(draft, providerId);
+    return onListModels(source);
+  };
+
+  const persistFetchedModelsForProvider = (providerId: string, models: string[]) => {
+    const normalizedModels = Array.from(
+      new Set(models.map((entry) => entry.trim()).filter(Boolean))
+    );
+    if (normalizedModels.length === 0) {
+      return;
+    }
+
+    setDraft((previous) => {
+      const nextProviders = previous.providers.map((provider) => {
+        if (provider.id !== providerId) {
+          return provider;
+        }
+
+        const nextSavedModels = Array.from(
+          new Set(
+            [...(Array.isArray(provider.savedModels) ? provider.savedModels : []), ...normalizedModels]
+              .map((entry) => entry.trim())
+              .filter(Boolean)
+          )
+        );
+
+        if (
+          nextSavedModels.length === (provider.savedModels ?? []).length &&
+          nextSavedModels.every((entry, index) => entry === (provider.savedModels ?? [])[index])
+        ) {
+          return provider;
+        }
+
+        return {
+          ...provider,
+          savedModels: nextSavedModels
+        };
+      });
+
+      return syncProviderState(previous, nextProviders, previous.activeProviderId);
+    });
   };
 
   const updateActiveProviderField = (
@@ -706,10 +787,12 @@ export const useSettingsCenterController = ({
     setIsFetchingModels(true);
     setProviderMessage(null);
     try {
-      const source = normalizeDraft(draft);
-      const result = await onListModels(source);
+      const result = await fetchProviderModels(activeProvider.id);
       setModelOptions(result.models);
       setCollapsedModelGroups({});
+      if (result.ok) {
+        persistFetchedModelsForProvider(activeProvider.id, result.models);
+      }
       if (result.ok && result.models.length && !activeProvider.model.trim()) {
         setActiveProviderModel(result.models[0], true);
       }

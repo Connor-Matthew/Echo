@@ -4,9 +4,9 @@ import {
   encodeComposerModelOption,
   formatTokenCount,
   toProviderInputTokens
-} from "../../lib/app-chat-utils";
-import { resolveProviderModelContextWindow } from "../../lib/model-context-window";
-import { resolveProviderModelCapabilities } from "../../lib/model-capabilities";
+} from "./utils/chat-utils";
+import { resolveProviderModelContextWindow } from "../../domain/model/context-window";
+import { resolveProviderModelCapabilities } from "../../domain/model/capabilities";
 import {
   normalizeSettings,
   type AppSettings,

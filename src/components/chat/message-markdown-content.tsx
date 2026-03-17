@@ -160,22 +160,42 @@ const markdownComponents: Components = {
   hr: () => <hr className="my-3 border-border" />
 };
 
-const MarkdownContentInner = ({ content, isUser }: { content: string; isUser: boolean }) => (
-  <div
-    className={[
-      "chat-markdown-root break-words text-[15px]",
-      isUser ? "text-foreground" : "text-foreground"
-    ].join(" ")}
-  >
-    <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={markdownComponents}>
-      {content}
-    </ReactMarkdown>
-  </div>
-);
+const MarkdownContentInner = ({
+  content,
+  isUser,
+  streaming = false
+}: {
+  content: string;
+  isUser: boolean;
+  streaming?: boolean;
+}) => {
+  const rootClassName = [
+    "chat-markdown-root break-words text-[15px]",
+    streaming ? "chat-streaming-markdown whitespace-pre-wrap" : "",
+    isUser ? "text-foreground" : "text-foreground"
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  if (streaming) {
+    return <div className={rootClassName}>{content}</div>;
+  }
+
+  return (
+    <div className={rootClassName}>
+      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={markdownComponents}>
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
+};
 
 export const MarkdownContent = memo(
   MarkdownContentInner,
-  (prev, next) => prev.content === next.content && prev.isUser === next.isUser
+  (prev, next) =>
+    prev.content === next.content &&
+    prev.isUser === next.isUser &&
+    Boolean(prev.streaming) === Boolean(next.streaming)
 );
 
 MarkdownContent.displayName = "MarkdownContent";

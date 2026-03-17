@@ -7,68 +7,86 @@ import { buildSessionSearchMetadata } from "./command-palette-session-search";
 type AppViewMode = "chat" | "agent" | "settings";
 
 type BuildCommandPaletteCommandsArgs = {
-  activeView: AppViewMode;
-  isSidebarOpen: boolean;
-  activeSession: ChatSession | null | undefined;
-  activeAgentSession: AgentSessionMeta | null;
-  orderedChatSessions: ChatSession[];
-  agentSessions: AgentSessionMeta[];
-  isGenerating: boolean;
-  isAgentRunning: boolean;
-  closeSidebarIfCompact: () => void;
-  setActiveView: (view: AppViewMode) => void;
-  setActiveSessionId: (sessionId: string) => void;
-  setActiveAgentSessionId: (sessionId: string) => void;
-  setIsSidebarOpen: (updater: (previous: boolean) => boolean) => void;
-  createNewChat: () => void;
-  createNewAgentSession: () => Promise<void> | void;
-  openSettings: (section: SettingsSection) => void;
-  renameChat: (sessionId: string) => void;
-  toggleChatPin: (sessionId: string) => void;
-  exportSession: (sessionId: string) => void;
-  exportSessionMarkdown: (sessionId: string) => void;
-  deleteChat: (sessionId: string) => void;
-  renameAgentSession: (sessionId: string) => Promise<void> | void;
-  deleteAgentSession: (sessionId: string) => Promise<void> | void;
-  stopGenerating: () => Promise<void> | void;
-  stopAgentRun: () => Promise<void> | void;
+  shell: {
+    activeView: AppViewMode;
+    isSidebarOpen: boolean;
+    closeSidebarIfCompact: () => void;
+    setActiveView: (view: AppViewMode) => void;
+    setIsSidebarOpen: (updater: (previous: boolean) => boolean) => void;
+    openSettings: (section: SettingsSection) => void;
+  };
+  chat: {
+    activeSession: ChatSession | null | undefined;
+    orderedChatSessions: ChatSession[];
+    isGenerating: boolean;
+    setActiveSessionId: (sessionId: string) => void;
+    createNewChat: () => void;
+    renameChat: (sessionId: string) => void;
+    toggleChatPin: (sessionId: string) => void;
+    exportSession: (sessionId: string) => void;
+    exportSessionMarkdown: (sessionId: string) => void;
+    deleteChat: (sessionId: string) => void;
+    stopGenerating: () => Promise<void> | void;
+    exportSessions: () => void;
+    clearAllSessions: () => void;
+  };
+  agent: {
+    activeAgentSession: AgentSessionMeta | null;
+    agentSessions: AgentSessionMeta[];
+    isAgentRunning: boolean;
+    setActiveAgentSessionId: (sessionId: string) => void;
+    createNewAgentSession: () => Promise<void> | void;
+    renameAgentSession: (sessionId: string) => Promise<void> | void;
+    deleteAgentSession: (sessionId: string) => Promise<void> | void;
+    stopAgentRun: () => Promise<void> | void;
+  };
+  settings: {
+    resetSettings: () => Promise<void> | void;
+  };
   focusComposerInView: (view: "chat" | "agent") => void;
-  exportSessions: () => void;
-  clearAllSessions: () => void;
-  resetSettings: () => Promise<void> | void;
 };
 
 export const buildCommandPaletteCommands = ({
-  activeView,
-  isSidebarOpen,
-  activeSession,
-  activeAgentSession,
-  orderedChatSessions,
-  agentSessions,
-  isGenerating,
-  isAgentRunning,
-  closeSidebarIfCompact,
-  setActiveView,
-  setActiveSessionId,
-  setActiveAgentSessionId,
-  setIsSidebarOpen,
-  createNewChat,
-  createNewAgentSession,
-  openSettings,
-  renameChat,
-  toggleChatPin,
-  exportSession,
-  exportSessionMarkdown,
-  deleteChat,
-  renameAgentSession,
-  deleteAgentSession,
-  stopGenerating,
-  stopAgentRun,
+  shell,
+  chat,
+  agent,
+  settings,
   focusComposerInView,
-  exportSessions,
-  clearAllSessions,
-  resetSettings
 }: BuildCommandPaletteCommandsArgs): CommandPaletteCommand[] => {
+  const {
+    activeView,
+    isSidebarOpen,
+    closeSidebarIfCompact,
+    setActiveView,
+    setIsSidebarOpen,
+    openSettings
+  } = shell;
+  const {
+    activeSession,
+    orderedChatSessions,
+    isGenerating,
+    setActiveSessionId,
+    createNewChat,
+    renameChat,
+    toggleChatPin,
+    exportSession,
+    exportSessionMarkdown,
+    deleteChat,
+    stopGenerating,
+    exportSessions,
+    clearAllSessions
+  } = chat;
+  const {
+    activeAgentSession,
+    agentSessions,
+    isAgentRunning,
+    setActiveAgentSessionId,
+    createNewAgentSession,
+    renameAgentSession,
+    deleteAgentSession,
+    stopAgentRun
+  } = agent;
+  const { resetSettings } = settings;
   const commands: CommandPaletteCommand[] = [
     {
       id: "new-chat",
@@ -186,6 +204,14 @@ export const buildCommandPaletteCommands = ({
       keywords: ["settings", "memory", "记忆"],
       aliases: ["shezhimemory", "szmemory", "jiyi"],
       onSelect: () => openSettings("memory")
+    },
+    {
+      id: "settings-profile",
+      group: "设置",
+      title: "打开设置 / Profile",
+      keywords: ["settings", "profile", "画像", "用户画像"],
+      aliases: ["shezhiprofile", "szprofile", "huaxiang", "yonghuhuaxiang"],
+      onSelect: () => openSettings("profile")
     },
     {
       id: "settings-skills",
