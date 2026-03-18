@@ -1,35 +1,5 @@
-import {
-  DEFAULT_SETTINGS,
-  normalizeSettings,
-  type AppSettings,
-  type ChatAttachment,
-  type ChatSession,
-  type ChatStreamEvent,
-  type ChatStreamRequest,
-  type ChatUsage,
-  type CompletionMessage,
-  type ConnectionTestResult,
-  type EnvironmentDeviceStatus,
-  type EnvironmentWeatherRequest,
-  type EnvironmentWeatherSnapshot,
-  type MemosAddPayload,
-  type MemosAddResult,
-  type MemosSearchPayload,
-  type MemosSearchResult,
-  type ModelListResult,
-  type McpServerListResult,
-  type McpServerStatusListResult,
-  type SoulAutomationState,
-  type Skill,
-  type UserProfileAutomationState,
-  type UserProfileDailyNote,
-  type UserProfileEvidence,
-  type UserProfileItem,
-  type UserProfileItemDraft,
-  type UserProfileManualItemPayload,
-  type UserProfileItemStatus,
-  type UserProfileLayer
-} from "../shared/contracts";
+import { type AppSettings, type ChatAttachment, type ChatSession, type ChatStreamEvent, type ChatStreamRequest, type ChatUsage, type CompletionMessage, type ConnectionTestResult, type EnvironmentDeviceStatus, type EnvironmentWeatherRequest, type EnvironmentWeatherSnapshot, type MemosAddPayload, type MemosAddResult, type MemosSearchPayload, type MemosSearchResult, type ModelListResult, type McpServerListResult, type McpServerStatusListResult, type SoulAutomationState, type Skill, type UserProfileAutomationState, type UserProfileDailyNote, type UserProfileEvidence, type UserProfileItem, type UserProfileItemDraft, type UserProfileManualItemPayload, type UserProfileItemStatus, type UserProfileLayer } from "../shared/contracts";
+import { DEFAULT_SETTINGS, normalizeSettings } from "../domain/settings/normalize";
 import {
   clampInteger,
   extractModelIds,

@@ -1,0 +1,166 @@
+import { memo } from "react";
+import { renderMessageBlocks } from "./message-block-renderer";
+import type { MessageFrameHandlers, PermissionRequest } from "./conversation-types";
+import { buildMessageAst, buildMessageRenderContext } from "./message-render-ast";
+import { formatTokenCount } from "./message-presentation-helpers";
+import { MessageActionBar } from "./message-action-bar";
+import { MessageAttachmentList } from "./message-attachment-list";
+import { MessageUsageStats } from "./message-usage-stats";
+import { useMessagePresentationState } from "./use-message-presentation-state";
+import { useStreamRevealedContent } from "./use-stream-revealed-content";
+import type { ChatMessage } from "../../shared/contracts";
+
+type MessageFrameProps = {
+  message: ChatMessage;
+  isGenerating: boolean;
+  isTopSnapActive: boolean;
+  activeGeneratingAssistantId?: string | null;
+  mode: "chat" | "agent";
+  permissionRequest?: PermissionRequest | null;
+} & MessageFrameHandlers;
+
+const MessageFrameInner = ({
+  message,
+  isGenerating,
+  isTopSnapActive,
+  activeGeneratingAssistantId,
+  mode,
+  permissionRequest,
+  onResolvePermission,
+  onEditMessage,
+  onDeleteMessage,
+  onResendMessage
+}: MessageFrameProps) => {
+  const displayedContent = useStreamRevealedContent({
+    content: message.content,
+    role: message.role,
+    disabled:
+      Boolean(activeGeneratingAssistantId === message.id) &&
+      isGenerating &&
+      isTopSnapActive
+  });
+
+  const renderContext = buildMessageRenderContext({
+    message,
+    mode,
+    isGenerating,
+    isTopSnapActive,
+    activeGeneratingAssistantId,
+    displayedContent,
+    permissionRequest
+  });
+
+  const { state, actions } = useMessagePresentationState({
+    renderContext,
+    handlers: {
+      onEditMessage
+    }
+  });
+
+  const ast = buildMessageAst({
+    context: renderContext,
+    presentation: {
+      isEditing: state.isEditing,
+      isReasoningExpanded: state.isReasoningExpanded,
+      isMcpEventsExpanded: state.isMcpEventsExpanded,
+      expandedAgentGroupIds: state.expandedAgentGroupIds,
+      expandedAgentResultIds: state.expandedAgentResultIds,
+      editDraft: state.editDraft,
+      editAttachments: state.editAttachments
+    }
+  });
+
+  return (
+    <div
+      data-chat-message-id={message.id}
+      data-chat-message-role={message.role}
+      className={`group paper-message-enter flex items-start gap-3 ${
+        renderContext.isUser ? "justify-end" : "justify-start"
+      }`}
+    >
+      <div
+        className={`flex flex-none flex-col ${
+          renderContext.isUser ? "chat-message-column-user" : "chat-message-column-assistant"
+        }`}
+      >
+        <div
+          className={[
+            "inline-block w-fit max-w-full break-words rounded-md transition-opacity duration-150",
+            renderContext.isUser
+              ? "chat-message-surface-user px-3 py-2 sm:px-3.5"
+              : "chat-message-surface-assistant px-2 py-1.5"
+          ].join(" ")}
+        >
+          {renderMessageBlocks({
+            ast,
+            context: renderContext,
+            presentation: state,
+            actions,
+            handlers: {
+              onResolvePermission
+            }
+          })}
+        </div>
+
+        <MessageAttachmentList attachments={renderContext.attachments} isUser={renderContext.isUser} />
+        <MessageUsageStats usage={renderContext.assistantUsage} formatTokenCount={formatTokenCount} />
+
+        <MessageActionBar
+          isUser={renderContext.isUser}
+          isAgentMode={renderContext.isAgentMode}
+          isGenerating={isGenerating}
+          copied={state.copied}
+          message={message}
+          onCopy={actions.onCopy}
+          onStartEditing={actions.onStartEditing}
+          onResendMessage={onResendMessage}
+          onDeleteMessage={onDeleteMessage}
+        />
+      </div>
+      {renderContext.isUser ? (
+        <div className="grid h-7 w-7 place-content-center rounded-md border border-border/80 bg-accent/55 text-[10px] font-semibold tracking-wide text-foreground">
+          U
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
+const areMessageFramePropsEqual = (prev: MessageFrameProps, next: MessageFrameProps) => {
+  if (prev.message !== next.message) {
+    return false;
+  }
+  if (prev.mode !== next.mode) {
+    return false;
+  }
+  if (prev.isTopSnapActive !== next.isTopSnapActive) {
+    return false;
+  }
+
+  const prevIsGeneratingMessage =
+    prev.isGenerating && prev.activeGeneratingAssistantId === prev.message.id;
+  const nextIsGeneratingMessage =
+    next.isGenerating && next.activeGeneratingAssistantId === next.message.id;
+  if (prevIsGeneratingMessage !== nextIsGeneratingMessage) {
+    return false;
+  }
+
+  const prevRequest = prev.permissionRequest;
+  const nextRequest = next.permissionRequest;
+  if (
+    prevRequest?.requestId !== nextRequest?.requestId ||
+    prevRequest?.runId !== nextRequest?.runId ||
+    prevRequest?.resolving !== nextRequest?.resolving
+  ) {
+    return false;
+  }
+
+  return (
+    prev.onResolvePermission === next.onResolvePermission &&
+    prev.onEditMessage === next.onEditMessage &&
+    prev.onDeleteMessage === next.onDeleteMessage &&
+    prev.onResendMessage === next.onResendMessage
+  );
+};
+
+export const MessageFrame = memo(MessageFrameInner, areMessageFramePropsEqual);

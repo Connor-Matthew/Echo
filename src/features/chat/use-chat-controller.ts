@@ -15,16 +15,8 @@ import {
 import type { MuApi } from "../../lib/mu-api";
 import { applySkillToMessages } from "../../lib/skills-utils";
 import type { DraftAttachment } from "../app/draft-attachments";
-import {
-  normalizeSettings,
-  type AppSettings,
-  type ChatAttachment,
-  type ChatMessage,
-  type ChatMessageUsage,
-  type ChatSession,
-  type EnvironmentSnapshot,
-  type Skill
-} from "../../shared/contracts";
+import { type AppSettings, type ChatAttachment, type ChatMessage, type ChatMessageUsage, type ChatSession, type EnvironmentSnapshot, type Skill } from "../../shared/contracts";
+import { normalizeSettings } from "../../domain/settings/normalize";
 import {
   formatEnvironmentAwarenessBlock,
   formatEnvironmentUsageGuidanceBlock

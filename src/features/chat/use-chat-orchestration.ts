@@ -7,12 +7,8 @@ import {
 } from "./utils/chat-utils";
 import { resolveProviderModelContextWindow } from "../../domain/model/context-window";
 import { resolveProviderModelCapabilities } from "../../domain/model/capabilities";
-import {
-  normalizeSettings,
-  type AppSettings,
-  type ChatSession,
-  type StoredProvider
-} from "../../shared/contracts";
+import { type AppSettings, type ChatSession, type StoredProvider } from "../../shared/contracts";
+import { normalizeSettings } from "../../domain/settings/normalize";
 
 type UseChatOrchestrationParams = {
   sessions: ChatSession[];

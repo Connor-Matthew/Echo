@@ -1,4 +1,4 @@
-import type { EnvironmentSnapshot, EnvironmentWeatherSnapshot } from "../shared/contracts";
+import type { EnvironmentSnapshot, EnvironmentWeatherSnapshot } from "../../shared/contracts";
 
 type BatteryManagerLike = {
   level: number;

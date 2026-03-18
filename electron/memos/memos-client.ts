@@ -1,12 +1,5 @@
-import {
-  normalizeSettings,
-  type AppSettings,
-  type ConnectionTestResult,
-  type MemosAddPayload,
-  type MemosAddResult,
-  type MemosSearchPayload,
-  type MemosSearchResult
-} from "../../src/shared/contracts";
+import { type AppSettings, type ConnectionTestResult, type MemosAddPayload, type MemosAddResult, type MemosSearchPayload, type MemosSearchResult } from "../../src/shared/contracts";
+import { normalizeSettings } from "../../src/domain/settings/normalize";
 import { normalizeBaseUrl } from "../../src/domain/provider/utils";
 
 const isAbortError = (error: unknown): error is Error =>

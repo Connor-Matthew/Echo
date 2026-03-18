@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bot, PanelLeft } from "lucide-react";
+import { PanelLeft } from "lucide-react";
 import { AgentView } from "../../components/AgentView";
 import { AttachmentTray } from "../../components/AttachmentTray";
 import { ChatView } from "../../components/ChatView";
@@ -15,6 +15,7 @@ import { Sidebar } from "../../components/Sidebar";
 import { Button } from "../../components/ui/button";
 import { buildCommandPaletteCommands } from "./build-command-palette-commands";
 import { useAppController } from "./use-app-controller";
+import { ChatComposerPanel } from "./ChatComposerPanel";
 
 type ChatSessionHeaderProps = {
   className?: string;
@@ -420,55 +421,33 @@ export const AppView = () => {
                       <h2 className="mb-14 text-center text-[36px] font-semibold leading-tight text-foreground sm:mb-16 sm:text-[44px] md:mb-20">
                         今天有什么可以帮到你？
                       </h2>
-                      <div className="mx-auto w-full max-w-[720px]" data-chat-composer-root="true">
-                        <AttachmentTray
-                          attachments={draftAttachments}
-                          onRemoveAttachment={removeAttachment}
-                        />
-                        <Composer
-                          value={draft}
-                          modelLabel={appSettings.model || "模型"}
-                          modelValue={activeComposerModelValue}
-                          modelOptions={composerModelOptions}
-                          modelCapabilities={activeModelCapabilities}
-                          sendWithEnter={appSettings.sendWithEnter}
-                          chatContextWindow={appSettings.chatContextWindow}
-                          attachmentCount={draftAttachments.length}
-                          mcpServers={appSettings.mcpServers ?? []}
-                          enabledMcpServers={activeEnabledMcpServers}
-                          skills={userSkills}
-                          activeSkill={activeSkill}
-                          onChangeActiveSkill={setActiveSkill}
-                          onAddFiles={addFiles}
-                          onChangeChatContextWindow={updateChatContextWindow}
-                          onSelectModel={selectComposerModel}
-                          onChangeMcpServers={updateSessionMcpServers}
-                          onChange={setDraft}
-                          onSubmit={(value) => {
-                            void sendMessage(value);
-                          }}
-                          onApplySkill={handleApplySkill}
-                          onStop={() => {
-                            void stopGenerating();
-                          }}
-                          usageLabel={composerUsageLabel}
-                          disabled={!isConfigured}
-                          isGenerating={isGenerating}
-                          leadingControl={
-                            <Button
-                              type="button"
-                              variant={isSoulModeEnabled ? "default" : "outline"}
-                              className="h-[32px] rounded-full px-3 text-xs"
-                              onClick={toggleSoulMode}
-                              aria-pressed={isSoulModeEnabled}
-                              title={isSoulModeEnabled ? "当前为 SOUL 模式" : "当前为系统提示词模式"}
-                            >
-                              <Bot className="mr-1.5 h-3.5 w-3.5" />
-                              SOUL
-                            </Button>
-                          }
-                        />
-                      </div>
+                      <ChatComposerPanel
+                        draft={draft}
+                        setDraft={setDraft}
+                        draftAttachments={draftAttachments}
+                        removeAttachment={removeAttachment}
+                        addFiles={addFiles}
+                        appSettings={appSettings}
+                        activeComposerModelValue={activeComposerModelValue}
+                        composerModelOptions={composerModelOptions}
+                        activeModelCapabilities={activeModelCapabilities}
+                        activeEnabledMcpServers={activeEnabledMcpServers}
+                        userSkills={userSkills}
+                        activeSkill={activeSkill}
+                        setActiveSkill={setActiveSkill}
+                        updateChatContextWindow={updateChatContextWindow}
+                        selectComposerModel={selectComposerModel}
+                        updateSessionMcpServers={updateSessionMcpServers}
+                        sendMessage={sendMessage}
+                        handleApplySkill={handleApplySkill}
+                        stopGenerating={stopGenerating}
+                        composerUsageLabel={composerUsageLabel}
+                        isConfigured={isConfigured}
+                        isGenerating={isGenerating}
+                        isSoulModeEnabled={isSoulModeEnabled}
+                        toggleSoulMode={toggleSoulMode}
+                        containerClassName="mx-auto w-full max-w-[720px]"
+                      />
                     </div>
                   </div>
                 </section>
@@ -494,58 +473,33 @@ export const AppView = () => {
                   </div>
 
                   <div className="px-2 pb-2 pt-0 sm:px-3 sm:pb-3 md:px-4 md:pb-4">
-                    <div
-                      className="paper-conversation-stage mx-auto w-full max-w-[720px] min-w-0"
-                      data-chat-composer-root="true"
-                    >
-                      <AttachmentTray
-                        attachments={draftAttachments}
-                        onRemoveAttachment={removeAttachment}
-                      />
-                      <Composer
-                        value={draft}
-                        modelLabel={appSettings.model || "模型"}
-                        modelValue={activeComposerModelValue}
-                        modelOptions={composerModelOptions}
-                        modelCapabilities={activeModelCapabilities}
-                        sendWithEnter={appSettings.sendWithEnter}
-                        chatContextWindow={appSettings.chatContextWindow}
-                        attachmentCount={draftAttachments.length}
-                        mcpServers={appSettings.mcpServers ?? []}
-                        enabledMcpServers={activeEnabledMcpServers}
-                        skills={userSkills}
-                        activeSkill={activeSkill}
-                        onChangeActiveSkill={setActiveSkill}
-                        onAddFiles={addFiles}
-                        onChangeChatContextWindow={updateChatContextWindow}
-                        onSelectModel={selectComposerModel}
-                        onChangeMcpServers={updateSessionMcpServers}
-                        onChange={setDraft}
-                        onSubmit={(value) => {
-                          void sendMessage(value);
-                        }}
-                        onApplySkill={handleApplySkill}
-                        onStop={() => {
-                          void stopGenerating();
-                        }}
-                        usageLabel={composerUsageLabel}
-                        disabled={!isConfigured}
-                        isGenerating={isGenerating}
-                        leadingControl={
-                          <Button
-                            type="button"
-                            variant={isSoulModeEnabled ? "default" : "outline"}
-                            className="h-[32px] rounded-full px-3 text-xs"
-                            onClick={toggleSoulMode}
-                            aria-pressed={isSoulModeEnabled}
-                            title={isSoulModeEnabled ? "当前为 SOUL 模式" : "当前为系统提示词模式"}
-                          >
-                            <Bot className="mr-1.5 h-3.5 w-3.5" />
-                            SOUL
-                          </Button>
-                        }
-                      />
-                    </div>
+                    <ChatComposerPanel
+                      draft={draft}
+                      setDraft={setDraft}
+                      draftAttachments={draftAttachments}
+                      removeAttachment={removeAttachment}
+                      addFiles={addFiles}
+                      appSettings={appSettings}
+                      activeComposerModelValue={activeComposerModelValue}
+                      composerModelOptions={composerModelOptions}
+                      activeModelCapabilities={activeModelCapabilities}
+                      activeEnabledMcpServers={activeEnabledMcpServers}
+                      userSkills={userSkills}
+                      activeSkill={activeSkill}
+                      setActiveSkill={setActiveSkill}
+                      updateChatContextWindow={updateChatContextWindow}
+                      selectComposerModel={selectComposerModel}
+                      updateSessionMcpServers={updateSessionMcpServers}
+                      sendMessage={sendMessage}
+                      handleApplySkill={handleApplySkill}
+                      stopGenerating={stopGenerating}
+                      composerUsageLabel={composerUsageLabel}
+                      isConfigured={isConfigured}
+                      isGenerating={isGenerating}
+                      isSoulModeEnabled={isSoulModeEnabled}
+                      toggleSoulMode={toggleSoulMode}
+                      containerClassName="paper-conversation-stage mx-auto w-full max-w-[720px] min-w-0"
+                    />
                   </div>
                 </div>
               )}

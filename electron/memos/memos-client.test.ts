@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { DEFAULT_SETTINGS, normalizeSettings, type AppSettings } from "../../src/shared/contracts";
+import { type AppSettings } from "../../src/shared/contracts";
+import { DEFAULT_SETTINGS, normalizeSettings } from "../../src/domain/settings/normalize";
 import { addMemosMessage, searchMemosMemory, testMemosConnection } from "./memos-client";
 
 const createSettings = (overrides?: Partial<AppSettings>): AppSettings =>

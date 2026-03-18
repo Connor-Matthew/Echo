@@ -57,16 +57,8 @@ import {
   updateProfileItemStatus,
   upsertProfileDailyNote
 } from "./profile/profile-service";
-import {
-  DEFAULT_SETTINGS,
-  normalizeSettings,
-  type AppSettings,
-  type ChatStreamEvent,
-  type ChatStreamRequest,
-  type McpServerListResult,
-  type McpServerStatusListResult,
-  type StreamEnvelope
-} from "../src/shared/contracts";
+import { type AppSettings, type ChatStreamEvent, type ChatStreamRequest, type McpServerListResult, type McpServerStatusListResult, type StreamEnvelope } from "../src/shared/contracts";
+import { DEFAULT_SETTINGS, normalizeSettings } from "../src/domain/settings/normalize";
 import {
   clampInteger,
   parseApiKeys

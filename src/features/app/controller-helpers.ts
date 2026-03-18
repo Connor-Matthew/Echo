@@ -2,10 +2,8 @@ import {
   inferModelCapabilities,
   toModelCapabilityKey
 } from "../../domain/model/capabilities";
-import {
-  normalizeSettings,
-  type AppSettings
-} from "../../shared/contracts";
+import { type AppSettings } from "../../shared/contracts";
+import { normalizeSettings } from "../../domain/settings/normalize";
 import type { AgentMessage, AgentStreamEnvelope } from "../../shared/agent-contracts";
 
 export type PendingAgentPermission = {

@@ -2,7 +2,7 @@ import {
   buildUnavailableWeather,
   collectLocalEnvironmentContext,
   toStaleWeatherFromPrevious
-} from "../../lib/environment-context";
+} from "./environment-context";
 import type {
   EnvironmentDeviceStatus,
   EnvironmentSnapshot,

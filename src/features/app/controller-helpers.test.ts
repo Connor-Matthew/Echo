@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { AgentMessage, AgentStreamEnvelope } from "../../shared/agent-contracts";
-import { DEFAULT_SETTINGS, normalizeSettings } from "../../shared/contracts";
+import { DEFAULT_SETTINGS, normalizeSettings } from "../../domain/settings/normalize";
 import {
   buildAgentPermissionResolutionMessage,
   enqueueAgentPermissionFromEnvelope,

@@ -1,15 +1,8 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import type { MuApi } from "../../lib/mu-api";
 import { normalizeSkills } from "../../lib/skills-utils";
-import {
-  DEFAULT_SETTINGS,
-  normalizeSettings,
-  type AppSettings,
-  type ConnectionTestResult,
-  type McpServerListResult,
-  type McpServerStatusListResult,
-  type Skill
-} from "../../shared/contracts";
+import { type AppSettings, type ConnectionTestResult, type McpServerListResult, type McpServerStatusListResult, type Skill } from "../../shared/contracts";
+import { DEFAULT_SETTINGS, normalizeSettings } from "../../domain/settings/normalize";
 import { withPersistedAutoDetectedCapabilities } from "./controller-helpers";
 
 type UseSettingsControllerParams = {

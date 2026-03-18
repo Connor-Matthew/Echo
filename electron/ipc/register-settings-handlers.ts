@@ -1,13 +1,6 @@
 import type { IpcMain } from "electron";
-import {
-  normalizeSettings,
-  type AppSettings,
-  type ConnectionTestResult,
-  type McpServerListResult,
-  type McpServerStatusListResult,
-  type ModelListResult,
-  type UserMcpServer
-} from "../../src/shared/contracts";
+import { type AppSettings, type ConnectionTestResult, type McpServerListResult, type McpServerStatusListResult, type ModelListResult, type UserMcpServer } from "../../src/shared/contracts";
+import { normalizeSettings } from "../../src/domain/settings/normalize";
 
 type SettingsHandlerDeps = {
   settingsFile: string;
