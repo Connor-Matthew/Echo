@@ -86,12 +86,7 @@ const MessageFrameInner = ({
         }`}
       >
         <div
-          className={[
-            "inline-block w-fit max-w-full break-words transition-opacity duration-150",
-            renderContext.isUser
-              ? "chat-message-surface-user px-4 py-3 sm:px-5"
-              : "chat-message-surface-assistant px-0 py-1.5"
-          ].join(" ")}
+          className={getMessageSurfaceClassName(renderContext.isUser)}
         >
           {renderMessageBlocks({
             ast,
@@ -120,14 +115,15 @@ const MessageFrameInner = ({
           onDeleteMessage={onDeleteMessage}
         />
       </div>
-      {renderContext.isUser ? (
-        <div className="grid h-7 w-7 place-content-center rounded-full border border-border/65 bg-background text-[9px] font-medium tracking-wide text-muted-foreground">
-          U
-        </div>
-      ) : null}
     </div>
   );
 };
+
+export const getMessageSurfaceClassName = (isUser: boolean) =>
+  [
+    "inline-block w-fit max-w-full break-words transition-opacity duration-150",
+    isUser ? "chat-message-surface-user px-3 py-2 sm:px-4" : "chat-message-surface-assistant px-0 py-1.5"
+  ].join(" ");
 
 const areMessageFramePropsEqual = (prev: MessageFrameProps, next: MessageFrameProps) => {
   if (prev.message !== next.message) {

@@ -273,19 +273,19 @@ const CodeBlock = ({ code, language }: { code: string; language?: string }) => {
 
 const markdownComponents: Components = {
   h1: ({ children }) => (
-    <h1 className="mb-4 mt-1.5 text-[1.34rem] font-semibold leading-tight">{children}</h1>
+    <h1 className="mb-3 mt-1 text-[1.34rem] font-semibold leading-tight">{children}</h1>
   ),
   h2: ({ children }) => (
-    <h2 className="mb-3.5 mt-1.5 text-[1.16rem] font-semibold leading-tight">{children}</h2>
+    <h2 className="mb-3 mt-1 text-[1.16rem] font-semibold leading-tight">{children}</h2>
   ),
-  h3: ({ children }) => <h3 className="mb-2.5 mt-1.5 text-[1rem] font-semibold">{children}</h3>,
-  h4: ({ children }) => <h4 className="mb-2 mt-1.5 text-[0.95rem] font-semibold">{children}</h4>,
-  p: ({ children }) => <p className="mb-3.5 last:mb-0">{children}</p>,
-  ul: ({ children }) => <ul className="mb-3.5 list-disc pl-5 last:mb-0">{children}</ul>,
-  ol: ({ children }) => <ol className="mb-3.5 list-decimal pl-5 last:mb-0">{children}</ol>,
-  li: ({ children }) => <li className="mb-1">{children}</li>,
+  h3: ({ children }) => <h3 className="mb-2 mt-1 text-[1rem] font-semibold">{children}</h3>,
+  h4: ({ children }) => <h4 className="mb-1.5 mt-1 text-[0.95rem] font-semibold">{children}</h4>,
+  p: ({ children }) => <p className="mb-2.5 last:mb-0">{children}</p>,
+  ul: ({ children }) => <ul className="mb-2.5 list-disc pl-5 last:mb-0">{children}</ul>,
+  ol: ({ children }) => <ol className="mb-2.5 list-decimal pl-5 last:mb-0">{children}</ol>,
+  li: ({ children }) => <li className="mb-0.5">{children}</li>,
   blockquote: ({ children }) => (
-    <blockquote className="mb-2.5 border-l-2 border-border pl-3 text-muted-foreground">
+    <blockquote className="mb-2 border-l-2 border-border pl-3 text-muted-foreground">
       {children}
     </blockquote>
   ),
@@ -315,7 +315,7 @@ const markdownComponents: Components = {
     );
   },
   table: ({ children }) => (
-    <div className="mb-2 overflow-x-auto last:mb-0">
+    <div className="mb-1.5 overflow-x-auto last:mb-0">
       <table className="w-full border-collapse text-left text-[13px]">{children}</table>
     </div>
   ),
@@ -325,7 +325,7 @@ const markdownComponents: Components = {
     <th className="border border-border px-2 py-1.5 font-semibold text-foreground">{children}</th>
   ),
   td: ({ children }) => <td className="border border-border px-2 py-1.5">{children}</td>,
-  hr: () => <hr className="my-3 border-border" />
+  hr: () => <hr className="my-2.5 border-border" />
 };
 
 const MarkdownContentInner = ({
@@ -374,7 +374,7 @@ const MarkdownContentInner = ({
       {renderMode === "line"
         ? lineSegments.map((segment) =>
             segment.kind === "spacer" ? (
-              <div key={segment.key} aria-hidden="true" className="h-3" />
+              <div key={segment.key} aria-hidden="true" className="h-2" />
             ) : (
               renderMarkdown(segment.content, segment.key)
             )

@@ -49,7 +49,15 @@ describe("components/chat/message-markdown-content", () => {
     assert.match(markup, /第一行/);
     assert.match(markup, /第二行/);
     assert.match(markup, /data-render-mode="line"/);
-    assert.match(markup, /<p class="mb-3\.5 last:mb-0">第一行<\/p><p class="mb-3\.5 last:mb-0">第二行<\/p>/);
+    assert.match(markup, /<p class="mb-2\.5 last:mb-0">第一行<\/p><p class="mb-2\.5 last:mb-0">第二行<\/p>/);
+  });
+
+  it("uses smaller spacer blocks in line mode to keep chat rendering compact", () => {
+    const markup = renderToStaticMarkup(
+      <MarkdownContent content={["第一段", "", "第二段"].join("\n")} isUser={false} renderMode="line" />
+    );
+
+    assert.match(markup, /class="h-2"/);
   });
 
   it("keeps block formulas intact in line mode", () => {

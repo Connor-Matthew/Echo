@@ -175,12 +175,14 @@ export const buildMessageAst = ({ context, presentation }: BuildMessageAstParams
     });
   }
 
-  const permissionNode = buildPermissionRequestNode({
-    permissionRequest: context.permissionRequest,
-    toolCalls: context.message.toolCalls
-  });
-  if (permissionNode) {
-    nodes.push(permissionNode);
+  if (!context.isAgentMode) {
+    const permissionNode = buildPermissionRequestNode({
+      permissionRequest: context.permissionRequest,
+      toolCalls: context.message.toolCalls
+    });
+    if (permissionNode) {
+      nodes.push(permissionNode);
+    }
   }
 
   if (context.hasReasoning) {

@@ -25,17 +25,12 @@ export const MessageActionBar = ({
   onResendMessage,
   onDeleteMessage
 }: MessageActionBarProps) => (
-  <div
-    className={[
-      "mt-2.5 flex w-fit max-w-full items-center gap-1 text-muted-foreground/88 transition-[opacity,transform] duration-150 md:translate-y-1 md:opacity-0 md:group-hover:translate-y-0 md:group-hover:opacity-100 md:group-focus-within:translate-y-0 md:group-focus-within:opacity-100",
-      isUser ? "ml-auto justify-end" : "justify-start"
-    ].join(" ")}
-  >
+  <div className={getMessageActionBarClassName(isUser)}>
     <Button
       type="button"
       variant="ghost"
       size="sm"
-      className="h-7 gap-1 rounded-full px-2.5 text-[11px] text-muted-foreground"
+      className={getMessageActionButtonClassName("default")}
       onClick={onCopy}
     >
       {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
@@ -47,7 +42,7 @@ export const MessageActionBar = ({
           type="button"
           variant="ghost"
           size="sm"
-          className="h-7 gap-1 rounded-full px-2.5 text-[11px] text-muted-foreground"
+          className={getMessageActionButtonClassName("default")}
           onClick={onStartEditing}
           disabled={isGenerating}
         >
@@ -58,7 +53,7 @@ export const MessageActionBar = ({
           type="button"
           variant="ghost"
           size="sm"
-          className="h-7 gap-1 rounded-full px-2.5 text-[11px] text-muted-foreground"
+          className={getMessageActionButtonClassName("default")}
           onClick={() => onResendMessage(message)}
           disabled={isGenerating}
         >
@@ -72,7 +67,7 @@ export const MessageActionBar = ({
         type="button"
         variant="ghost"
         size="sm"
-        className="h-7 gap-1 rounded-full px-2.5 text-[11px] text-destructive/88"
+        className={getMessageActionButtonClassName("destructive")}
         onClick={() => onDeleteMessage(message)}
         disabled={isGenerating}
       >
@@ -82,3 +77,15 @@ export const MessageActionBar = ({
     ) : null}
   </div>
 );
+
+export const getMessageActionBarClassName = (isUser: boolean) =>
+  [
+    "mt-0.5 flex w-fit max-w-full items-center gap-1 text-muted-foreground/88 transition-[opacity,transform] duration-150 md:translate-y-1 md:opacity-0 md:group-hover:translate-y-0 md:group-hover:opacity-100 md:group-focus-within:translate-y-0 md:group-focus-within:opacity-100",
+    isUser ? "ml-auto justify-end" : "justify-start"
+  ].join(" ");
+
+export const getMessageActionButtonClassName = (tone: "default" | "destructive") =>
+  [
+    "h-6 gap-1 rounded-full px-2 text-[10.5px]",
+    tone === "destructive" ? "text-destructive/88" : "text-muted-foreground"
+  ].join(" ");

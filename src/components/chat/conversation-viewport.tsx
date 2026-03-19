@@ -16,7 +16,7 @@ type ConversationViewportProps = {
 export const getConversationViewportLayoutClassNames = () => ({
   scrollContainer: "chat-scroll-stage echo-scrollbar-minimal h-full w-full overflow-auto",
   scrollContent:
-    "chat-scroll-content mx-auto flex w-full flex-col gap-8 px-6 pb-40 pt-8 sm:px-8 sm:pb-44 md:px-10 md:pt-10"
+    "chat-scroll-content mx-auto flex w-full flex-col gap-5 px-6 pb-40 pt-8 sm:px-8 sm:pb-44 md:px-10 md:pt-10"
 });
 
 export const ConversationViewport = ({
