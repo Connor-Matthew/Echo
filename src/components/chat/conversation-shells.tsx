@@ -1,5 +1,5 @@
 import type { AgentMessage } from "../../shared/agent-contracts";
-import type { ChatMessage } from "../../shared/contracts";
+import type { ChatMessage, MarkdownRenderMode } from "../../shared/contracts";
 import { ConversationViewport } from "./conversation-viewport";
 import type { MessageFrameHandlers, PermissionRequest } from "./conversation-types";
 
@@ -8,6 +8,7 @@ type ChatConversationViewProps = {
   messages: ChatMessage[];
   isConfigured: boolean;
   isGenerating: boolean;
+  markdownRenderMode: MarkdownRenderMode;
   permissionRequest?: PermissionRequest | null;
 } & MessageFrameHandlers;
 
@@ -15,6 +16,7 @@ type AgentConversationViewProps = {
   sessionId: string;
   messages: AgentMessage[];
   isRunning: boolean;
+  markdownRenderMode: MarkdownRenderMode;
   permissionRequest?: PermissionRequest | null;
   onResolvePermission?: (
     request: PermissionRequest,
@@ -41,6 +43,7 @@ export const AgentConversationView = ({
   sessionId,
   messages,
   isRunning,
+  markdownRenderMode,
   permissionRequest,
   onResolvePermission
 }: AgentConversationViewProps) => (
@@ -50,6 +53,7 @@ export const AgentConversationView = ({
     messages={mapAgentMessagesToChatMessages(messages)}
     isConfigured={true}
     isGenerating={isRunning}
+    markdownRenderMode={markdownRenderMode}
     permissionRequest={permissionRequest}
     onResolvePermission={onResolvePermission}
     onEditMessage={() => {}}

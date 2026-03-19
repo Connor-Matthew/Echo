@@ -10,44 +10,44 @@
 
 @layer base {
   :root {
-    --background: 220 24% 97%;
-    --foreground: 220 18% 12%;
-    --card: 0 0% 100%;
-    --card-foreground: 220 18% 12%;
-    --primary: 227 90% 64%;
+    --background: 34 30% 96%;
+    --foreground: 24 14% 18%;
+    --card: 34 24% 97%;
+    --card-foreground: 24 14% 18%;
+    --primary: 21 61% 55%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 220 18% 95%;
-    --secondary-foreground: 220 15% 24%;
-    --muted: 220 16% 94%;
-    --muted-foreground: 220 10% 42%;
-    --accent: 220 16% 92%;
-    --accent-foreground: 220 18% 16%;
+    --secondary: 34 22% 93%;
+    --secondary-foreground: 24 13% 24%;
+    --muted: 34 20% 92%;
+    --muted-foreground: 24 9% 44%;
+    --accent: 34 18% 91%;
+    --accent-foreground: 24 14% 18%;
     --destructive: 0 60% 45%;
     --destructive-foreground: 0 0% 98%;
-    --border: 220 16% 85%;
-    --input: 220 16% 84%;
-    --ring: 220 16% 34%;
-    --radius: 8px;
+    --border: 30 18% 84%;
+    --input: 30 18% 84%;
+    --ring: 21 44% 52%;
+    --radius: 12px;
   }
 
   .dark {
-    --background: 220 16% 10%;
-    --foreground: 220 12% 88%;
-    --card: 220 13% 13%;
-    --card-foreground: 220 12% 90%;
-    --primary: 220 10% 88%;
-    --primary-foreground: 220 18% 12%;
-    --secondary: 220 14% 17%;
-    --secondary-foreground: 220 11% 86%;
-    --muted: 220 13% 18%;
-    --muted-foreground: 220 8% 64%;
-    --accent: 220 13% 21%;
-    --accent-foreground: 220 11% 90%;
+    --background: 28 10% 12%;
+    --foreground: 34 18% 88%;
+    --card: 28 10% 15%;
+    --card-foreground: 34 18% 88%;
+    --primary: 25 68% 67%;
+    --primary-foreground: 24 16% 12%;
+    --secondary: 28 10% 18%;
+    --secondary-foreground: 34 18% 86%;
+    --muted: 28 10% 20%;
+    --muted-foreground: 34 8% 64%;
+    --accent: 28 10% 22%;
+    --accent-foreground: 34 18% 90%;
     --destructive: 0 69% 63%;
     --destructive-foreground: 0 0% 98%;
-    --border: 220 13% 30%;
-    --input: 220 13% 28%;
-    --ring: 220 11% 64%;
+    --border: 28 10% 28%;
+    --input: 28 10% 28%;
+    --ring: 25 42% 62%;
   }
 
   * {
@@ -63,15 +63,16 @@
   body {
     @apply m-0 bg-background font-sans text-foreground antialiased;
     background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
   }
 
 }
 
 @layer components {
   .surface-1 {
-    border: 1px solid hsl(var(--border) / 0.8);
+    border: 1px solid hsl(var(--border) / 0.82);
     background: hsl(var(--card));
-    box-shadow: 0 6px 22px rgba(15, 23, 42, 0.06);
+    box-shadow: none;
   }
 
   .surface-2 {
@@ -85,7 +86,7 @@
   }
 
   .state-note {
-    border-radius: 12px;
+    border-radius: 16px;
     border: 1px solid hsl(var(--border) / 0.75);
     background: hsl(var(--card));
     color: hsl(var(--foreground) / 0.88);
@@ -131,23 +132,16 @@
   }
 
   .app-shell {
-    background:
-      linear-gradient(
-        180deg,
-        hsl(var(--echo-shell-bg-start)) 0%,
-        hsl(var(--echo-shell-bg-mid)) 14%,
-        hsl(var(--echo-shell-bg-end)) 100%
-      );
+    background: hsl(var(--background));
   }
 
   .app-shell-frame {
     overflow: hidden;
     border-radius: var(--echo-shell-radius);
-    border: 1px solid hsl(var(--border) / var(--echo-shell-frame-border-alpha));
-    background: transparent;
+    border: 0;
+    background: hsl(var(--card));
     padding: var(--echo-shell-padding-compact);
     box-shadow: var(--echo-shell-shadow-window);
-    backdrop-filter: blur(0.5px);
   }
 
   @media (min-width: 640px) {
@@ -163,20 +157,27 @@
   }
 
   .app-shell-panel {
-    border-radius: var(--echo-shell-panel-radius);
+    border-radius: 0;
     border: 0;
-    background: hsl(var(--card) / 0.9);
+    background: hsl(var(--card));
     box-shadow: none;
   }
 
   .app-shell-panel-sidebar {
-    background: transparent;
+    box-shadow: inset -1px 0 0 hsl(var(--border) / 0.82);
+    border-radius: 0;
+    background: hsl(var(--secondary) / 0.4);
   }
 
   .sketch-title {
     font-family: "SF Pro Display", "PingFang SC", "Segoe UI", sans-serif;
     font-weight: 600;
     letter-spacing: 0.004em;
+  }
+
+  .landing-title-hero {
+    font-family: "Avenir Next", "SF Pro Display", "Segoe UI", sans-serif;
+    letter-spacing: -0.03em;
   }
 
   .sketch-grid-paper {
@@ -244,12 +245,13 @@
   }
 
   .sidebar-surface {
-    background: transparent;
+    background: hsl(var(--secondary) / 0.3);
   }
 
   .mode-switch-track {
     border: 1px solid hsl(var(--border) / var(--echo-mode-switch-border-alpha));
     background: hsl(var(--card) / var(--echo-mode-switch-bg-alpha));
+    padding: 2px;
   }
 
   .mode-switch-thumb {
@@ -282,8 +284,31 @@
   }
 
   .session-list-item[data-active="true"] {
-    background: hsl(var(--card));
-    box-shadow: inset 0 0 0 1px hsl(var(--primary) / var(--echo-session-active-ring-alpha));
+    background: hsl(30 22% 89% / 0.96);
+    box-shadow: inset 0 0 0 1px hsl(30 18% 76% / 0.55);
+  }
+
+  .dark .session-list-item[data-active="true"] {
+    background: hsl(28 10% 22% / 0.92);
+    box-shadow: inset 0 0 0 1px hsl(34 18% 88% / 0.06);
+  }
+
+  .session-list-item-button-active,
+  .session-list-item-title-active {
+    color: hsl(var(--foreground) / 0.94);
+  }
+
+  .session-list-item-meta-active {
+    color: hsl(var(--foreground) / 0.62);
+  }
+
+  .dark .session-list-item-button-active,
+  .dark .session-list-item-title-active {
+    color: hsl(34 18% 92% / 0.94);
+  }
+
+  .dark .session-list-item-meta-active {
+    color: hsl(34 18% 92% / 0.68);
   }
 
   .session-list-item[data-active="false"]:hover {
@@ -301,7 +326,8 @@
   }
 
   .floating-sidebar-toggle {
-    background: hsl(var(--card) / 0.9);
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border) / 0.78);
     box-shadow: var(--echo-floating-toggle-shadow);
     transition:
       background-color var(--echo-motion-fast) var(--echo-ease-standard),
@@ -330,24 +356,48 @@
   }
 
   .chat-scroll-stage {
-    max-width: var(--echo-chat-stage-max-width);
     overflow-anchor: none;
   }
 
+  .echo-scrollbar-minimal {
+    scrollbar-color: hsl(var(--muted-foreground) / 0.42) transparent;
+  }
+
+  .echo-scrollbar-minimal::-webkit-scrollbar {
+    width: 14px;
+    background: transparent;
+  }
+
+  .echo-scrollbar-minimal::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .echo-scrollbar-minimal::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  .chat-reading-stage {
+    max-width: var(--echo-chat-stage-max-width);
+  }
+
+  .chat-scroll-content {
+    max-width: var(--echo-chat-stage-max-width);
+  }
+
   .chat-message-column-user {
-    max-width: 78%;
+    max-width: 74%;
     align-items: flex-end;
   }
 
   @media (min-width: 640px) {
     .chat-message-column-user {
-      max-width: 70%;
+      max-width: 66%;
     }
   }
 
   @media (min-width: 1024px) {
     .chat-message-column-user {
-      max-width: 62%;
+      max-width: 58%;
     }
   }
 
@@ -360,6 +410,7 @@
   .chat-message-surface-user {
     border: 1px solid hsl(var(--border) / var(--echo-chat-user-surface-border-alpha));
     background: hsl(var(--secondary) / var(--echo-chat-user-surface-bg-alpha));
+    border-radius: 18px;
   }
 
   .chat-message-surface-assistant {
@@ -371,6 +422,7 @@
     line-height: var(--echo-chat-markdown-line-height);
     text-rendering: optimizeLegibility;
     font-kerning: normal;
+    letter-spacing: 0.002em;
   }
 
   .chat-streaming-markdown {
@@ -380,11 +432,13 @@
 
   .chat-inline-code {
     background: hsl(var(--accent) / var(--echo-chat-inline-code-bg-alpha));
+    border: 1px solid hsl(var(--border) / 0.65);
   }
 
   .chat-code-block {
     border: 1px solid hsl(var(--border) / var(--echo-chat-code-border-alpha));
-    background: hsl(var(--card));
+    background: hsl(var(--background));
+    border-radius: 16px;
   }
 
   .chat-code-block-header {

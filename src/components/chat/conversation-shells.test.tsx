@@ -30,21 +30,24 @@ describe("components/chat/conversation-shells", () => {
       messages: [createChatMessage()],
       isConfigured: true,
       isGenerating: false,
+      markdownRenderMode: "paragraph",
       onEditMessage: () => {},
       onDeleteMessage: () => {},
       onResendMessage: () => {}
     });
 
     assert.ok(isValidElement(element));
-    const viewport = element as ReactElement<{ mode: "chat" }>;
+    const viewport = element as ReactElement<{ mode: "chat"; markdownRenderMode: "paragraph" }>;
     assert.equal(viewport.type, ConversationViewport);
     assert.equal(viewport.props.mode, "chat");
+    assert.equal(viewport.props.markdownRenderMode, "paragraph");
   });
 
   it("maps agent messages into assistant/user chat messages before handing them to the viewport", () => {
     const element = AgentConversationView({
       sessionId: "agent-session",
       isRunning: true,
+      markdownRenderMode: "line",
       messages: [
         createAgentMessage({ id: "sys-1", role: "system", content: "system note" }),
         createAgentMessage({ id: "user-1", role: "user", content: "hello" })
@@ -55,11 +58,13 @@ describe("components/chat/conversation-shells", () => {
     const viewport = element as ReactElement<{
       mode: "agent";
       isGenerating: boolean;
+      markdownRenderMode: "line";
       messages: ChatMessage[];
     }>;
     assert.equal(viewport.type, ConversationViewport);
     assert.equal(viewport.props.mode, "agent");
     assert.equal(viewport.props.isGenerating, true);
+    assert.equal(viewport.props.markdownRenderMode, "line");
     assert.deepEqual(viewport.props.messages, [
       {
         id: "sys-1",

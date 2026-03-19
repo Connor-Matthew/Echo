@@ -1,6 +1,7 @@
 export type ThemeMode = "system" | "light" | "dark";
 export type FontScale = "sm" | "md" | "lg";
 export type MessageDensity = "compact" | "comfortable";
+export type MarkdownRenderMode = "paragraph" | "line";
 export type ChatContextWindow = 5 | 20 | 50 | "infinite";
 export type ProviderType = "openai" | "anthropic" | "acp" | "claude-agent";
 export type AttachmentKind = "text" | "image" | "file";
@@ -336,6 +337,7 @@ export type AppSettings = {
   sendWithEnter: boolean;
   fontScale: FontScale;
   messageDensity: MessageDensity;
+  markdownRenderMode: MarkdownRenderMode;
   requestTimeoutMs: number;
   retryCount: number;
   sseDebug: boolean;

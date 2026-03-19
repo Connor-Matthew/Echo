@@ -138,11 +138,11 @@ const ChatAgentModeSwitch = ({
 }) => {
   const isChat = activeMode === "chat";
   return (
-    <div className="mode-switch-track relative grid grid-cols-2 rounded-xl p-0.5">
+    <div className="mode-switch-track relative grid grid-cols-2 rounded-full p-0.5">
       <span
         aria-hidden
         className={cn(
-          "mode-switch-thumb pointer-events-none absolute bottom-0.5 left-0.5 top-0.5 w-[calc(50%-2px)] rounded-lg",
+          "mode-switch-thumb pointer-events-none absolute bottom-0.5 left-0.5 top-0.5 w-[calc(50%-2px)] rounded-full",
           isChat ? "translate-x-0" : "translate-x-full"
         )}
       />
@@ -150,7 +150,7 @@ const ChatAgentModeSwitch = ({
         type="button"
         variant="ghost"
         className={cn(
-          "relative z-10 h-9 justify-center rounded-lg text-sm transition-colors",
+          "relative z-10 h-8 justify-center rounded-full text-[13px] transition-colors",
           isChat
             ? "font-semibold text-foreground hover:bg-transparent"
             : "text-foreground/80 hover:bg-card/45"
@@ -167,7 +167,7 @@ const ChatAgentModeSwitch = ({
         type="button"
         variant="ghost"
         className={cn(
-          "relative z-10 h-9 justify-center rounded-lg text-sm transition-colors",
+          "relative z-10 h-8 justify-center rounded-full text-[13px] transition-colors",
           isChat
             ? "text-foreground/80 hover:bg-card/45"
             : "font-semibold text-foreground hover:bg-transparent"
@@ -364,7 +364,7 @@ export const Sidebar = (props: SidebarProps) => {
     ];
 
     return (
-      <aside className="sidebar-surface flex h-full flex-col overflow-hidden px-2.5 pb-2 pt-2.5">
+      <aside className="sidebar-surface flex h-full flex-col overflow-hidden px-3 pb-3 pt-3">
         <div className="-mt-[12px] mb-3 flex items-center justify-end">
           <Button
             type="button"
@@ -380,7 +380,7 @@ export const Sidebar = (props: SidebarProps) => {
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="mb-2 px-1">
+          <div className="mb-3 px-1">
             <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">设置导航</p>
           </div>
           <div className="space-y-1 pr-1">
@@ -399,7 +399,7 @@ export const Sidebar = (props: SidebarProps) => {
                     type="button"
                     variant="ghost"
                     className={cn(
-                      "sidebar-nav-button h-8 w-full justify-start gap-2 rounded-md px-2.5 text-sm"
+                      "sidebar-nav-button h-9 w-full justify-start gap-2 rounded-full px-3 text-sm"
                     )}
                     data-active={active ? "true" : "false"}
                     onClick={() => props.onSelectSettingsSection(item.key)}
@@ -452,14 +452,14 @@ export const Sidebar = (props: SidebarProps) => {
     return (
       <>
         <aside className="sidebar-surface relative flex h-full flex-col overflow-hidden">
-          <div className="px-3 pb-3 pt-2.5">
+          <div className="border-b border-border/70 px-3 pb-3 pt-2.5">
             <div className="-mt-[12px] mb-3 flex items-center justify-end">
               {props.onToggleSidebar ? (
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 rounded-lg text-muted-foreground hover:bg-card hover:text-foreground"
+                  className="h-8 w-8 rounded-full text-muted-foreground hover:bg-card hover:text-foreground"
                   onClick={props.onToggleSidebar}
                   aria-label="收缩侧边栏"
                   title="收缩侧边栏"
@@ -475,13 +475,13 @@ export const Sidebar = (props: SidebarProps) => {
             />
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-3 py-3">
-            <div className="mb-2 flex items-center justify-between px-1">
-              <p className="text-[12px] font-semibold text-muted-foreground/85">对话会话</p>
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden pb-3 pl-3 pr-px pt-3">
+            <div className="mb-3 flex items-center justify-between pl-1 pr-3">
+              <p className="text-[12px] font-semibold text-muted-foreground/85">对话</p>
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7 rounded-lg hover:bg-card"
+                className="h-8 w-8 rounded-full hover:bg-card"
                 onClick={props.onCreateSession}
                 aria-label="新增对话"
                 title="新增对话"
@@ -489,10 +489,10 @@ export const Sidebar = (props: SidebarProps) => {
                 <Plus className="h-3.5 w-3.5" />
               </Button>
             </div>
-            <div className="min-h-0 space-y-5 overflow-auto">
+            <div className="echo-scrollbar-minimal min-h-0 space-y-5 overflow-auto">
               {pinnedSessions.length > 0 ? (
                 <section>
-                  <p className="flex items-center gap-1.5 rounded-md border border-primary/20 bg-primary/[0.1] px-2 py-1 text-[12px] font-semibold text-primary">
+                  <p className="flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/[0.08] px-2.5 py-1 text-[12px] font-semibold text-primary">
                     <Pin className="h-3.5 w-3.5 fill-current" />
                     置顶
                   </p>
@@ -504,7 +504,7 @@ export const Sidebar = (props: SidebarProps) => {
                       return (
                         <article
                           key={session.id}
-                          className="session-list-item rounded-lg transition-colors"
+                          className="session-list-item rounded-[18px] transition-colors"
                           data-active={active ? "true" : "false"}
                           onContextMenu={(event) => {
                             event.preventDefault();
@@ -518,7 +518,10 @@ export const Sidebar = (props: SidebarProps) => {
                         >
                           <button
                             type="button"
-                            className="w-full rounded-lg px-3 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            className={cn(
+                              "session-list-item-button w-full rounded-[18px] px-3 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                              active ? "session-list-item-button-active" : ""
+                            )}
                             onClick={() => {
                               if (!editing) {
                                 props.onSelectSession(session.id);
@@ -542,11 +545,14 @@ export const Sidebar = (props: SidebarProps) => {
                                     cancelChatRename();
                                   }
                                 }}
-                                className="h-7 w-full rounded-md border border-border/80 bg-background px-2 text-[14px] text-foreground outline-none ring-0 focus:border-primary"
+                                className="h-8 w-full rounded-xl border border-border/80 bg-background px-3 text-[14px] text-foreground outline-none ring-0 focus:border-primary"
                               />
                             ) : (
                               <p
-                                className="truncate text-[14px] font-medium text-foreground/90"
+                                className={cn(
+                                  "session-list-item-title truncate text-[14px] font-medium text-foreground/90",
+                                  active ? "session-list-item-title-active" : ""
+                                )}
                                 onDoubleClick={(event) => {
                                   event.preventDefault();
                                   event.stopPropagation();
@@ -556,7 +562,12 @@ export const Sidebar = (props: SidebarProps) => {
                                 {session.title}
                               </p>
                             )}
-                            <p className="mt-0.5 text-[12px] text-muted-foreground/85">
+                            <p
+                              className={cn(
+                                "session-list-item-meta mt-0.5 text-[12px] text-muted-foreground/85",
+                                active ? "session-list-item-meta-active" : ""
+                              )}
+                            >
                               {pinned ? "置顶 · " : ""}
                               {formatRelativeTime(session.updatedAt)}
                             </p>
@@ -578,7 +589,7 @@ export const Sidebar = (props: SidebarProps) => {
                       return (
                         <article
                           key={session.id}
-                          className="session-list-item rounded-lg transition-colors"
+                          className="session-list-item rounded-[18px] transition-colors"
                           data-active={active ? "true" : "false"}
                           onContextMenu={(event) => {
                             event.preventDefault();
@@ -592,7 +603,10 @@ export const Sidebar = (props: SidebarProps) => {
                         >
                           <button
                             type="button"
-                            className="w-full rounded-lg px-3 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            className={cn(
+                              "session-list-item-button w-full rounded-[18px] px-3 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                              active ? "session-list-item-button-active" : ""
+                            )}
                             onClick={() => {
                               if (!editing) {
                                 props.onSelectSession(session.id);
@@ -616,11 +630,14 @@ export const Sidebar = (props: SidebarProps) => {
                                     cancelChatRename();
                                   }
                                 }}
-                                className="h-7 w-full rounded-md border border-border/80 bg-background px-2 text-[14px] text-foreground outline-none ring-0 focus:border-primary"
+                                className="h-8 w-full rounded-xl border border-border/80 bg-background px-3 text-[14px] text-foreground outline-none ring-0 focus:border-primary"
                               />
                             ) : (
                               <p
-                                className="truncate text-[14px] font-medium text-foreground/90"
+                                className={cn(
+                                  "session-list-item-title truncate text-[14px] font-medium text-foreground/90",
+                                  active ? "session-list-item-title-active" : ""
+                                )}
                                 onDoubleClick={(event) => {
                                   event.preventDefault();
                                   event.stopPropagation();
@@ -630,7 +647,12 @@ export const Sidebar = (props: SidebarProps) => {
                                 {session.title}
                               </p>
                             )}
-                            <p className="mt-0.5 text-[12px] text-muted-foreground/85">
+                            <p
+                              className={cn(
+                                "session-list-item-meta mt-0.5 text-[12px] text-muted-foreground/85",
+                                active ? "session-list-item-meta-active" : ""
+                              )}
+                            >
                               {pinned ? "置顶 · " : ""}
                               {formatRelativeTime(session.updatedAt)}
                             </p>
@@ -644,10 +666,10 @@ export const Sidebar = (props: SidebarProps) => {
             </div>
           </div>
 
-          <div className="px-3 py-2">
+          <div className="border-t border-border/70 px-3 py-2.5">
             <Button
               variant="ghost"
-              className="h-8 w-full justify-start rounded-lg text-sm text-foreground/80 hover:bg-card"
+              className="h-10 w-full justify-start rounded-full text-sm text-foreground/80 hover:bg-card"
               onClick={() => props.onEnterSettings("provider")}
             >
               <Settings className="mr-1 h-4 w-4" />
@@ -659,12 +681,12 @@ export const Sidebar = (props: SidebarProps) => {
           ? createPortal(
               <div
                 ref={contextMenuRef}
-                className="fixed z-[90] w-40 rounded-lg border border-border bg-card p-1 shadow-[0_8px_24px_rgba(15,23,42,0.12)]"
+                className="fixed z-[90] w-40 rounded-[18px] border border-border bg-card p-1.5 shadow-[0_16px_40px_rgba(42,37,30,0.08)]"
                 style={contextMenuStyle}
               >
                 <button
                   type="button"
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground/90 hover:bg-accent/70"
+                  className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-sm text-foreground/90 hover:bg-accent/70"
                   onClick={() => {
                     props.onTogglePinSession(contextMenuSession.id);
                     setChatContextMenu(null);
@@ -675,7 +697,7 @@ export const Sidebar = (props: SidebarProps) => {
                 </button>
                 <button
                   type="button"
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground/90 hover:bg-accent/70"
+                  className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-sm text-foreground/90 hover:bg-accent/70"
                   onClick={() => startChatRename(contextMenuSession)}
                 >
                   <PenLine className="h-3.5 w-3.5" />
@@ -683,7 +705,7 @@ export const Sidebar = (props: SidebarProps) => {
                 </button>
                 <button
                   type="button"
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground/90 hover:bg-accent/70"
+                  className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-sm text-foreground/90 hover:bg-accent/70"
                   onClick={() => {
                     props.onExportSession(contextMenuSession.id);
                     setChatContextMenu(null);
@@ -694,7 +716,7 @@ export const Sidebar = (props: SidebarProps) => {
                 </button>
                 <button
                   type="button"
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-foreground/90 hover:bg-accent/70"
+                  className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-sm text-foreground/90 hover:bg-accent/70"
                   onClick={() => {
                     props.onExportSessionMarkdown(contextMenuSession.id);
                     setChatContextMenu(null);
@@ -705,7 +727,7 @@ export const Sidebar = (props: SidebarProps) => {
                 </button>
                 <button
                   type="button"
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-destructive hover:bg-accent/70"
+                  className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-sm text-destructive hover:bg-accent/70"
                   onClick={() => {
                     props.onDeleteSession(contextMenuSession.id);
                     setChatContextMenu(null);
@@ -746,14 +768,14 @@ export const Sidebar = (props: SidebarProps) => {
     return (
       <>
         <aside className="sidebar-surface relative flex h-full flex-col overflow-hidden">
-          <div className="px-3 pb-3 pt-2.5">
+          <div className="border-b border-border/70 px-3 pb-3 pt-2.5">
             <div className="-mt-[12px] mb-3 flex items-center justify-end">
               {props.onToggleSidebar ? (
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 rounded-lg text-muted-foreground hover:bg-card hover:text-foreground"
+                  className="h-8 w-8 rounded-full text-muted-foreground hover:bg-card hover:text-foreground"
                   onClick={props.onToggleSidebar}
                   aria-label="收缩侧边栏"
                   title="收缩侧边栏"
@@ -769,13 +791,13 @@ export const Sidebar = (props: SidebarProps) => {
             />
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-3 py-3">
-            <div className="mb-2 flex items-center justify-between px-1">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden pb-3 pl-3 pr-px pt-3">
+            <div className="mb-3 flex items-center justify-between pl-1 pr-3">
               <p className="text-[12px] font-semibold text-muted-foreground/85">Agent 会话</p>
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7 rounded-lg hover:bg-card"
+                className="h-8 w-8 rounded-full hover:bg-card"
                 onClick={props.onCreateSession}
                 aria-label="新增 Agent 会话"
                 title="新增 Agent 会话"
@@ -783,14 +805,14 @@ export const Sidebar = (props: SidebarProps) => {
                 <Plus className="h-3.5 w-3.5" />
               </Button>
             </div>
-            <div className="min-h-0 space-y-1 overflow-auto">
+            <div className="echo-scrollbar-minimal min-h-0 space-y-1 overflow-auto">
               {props.sessions.map((session) => {
                 const active = session.id === props.activeSessionId;
                 const editing = session.id === editingAgentSessionId;
                 return (
                   <article
                     key={session.id}
-                    className="session-list-item rounded-lg transition-colors"
+                    className="session-list-item rounded-[18px] transition-colors"
                     data-active={active ? "true" : "false"}
                     onContextMenu={(event) => {
                       event.preventDefault();
@@ -804,7 +826,10 @@ export const Sidebar = (props: SidebarProps) => {
                   >
                     <button
                       type="button"
-                      className="w-full rounded-lg px-3 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className={cn(
+                        "session-list-item-button w-full rounded-[18px] px-3 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        active ? "session-list-item-button-active" : ""
+                      )}
                       onClick={() => {
                         if (!editing) {
                           props.onSelectSession(session.id);
@@ -828,11 +853,14 @@ export const Sidebar = (props: SidebarProps) => {
                               cancelAgentRename();
                             }
                           }}
-                          className="h-7 w-full rounded-md border border-border/80 bg-background px-2 text-[14px] text-foreground outline-none ring-0 focus:border-primary"
+                          className="h-8 w-full rounded-xl border border-border/80 bg-background px-3 text-[14px] text-foreground outline-none ring-0 focus:border-primary"
                         />
                       ) : (
                         <p
-                          className="truncate text-[14px] font-medium text-foreground/90"
+                          className={cn(
+                            "session-list-item-title truncate text-[14px] font-medium text-foreground/90",
+                            active ? "session-list-item-title-active" : ""
+                          )}
                           onDoubleClick={(event) => {
                             event.preventDefault();
                             event.stopPropagation();
@@ -842,7 +870,12 @@ export const Sidebar = (props: SidebarProps) => {
                           {session.title}
                         </p>
                       )}
-                      <p className="mt-0.5 text-[12px] text-muted-foreground/85">
+                      <p
+                        className={cn(
+                          "session-list-item-meta mt-0.5 text-[12px] text-muted-foreground/85",
+                          active ? "session-list-item-meta-active" : ""
+                        )}
+                      >
                         {formatRelativeTime(session.updatedAt)}
                       </p>
                     </button>
@@ -852,10 +885,10 @@ export const Sidebar = (props: SidebarProps) => {
             </div>
           </div>
 
-          <div className="px-3 py-2">
+          <div className="border-t border-border/70 px-3 py-2.5">
             <Button
               variant="ghost"
-              className="h-8 w-full justify-start rounded-lg text-sm text-foreground/80 hover:bg-card"
+              className="h-10 w-full justify-start rounded-full text-sm text-foreground/80 hover:bg-card"
               onClick={() => props.onEnterSettings("provider")}
             >
               <Settings className="mr-1 h-4 w-4" />

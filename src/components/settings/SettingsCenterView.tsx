@@ -33,6 +33,7 @@ import {
   chatContextWindowOptions,
   densityOptions,
   fontScaleOptions,
+  markdownRenderModeOptions,
   getProviderBadgeVisual,
   normalizeDraft,
   providerPresets,
@@ -85,18 +86,18 @@ type SettingsCenterProps = {
   isUserProfileRefreshing: boolean;
 };
 
-const SETTINGS_CARD_CLASS = "surface-1 rounded-[24px]";
+const SETTINGS_CARD_CLASS = "surface-1 rounded-[20px]";
 const SETTINGS_SELECT_CLASS =
-  "h-10 w-full rounded-lg border border-input bg-card px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "h-10 w-full rounded-xl border border-input bg-background px-3.5 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 const SETTINGS_TEXTAREA_CLASS =
-  "min-h-[120px] w-full rounded-lg border border-input bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
-const SETTINGS_OPTION_BASE = "rounded-xl border px-4 py-3 text-left transition-colors";
-const SETTINGS_OPTION_ACTIVE = "border-border bg-accent/55";
-const SETTINGS_OPTION_INACTIVE = "border-border/70 bg-card hover:bg-accent/35";
+  "min-h-[120px] w-full rounded-xl border border-input bg-background px-3.5 py-2.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+const SETTINGS_OPTION_BASE = "rounded-[16px] border px-4 py-3 text-left transition-colors";
+const SETTINGS_OPTION_ACTIVE = "border-border bg-accent/45";
+const SETTINGS_OPTION_INACTIVE = "border-border/70 bg-background hover:bg-accent/24";
 const SETTINGS_TOGGLE_BASE =
-  "flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left transition-colors";
-const SETTINGS_TOGGLE_ACTIVE = "border-border bg-accent/55";
-const SETTINGS_TOGGLE_INACTIVE = "border-border/70 bg-card hover:bg-accent/35";
+  "flex w-full items-center justify-between rounded-[16px] border px-4 py-3 text-left transition-colors";
+const SETTINGS_TOGGLE_ACTIVE = "border-border bg-accent/45";
+const SETTINGS_TOGGLE_INACTIVE = "border-border/70 bg-background hover:bg-accent/24";
 const STATUS_NOTE_CLASS = "state-note px-3 py-2 text-sm";
 const STATUS_SUCCESS_CLASS = "state-success px-3 py-2 text-sm";
 const STATUS_ERROR_CLASS = "state-error px-3 py-2 text-sm";
@@ -1596,7 +1597,11 @@ export const SettingsCenterView = (props: SettingsCenterProps) => {
                 <p className="text-sm font-semibold text-foreground">当前画像快照</p>
                 <div className="mt-3 max-h-[320px] overflow-auto rounded-lg border border-border/60 bg-background px-4 py-3">
                   {profileSnapshotMarkdown.trim() ? (
-                    <MarkdownContent content={profileSnapshotMarkdown} isUser={false} />
+                    <MarkdownContent
+                      content={profileSnapshotMarkdown}
+                      isUser={false}
+                      renderMode={draft.markdownRenderMode}
+                    />
                   ) : (
                     <p className="text-sm text-muted-foreground">
                       还没有画像快照。等有足够的用户消息后，Echo 会自动沉淀第一版人物画像。
@@ -1751,7 +1756,11 @@ export const SettingsCenterView = (props: SettingsCenterProps) => {
                     {isLoadingProfile ? (
                       <p className="text-sm text-muted-foreground">加载中...</p>
                     ) : selectedProfileNote?.summaryMarkdown ? (
-                      <MarkdownContent content={selectedProfileNote.summaryMarkdown} isUser={false} />
+                      <MarkdownContent
+                        content={selectedProfileNote.summaryMarkdown}
+                        isUser={false}
+                        renderMode={draft.markdownRenderMode}
+                      />
                     ) : (
                       <p className="text-sm text-muted-foreground">
                         还没有用户日摘要。发起几轮聊天后，这里会逐步开始按天沉淀。
@@ -1955,6 +1964,26 @@ export const SettingsCenterView = (props: SettingsCenterProps) => {
                         type="button"
                         className={settingsOptionClass(active)}
                         onClick={() => updateField("messageDensity", option.value)}
+                      >
+                        <p className="text-sm font-semibold text-foreground">{option.label}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{option.description}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">Markdown 与公式渲染</p>
+                <div className="grid gap-3 md:grid-cols-2">
+                  {markdownRenderModeOptions.map((option) => {
+                    const active = draft.markdownRenderMode === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        className={settingsOptionClass(active)}
+                        onClick={() => updateField("markdownRenderMode", option.value)}
                       >
                         <p className="text-sm font-semibold text-foreground">{option.label}</p>
                         <p className="mt-1 text-xs text-muted-foreground">{option.description}</p>
@@ -2284,7 +2313,11 @@ export const SettingsCenterView = (props: SettingsCenterProps) => {
                     {isLoadingJournal ? (
                       <p className="text-sm text-muted-foreground pt-2">加载中...</p>
                     ) : journalContent ? (
-                      <MarkdownContent content={journalContent} isUser={false} />
+                      <MarkdownContent
+                        content={journalContent}
+                        isUser={false}
+                        renderMode={draft.markdownRenderMode}
+                      />
                     ) : selectedJournalDate ? (
                       <p className="text-sm text-muted-foreground pt-2">
                         {selectedJournalDate === getTodayDateString(new Date()) &&

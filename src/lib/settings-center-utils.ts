@@ -3,6 +3,7 @@ import type {
   ChatContextWindow,
   ChatSession,
   FontScale,
+  MarkdownRenderMode,
   MessageDensity,
   ModelCapabilities,
   ProviderType,
@@ -47,6 +48,15 @@ export const fontScaleOptions: Array<{ value: FontScale; label: string; descript
 export const densityOptions: Array<{ value: MessageDensity; label: string; description: string }> = [
   { value: "compact", label: "Compact", description: "Reduced spacing between messages." },
   { value: "comfortable", label: "Comfortable", description: "More breathing room in chat." }
+];
+
+export const markdownRenderModeOptions: Array<{
+  value: MarkdownRenderMode;
+  label: string;
+  description: string;
+}> = [
+  { value: "paragraph", label: "按段", description: "保留完整 Markdown 段落和块结构。" },
+  { value: "line", label: "按行", description: "按换行逐段渲染，更接近逐行阅读。" }
 ];
 
 export const chatContextWindowOptions: Array<{
@@ -587,6 +597,7 @@ export const areSettingsEqual = (left: AppSettings, right: AppSettings) =>
   left.sendWithEnter === right.sendWithEnter &&
   left.fontScale === right.fontScale &&
   left.messageDensity === right.messageDensity &&
+  left.markdownRenderMode === right.markdownRenderMode &&
   left.requestTimeoutMs === right.requestTimeoutMs &&
   left.retryCount === right.retryCount &&
   left.sseDebug === right.sseDebug &&

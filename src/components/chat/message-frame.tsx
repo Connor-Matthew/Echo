@@ -8,7 +8,7 @@ import { MessageAttachmentList } from "./message-attachment-list";
 import { MessageUsageStats } from "./message-usage-stats";
 import { useMessagePresentationState } from "./use-message-presentation-state";
 import { useStreamRevealedContent } from "./use-stream-revealed-content";
-import type { ChatMessage } from "../../shared/contracts";
+import type { ChatMessage, MarkdownRenderMode } from "../../shared/contracts";
 
 type MessageFrameProps = {
   message: ChatMessage;
@@ -16,6 +16,7 @@ type MessageFrameProps = {
   isTopSnapActive: boolean;
   activeGeneratingAssistantId?: string | null;
   mode: "chat" | "agent";
+  markdownRenderMode: MarkdownRenderMode;
   permissionRequest?: PermissionRequest | null;
 } & MessageFrameHandlers;
 
@@ -25,6 +26,7 @@ const MessageFrameInner = ({
   isTopSnapActive,
   activeGeneratingAssistantId,
   mode,
+  markdownRenderMode,
   permissionRequest,
   onResolvePermission,
   onEditMessage,
@@ -85,21 +87,22 @@ const MessageFrameInner = ({
       >
         <div
           className={[
-            "inline-block w-fit max-w-full break-words rounded-md transition-opacity duration-150",
+            "inline-block w-fit max-w-full break-words transition-opacity duration-150",
             renderContext.isUser
-              ? "chat-message-surface-user px-3 py-2 sm:px-3.5"
-              : "chat-message-surface-assistant px-2 py-1.5"
+              ? "chat-message-surface-user px-4 py-3 sm:px-5"
+              : "chat-message-surface-assistant px-0 py-1.5"
           ].join(" ")}
         >
           {renderMessageBlocks({
             ast,
             context: renderContext,
-            presentation: state,
-            actions,
-            handlers: {
-              onResolvePermission
-            }
-          })}
+          presentation: state,
+          actions,
+          handlers: {
+            onResolvePermission
+          },
+          markdownRenderMode
+        })}
         </div>
 
         <MessageAttachmentList attachments={renderContext.attachments} isUser={renderContext.isUser} />
@@ -118,7 +121,7 @@ const MessageFrameInner = ({
         />
       </div>
       {renderContext.isUser ? (
-        <div className="grid h-7 w-7 place-content-center rounded-md border border-border/80 bg-accent/55 text-[10px] font-semibold tracking-wide text-foreground">
+        <div className="grid h-7 w-7 place-content-center rounded-full border border-border/65 bg-background text-[9px] font-medium tracking-wide text-muted-foreground">
           U
         </div>
       ) : null}
@@ -131,6 +134,9 @@ const areMessageFramePropsEqual = (prev: MessageFrameProps, next: MessageFramePr
     return false;
   }
   if (prev.mode !== next.mode) {
+    return false;
+  }
+  if (prev.markdownRenderMode !== next.markdownRenderMode) {
     return false;
   }
   if (prev.isTopSnapActive !== next.isTopSnapActive) {

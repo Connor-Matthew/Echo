@@ -1,7 +1,7 @@
 import { MessageFrame } from "./message-frame";
 import { useChatScrollFollow } from "./use-chat-scroll-follow";
 import type { ConversationMode, MessageFrameHandlers, PermissionRequest } from "./conversation-types";
-import type { ChatMessage } from "../../shared/contracts";
+import type { ChatMessage, MarkdownRenderMode } from "../../shared/contracts";
 
 type ConversationViewportProps = {
   sessionId: string;
@@ -9,8 +9,15 @@ type ConversationViewportProps = {
   isConfigured: boolean;
   isGenerating: boolean;
   mode: ConversationMode;
+  markdownRenderMode: MarkdownRenderMode;
   permissionRequest?: PermissionRequest | null;
 } & MessageFrameHandlers;
+
+export const getConversationViewportLayoutClassNames = () => ({
+  scrollContainer: "chat-scroll-stage echo-scrollbar-minimal h-full w-full overflow-auto",
+  scrollContent:
+    "chat-scroll-content mx-auto flex w-full flex-col gap-8 px-6 pb-40 pt-8 sm:px-8 sm:pb-44 md:px-10 md:pt-10"
+});
 
 export const ConversationViewport = ({
   sessionId,
@@ -18,6 +25,7 @@ export const ConversationViewport = ({
   isConfigured,
   isGenerating,
   mode,
+  markdownRenderMode,
   permissionRequest,
   onResolvePermission,
   onEditMessage,
@@ -37,6 +45,8 @@ export const ConversationViewport = ({
     mode
   });
 
+  const layoutClassNames = getConversationViewportLayoutClassNames();
+
   const renderMessageFrames = (items: ChatMessage[], isTopSnapActive: boolean) =>
     items.map((message) => (
       <MessageFrame
@@ -46,6 +56,7 @@ export const ConversationViewport = ({
         isTopSnapActive={isTopSnapActive}
         activeGeneratingAssistantId={activeGeneratingAssistantId}
         mode={mode}
+        markdownRenderMode={markdownRenderMode}
         permissionRequest={permissionRequest}
         onResolvePermission={onResolvePermission}
         onEditMessage={onEditMessage}
@@ -56,7 +67,7 @@ export const ConversationViewport = ({
   if (!isConfigured) {
     return (
       <section className="paper-conversation-stage mx-auto flex h-full w-full items-center justify-center px-4 py-6 sm:px-5 sm:py-7 md:px-6 md:py-8">
-        <div className="rounded-lg border border-border/75 bg-card px-6 py-6 text-center sm:px-8 sm:py-7 md:px-10 md:py-8">
+        <div className="rounded-[28px] border border-border/70 bg-card px-8 py-7 text-center sm:px-10 sm:py-8 md:px-12 md:py-10">
           <h2 className="text-[28px] font-semibold leading-none text-foreground sm:text-[36px] md:text-[42px]">
             Hello, Echo
           </h2>
@@ -72,14 +83,14 @@ export const ConversationViewport = ({
     return (
       <section className="paper-conversation-stage mx-auto flex h-full w-full items-center justify-center px-4 py-6 text-center sm:px-5 sm:py-7 md:px-6 md:py-8">
         <div>
-          <p className="mb-4 inline-flex items-center rounded-md border border-border/70 bg-card px-3 py-1 text-xs text-muted-foreground">
+          <p className="mb-5 inline-flex items-center rounded-full border border-border/70 bg-background px-3.5 py-1 text-[11px] tracking-[0.08em] text-muted-foreground">
             New conversation
           </p>
-          <h2 className="text-[28px] font-semibold leading-[1.2] text-foreground sm:text-[34px] md:text-[38px]">
-            Start with a clear prompt
+          <h2 className="text-[30px] font-semibold leading-[1.2] text-foreground sm:text-[36px] md:text-[40px]">
+            从一个清晰的问题开始
           </h2>
-          <p className="mx-auto mt-3 max-w-[520px] text-sm text-muted-foreground sm:text-base">
-            提问越具体，结果越稳定。
+          <p className="mx-auto mt-4 max-w-[560px] text-sm leading-7 text-muted-foreground sm:text-base">
+            保持问题具体、直接，界面会尽量把注意力留给内容本身。
           </p>
         </div>
       </section>
@@ -89,9 +100,9 @@ export const ConversationViewport = ({
   return (
     <section
       ref={scrollContainerRef}
-      className="chat-scroll-stage paper-conversation-stage mx-auto h-full w-full overflow-auto px-4 py-5 sm:px-5 sm:py-6 md:px-6 md:py-7"
+      className={layoutClassNames.scrollContainer}
     >
-      <div ref={scrollContentRef} className="grid gap-3.5 sm:gap-4">
+      <div ref={scrollContentRef} className={layoutClassNames.scrollContent}>
         {renderMessageFrames(messages, isTopSnapActive)}
       </div>
     </section>

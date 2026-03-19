@@ -12,12 +12,14 @@ import { MarkdownContent } from "./message-markdown-content";
 import { MessageReasoningPanel } from "./message-reasoning-panel";
 import { MessageToolCallsPanel } from "./message-tool-calls-panel";
 import type { MessageAst, MessageAstNode } from "./message-render-ast";
+import type { MarkdownRenderMode } from "../../shared/contracts";
 
 type BlockRendererBaseProps = {
   context: MessageRenderContext;
   presentation: MessagePresentationStateSnapshot;
   actions: MessagePresentationActions;
   handlers: Pick<MessageFrameHandlers, "onResolvePermission">;
+  markdownRenderMode: MarkdownRenderMode;
 };
 
 type BlockRendererProps<K extends MessageAstNode["kind"]> = BlockRendererBaseProps & {
@@ -101,12 +103,12 @@ const registry: MessageBlockRendererRegistry = {
       </div>
     );
   },
-  reasoning_panel: ({ node, actions }) => (
+  reasoning_panel: ({ node, actions, markdownRenderMode }) => (
     <MessageReasoningPanel isExpanded={node.isExpanded} onToggle={actions.onToggleReasoning}>
-      <MarkdownContent content={node.content} isUser={false} />
+      <MarkdownContent content={node.content} isUser={false} renderMode={markdownRenderMode} />
     </MessageReasoningPanel>
   ),
-  markdown: ({ node, context }) => {
+  markdown: ({ node, context, markdownRenderMode }) => {
     if (!node.content && !node.isUser && context.isCurrentGeneratingAssistant) {
       return <span className="text-muted-foreground">Generating...</span>;
     }
@@ -115,6 +117,7 @@ const registry: MessageBlockRendererRegistry = {
         content={node.content}
         isUser={node.isUser}
         streaming={Boolean(node.streaming)}
+        renderMode={markdownRenderMode}
       />
     );
   },
@@ -178,13 +181,15 @@ export const renderMessageBlocks = ({
   context,
   presentation,
   actions,
-  handlers
+  handlers,
+  markdownRenderMode
 }: {
   ast: MessageAst;
   context: MessageRenderContext;
   presentation: MessagePresentationStateSnapshot;
   actions: MessagePresentationActions;
   handlers: Pick<MessageFrameHandlers, "onResolvePermission">;
+  markdownRenderMode: MarkdownRenderMode;
 }) =>
   ast.nodes.map((node, index) => (
     <div key={`${node.kind}-${index}`}>
@@ -193,7 +198,8 @@ export const renderMessageBlocks = ({
         context,
         presentation,
         actions,
-        handlers
+        handlers,
+        markdownRenderMode
       })}
     </div>
   ));

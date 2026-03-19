@@ -1,11 +1,13 @@
 import { AgentConversationView } from "./chat/conversation-shells";
 import type { AgentMessage } from "../shared/agent-contracts";
 import type { PermissionRequest } from "./chat/conversation-types";
+import type { MarkdownRenderMode } from "../shared/contracts";
 
 type AgentViewProps = {
   sessionId: string;
   messages: AgentMessage[];
   isRunning: boolean;
+  markdownRenderMode: MarkdownRenderMode;
   permissionRequest?: PermissionRequest | null;
   onResolvePermission?: (
     request: PermissionRequest,
@@ -14,13 +16,20 @@ type AgentViewProps = {
   ) => void;
 };
 
-export const AgentView = ({ sessionId, messages, isRunning, permissionRequest, onResolvePermission }: AgentViewProps) => {
+export const AgentView = ({
+  sessionId,
+  messages,
+  isRunning,
+  markdownRenderMode,
+  permissionRequest,
+  onResolvePermission
+}: AgentViewProps) => {
   if (!messages.length) {
     return (
       <div className="grid h-full place-content-center px-6 text-center">
-        <div className="max-w-xl rounded-lg border border-border/80 bg-card px-8 py-7">
+        <div className="max-w-xl rounded-[28px] border border-border/75 bg-card px-10 py-9">
           <p className="text-[24px] font-semibold leading-none text-foreground">Agent Workspace</p>
-          <p className="mt-2 text-sm text-muted-foreground">
+          <p className="mt-3 text-sm leading-7 text-muted-foreground">
             这里会显示 Claude Agent SDK 的执行过程与回复。
           </p>
         </div>
@@ -34,6 +43,7 @@ export const AgentView = ({ sessionId, messages, isRunning, permissionRequest, o
         sessionId={sessionId}
         messages={messages}
         isRunning={isRunning}
+        markdownRenderMode={markdownRenderMode}
         permissionRequest={permissionRequest}
         onResolvePermission={onResolvePermission}
       />

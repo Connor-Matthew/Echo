@@ -1,7 +1,10 @@
 import { isValidElement, memo, useEffect, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
+import rehypeKatex from "rehype-katex";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import type { MarkdownRenderMode } from "../../shared/contracts";
 import { Button } from "../ui/button";
 
 const readNodeText = (node: ReactNode): string => {
@@ -47,6 +50,171 @@ const extractCodeBlockMeta = (children: ReactNode): { code: string; language?: s
   };
 };
 
+const countRepeatedChar = (value: string, char: string, startIndex: number) => {
+  let index = startIndex;
+  while (value[index] === char) {
+    index += 1;
+  }
+  return index - startIndex;
+};
+
+const normalizeInlineMathDelimiters = (line: string) => {
+  let normalized = "";
+  let index = 0;
+  let activeCodeDelimiterLength = 0;
+
+  while (index < line.length) {
+    if (line[index] === "`") {
+      const delimiterLength = countRepeatedChar(line, "`", index);
+      normalized += line.slice(index, index + delimiterLength);
+      if (activeCodeDelimiterLength === 0) {
+        activeCodeDelimiterLength = delimiterLength;
+      } else if (activeCodeDelimiterLength === delimiterLength) {
+        activeCodeDelimiterLength = 0;
+      }
+      index += delimiterLength;
+      continue;
+    }
+
+    if (activeCodeDelimiterLength === 0 && line.startsWith("\\(", index)) {
+      const closingIndex = line.indexOf("\\)", index + 2);
+      if (closingIndex !== -1) {
+        const expression = line.slice(index + 2, closingIndex).trim();
+        normalized += expression ? `$${expression}$` : "\\(\\)";
+        index = closingIndex + 2;
+        continue;
+      }
+    }
+
+    normalized += line[index];
+    index += 1;
+  }
+
+  return normalized;
+};
+
+const normalizeMathMarkdown = (content: string) => {
+  const lines = content.split("\n");
+  const normalizedLines: string[] = [];
+  let inFencedCodeBlock = false;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    const trimmed = line.trimStart();
+
+    if (trimmed.startsWith("```")) {
+      inFencedCodeBlock = !inFencedCodeBlock;
+      normalizedLines.push(line);
+      continue;
+    }
+
+    if (inFencedCodeBlock) {
+      normalizedLines.push(line);
+      continue;
+    }
+
+    if (line.trim() === "\\[") {
+      const blockLines: string[] = [];
+      let closingIndex = index + 1;
+
+      while (closingIndex < lines.length && (lines[closingIndex] ?? "").trim() !== "\\]") {
+        blockLines.push(lines[closingIndex] ?? "");
+        closingIndex += 1;
+      }
+
+      if (closingIndex < lines.length) {
+        normalizedLines.push("$$");
+        normalizedLines.push(...blockLines);
+        normalizedLines.push("$$");
+        index = closingIndex;
+        continue;
+      }
+    }
+
+    normalizedLines.push(normalizeInlineMathDelimiters(line));
+  }
+
+  return normalizedLines.join("\n");
+};
+
+type MarkdownSegment =
+  | {
+      kind: "spacer";
+      key: string;
+    }
+  | {
+      kind: "markdown";
+      key: string;
+      content: string;
+    };
+
+const splitMarkdownIntoLineSegments = (content: string): MarkdownSegment[] => {
+  const lines = content.split("\n");
+  const segments: MarkdownSegment[] = [];
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    const trimmed = line.trimStart();
+
+    if (!line.trim()) {
+      segments.push({ kind: "spacer", key: `spacer-${index}` });
+      continue;
+    }
+
+    if (trimmed.startsWith("```")) {
+      const blockLines = [line];
+      let closingIndex = index + 1;
+
+      while (closingIndex < lines.length) {
+        const candidate = lines[closingIndex] ?? "";
+        blockLines.push(candidate);
+        if (candidate.trimStart().startsWith("```")) {
+          break;
+        }
+        closingIndex += 1;
+      }
+
+      segments.push({
+        kind: "markdown",
+        key: `code-${index}`,
+        content: blockLines.join("\n")
+      });
+      index = Math.min(closingIndex, lines.length - 1);
+      continue;
+    }
+
+    if (line.trim() === "$$") {
+      const blockLines = [line];
+      let closingIndex = index + 1;
+
+      while (closingIndex < lines.length) {
+        const candidate = lines[closingIndex] ?? "";
+        blockLines.push(candidate);
+        if (candidate.trim() === "$$") {
+          break;
+        }
+        closingIndex += 1;
+      }
+
+      segments.push({
+        kind: "markdown",
+        key: `math-${index}`,
+        content: blockLines.join("\n")
+      });
+      index = Math.min(closingIndex, lines.length - 1);
+      continue;
+    }
+
+    segments.push({
+      kind: "markdown",
+      key: `line-${index}`,
+      content: line
+    });
+  }
+
+  return segments;
+};
+
 const CodeBlock = ({ code, language }: { code: string; language?: string }) => {
   const [copied, setCopied] = useState(false);
   const copyTimerRef = useRef<number | null>(null);
@@ -79,8 +247,8 @@ const CodeBlock = ({ code, language }: { code: string; language?: string }) => {
   };
 
   return (
-    <div className="chat-code-block mb-2 overflow-hidden rounded-md last:mb-0">
-      <div className="chat-code-block-header flex items-center justify-between px-2.5 py-1.5">
+    <div className="chat-code-block mb-3 overflow-hidden last:mb-0">
+      <div className="chat-code-block-header flex items-center justify-between px-3 py-2">
         <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
           {language || "code"}
         </span>
@@ -88,7 +256,7 @@ const CodeBlock = ({ code, language }: { code: string; language?: string }) => {
           type="button"
           variant="ghost"
           size="sm"
-          className="h-6 px-2 text-[11px] text-muted-foreground"
+          className="h-7 rounded-full px-2.5 text-[11px] text-muted-foreground"
           onClick={() => {
             void copyCode();
           }}
@@ -96,7 +264,7 @@ const CodeBlock = ({ code, language }: { code: string; language?: string }) => {
           {copied ? "已复制" : "复制代码"}
         </Button>
       </div>
-      <pre className="overflow-x-auto p-3.5">
+      <pre className="overflow-x-auto px-4 py-3.5">
         <code className="font-mono text-[13px] leading-6 text-foreground">{code}</code>
       </pre>
     </div>
@@ -105,16 +273,16 @@ const CodeBlock = ({ code, language }: { code: string; language?: string }) => {
 
 const markdownComponents: Components = {
   h1: ({ children }) => (
-    <h1 className="mb-3.5 mt-1.5 text-[1.24rem] font-semibold leading-tight">{children}</h1>
+    <h1 className="mb-4 mt-1.5 text-[1.34rem] font-semibold leading-tight">{children}</h1>
   ),
   h2: ({ children }) => (
-    <h2 className="mb-3 mt-1.5 text-[1.12rem] font-semibold leading-tight">{children}</h2>
+    <h2 className="mb-3.5 mt-1.5 text-[1.16rem] font-semibold leading-tight">{children}</h2>
   ),
   h3: ({ children }) => <h3 className="mb-2.5 mt-1.5 text-[1rem] font-semibold">{children}</h3>,
   h4: ({ children }) => <h4 className="mb-2 mt-1.5 text-[0.95rem] font-semibold">{children}</h4>,
-  p: ({ children }) => <p className="mb-2.5 last:mb-0">{children}</p>,
-  ul: ({ children }) => <ul className="mb-2.5 list-disc pl-5 last:mb-0">{children}</ul>,
-  ol: ({ children }) => <ol className="mb-2.5 list-decimal pl-5 last:mb-0">{children}</ol>,
+  p: ({ children }) => <p className="mb-3.5 last:mb-0">{children}</p>,
+  ul: ({ children }) => <ul className="mb-3.5 list-disc pl-5 last:mb-0">{children}</ul>,
+  ol: ({ children }) => <ol className="mb-3.5 list-decimal pl-5 last:mb-0">{children}</ol>,
   li: ({ children }) => <li className="mb-1">{children}</li>,
   blockquote: ({ children }) => (
     <blockquote className="mb-2.5 border-l-2 border-border pl-3 text-muted-foreground">
@@ -163,11 +331,13 @@ const markdownComponents: Components = {
 const MarkdownContentInner = ({
   content,
   isUser,
-  streaming = false
+  streaming = false,
+  renderMode = "paragraph"
 }: {
   content: string;
   isUser: boolean;
   streaming?: boolean;
+  renderMode?: MarkdownRenderMode;
 }) => {
   const rootClassName = [
     "chat-markdown-root break-words text-[15px]",
@@ -178,14 +348,38 @@ const MarkdownContentInner = ({
     .join(" ");
 
   if (streaming) {
-    return <div className={rootClassName}>{content}</div>;
+    return (
+      <div className={rootClassName} data-render-mode={renderMode}>
+        {content}
+      </div>
+    );
   }
 
+  const normalizedContent = normalizeMathMarkdown(content);
+  const renderMarkdown = (markdown: string, key?: string) => (
+    <ReactMarkdown
+      key={key}
+      remarkPlugins={[remarkGfm, remarkBreaks, remarkMath]}
+      rehypePlugins={[rehypeKatex]}
+      components={markdownComponents}
+    >
+      {markdown}
+    </ReactMarkdown>
+  );
+
+  const lineSegments = renderMode === "line" ? splitMarkdownIntoLineSegments(normalizedContent) : [];
+
   return (
-    <div className={rootClassName}>
-      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={markdownComponents}>
-        {content}
-      </ReactMarkdown>
+    <div className={rootClassName} data-render-mode={renderMode}>
+      {renderMode === "line"
+        ? lineSegments.map((segment) =>
+            segment.kind === "spacer" ? (
+              <div key={segment.key} aria-hidden="true" className="h-3" />
+            ) : (
+              renderMarkdown(segment.content, segment.key)
+            )
+          )
+        : renderMarkdown(normalizedContent)}
     </div>
   );
 };
@@ -195,7 +389,8 @@ export const MarkdownContent = memo(
   (prev, next) =>
     prev.content === next.content &&
     prev.isUser === next.isUser &&
-    Boolean(prev.streaming) === Boolean(next.streaming)
+    Boolean(prev.streaming) === Boolean(next.streaming) &&
+    prev.renderMode === next.renderMode
 );
 
 MarkdownContent.displayName = "MarkdownContent";

@@ -19,6 +19,7 @@ describe("components/AgentView", () => {
     const element = AgentView({
       sessionId: "agent-1",
       isRunning: true,
+      markdownRenderMode: "paragraph",
       messages: [
         createAgentMessage({ id: "sys-1", role: "system", content: "system note" }),
         createAgentMessage({ id: "user-1", role: "user", content: "hello" })
@@ -30,6 +31,7 @@ describe("components/AgentView", () => {
       children: ReactElement<{
         sessionId: string;
         isRunning: boolean;
+        markdownRenderMode: "paragraph";
         messages: AgentMessage[];
       }>;
     }>;
@@ -37,6 +39,7 @@ describe("components/AgentView", () => {
     assert.equal(shellElement.type, AgentConversationView);
     assert.equal(shellElement.props.sessionId, "agent-1");
     assert.equal(shellElement.props.isRunning, true);
+    assert.equal(shellElement.props.markdownRenderMode, "paragraph");
     assert.deepEqual(shellElement.props.messages, [
       createAgentMessage({ id: "sys-1", role: "system", content: "system note" }),
       createAgentMessage({ id: "user-1", role: "user", content: "hello" })

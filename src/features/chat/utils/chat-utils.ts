@@ -33,8 +33,8 @@ const TEXT_ATTACHMENT_MIME_TYPES = new Set([
 const AUDIO_ATTACHMENT_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".ogg", ".flac", ".aac"]);
 const VIDEO_ATTACHMENT_EXTENSIONS = new Set([".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"]);
 export const SIDEBAR_AUTO_HIDE_WIDTH = 800;
-export const SIDEBAR_MIN_WIDTH = 248;
-export const SIDEBAR_MAX_WIDTH = 292;
+export const SIDEBAR_MIN_WIDTH = 272;
+export const SIDEBAR_MAX_WIDTH = 320;
 export const SIDEBAR_FULL_WIDTH_AT = 1400;
 
 export type StreamUsageSnapshot = {

@@ -5,6 +5,7 @@ import {
   type ChatScrollMode,
   getActiveGeneratingAssistantId,
   getAnchoredMessageTopDelta,
+  getScrollFollowTopInset,
   getLatestTurnAnchorKey,
   getLatestUserMessageId,
   getSessionScrollFollowResetState,
@@ -68,10 +69,20 @@ describe("components/chat/use-chat-scroll-follow helpers", () => {
       getTopSnappedMessageScrollTop({
         currentScrollTop: 120,
         containerTop: 100,
-        containerPaddingTop: 20,
+        topInset: 20,
         messageTop: 620
       }),
       620
+    );
+  });
+
+  it("includes content top padding in the top-snap inset", () => {
+    assert.equal(
+      getScrollFollowTopInset({
+        containerPaddingTop: 0,
+        contentPaddingTop: 32
+      }),
+      32
     );
   });
 
@@ -102,6 +113,17 @@ describe("components/chat/use-chat-scroll-follow helpers", () => {
         intrinsicBottomTop: 0
       }),
       540
+    );
+  });
+
+  it("does not shrink the anchored bottom spacer while the current scroll position still depends on it", () => {
+    assert.equal(
+      getTopSnapBottomSpacerHeight({
+        targetTop: 540,
+        intrinsicBottomTop: 560,
+        currentBottomSpacerHeight: 120
+      }),
+      120
     );
   });
 
@@ -343,7 +365,7 @@ describe("components/chat/use-chat-scroll-follow helpers", () => {
     assert.equal(
       getAnchoredMessageTopDelta({
         containerTop: 100,
-        containerPaddingTop: 20,
+        topInset: 20,
         messageTop: 120
       }),
       0
@@ -351,7 +373,7 @@ describe("components/chat/use-chat-scroll-follow helpers", () => {
     assert.equal(
       getAnchoredMessageTopDelta({
         containerTop: 100,
-        containerPaddingTop: 20,
+        topInset: 20,
         messageTop: 121.4
       }),
       1.4000000000000057

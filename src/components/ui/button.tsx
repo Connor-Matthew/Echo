@@ -7,16 +7,16 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "border-primary bg-primary text-primary-foreground hover:bg-primary/90",
-        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/85",
-        outline: "border-input bg-card text-foreground hover:bg-accent/70",
-        ghost: "border-transparent bg-transparent text-foreground hover:bg-accent/70",
-        destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90"
+        default: "border-primary bg-primary text-primary-foreground hover:bg-primary/92",
+        secondary: "border-border/70 bg-secondary text-secondary-foreground hover:bg-accent/65",
+        outline: "border-input bg-background text-foreground hover:bg-accent/42",
+        ghost: "border-transparent bg-transparent text-foreground hover:bg-accent/50",
+        destructive: "border-destructive/35 bg-destructive/10 text-destructive hover:bg-destructive/14"
       },
       size: {
-        default: "h-8 px-3 py-1.5",
-        sm: "h-7 px-2.5 text-xs",
-        lg: "h-9 px-4",
+        default: "h-9 px-3.5 py-1.5",
+        sm: "h-8 px-2.5 text-xs",
+        lg: "h-10 px-4",
         icon: "h-8 w-8"
       }
     },

@@ -1,7 +1,5 @@
-import { Bot } from "lucide-react";
 import { AttachmentTray } from "../../components/AttachmentTray";
 import { Composer } from "../../components/Composer";
-import { Button } from "../../components/ui/button";
 import type { AppSettings, Skill, ModelCapabilities } from "../../shared/contracts";
 import type { DraftAttachment } from "./draft-attachments";
 
@@ -95,19 +93,10 @@ export const ChatComposerPanel = ({
         usageLabel={composerUsageLabel}
         disabled={!isConfigured}
         isGenerating={isGenerating}
-        leadingControl={
-          <Button
-            type="button"
-            variant={isSoulModeEnabled ? "default" : "outline"}
-            className="h-[32px] rounded-full px-3 text-xs"
-            onClick={toggleSoulMode}
-            aria-pressed={isSoulModeEnabled}
-            title={isSoulModeEnabled ? "当前为 SOUL 模式" : "当前为系统提示词模式"}
-          >
-            <Bot className="mr-1.5 h-3.5 w-3.5" />
-            SOUL
-          </Button>
-        }
+        minimalControls={true}
+        minimalQuickToggleLabel="SOUL mode"
+        minimalQuickToggleActive={isSoulModeEnabled}
+        onMinimalQuickToggle={toggleSoulMode}
       />
     </div>
   );

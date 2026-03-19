@@ -3,6 +3,7 @@ import type {
   ChatContextWindow,
   EnvironmentSettings,
   EnvironmentTemperatureUnit,
+  MarkdownRenderMode,
   MemosSettings,
   ModelCapabilities,
   SoulEvolutionSettings,
@@ -83,6 +84,7 @@ Communication: Respond in the user's language. In Chinese contexts, use natural 
   sendWithEnter: true,
   fontScale: "md",
   messageDensity: "comfortable",
+  markdownRenderMode: "paragraph",
   requestTimeoutMs: 60000,
   retryCount: 1,
   sseDebug: false,
@@ -236,6 +238,9 @@ const normalizeChatContextWindow = (value: unknown): ChatContextWindow => {
   return DEFAULT_SETTINGS.chatContextWindow;
 };
 
+const normalizeMarkdownRenderMode = (value: unknown): MarkdownRenderMode =>
+  value === "line" ? "line" : "paragraph";
+
 const clampInteger = (value: unknown, min: number, max: number, fallback: number) => {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return fallback;
@@ -376,6 +381,9 @@ export const normalizeSettings = (saved: Partial<AppSettings>): AppSettings => {
           ? saved.systemPrompt
           : DEFAULT_SETTINGS.agentSystemPrompt,
     chatContextWindow: normalizeChatContextWindow(rawChatContextWindow),
+    markdownRenderMode: normalizeMarkdownRenderMode(
+      (saved as { markdownRenderMode?: unknown }).markdownRenderMode
+    ),
     environment: normalizeEnvironmentSettings(rawEnvironment),
     memos: normalizeMemosSettings(rawMemos),
     soulEvolution: normalizeSoulEvolutionSettings(

@@ -1,83 +1,83 @@
 :root {
-  --echo-shell-bg-start: 18 24% 86%;
-  --echo-shell-bg-mid: 220 20% 92%;
-  --echo-shell-bg-end: 220 22% 94%;
+  --echo-shell-bg-start: 34 24% 94%;
+  --echo-shell-bg-mid: 34 22% 95%;
+  --echo-shell-bg-end: 34 20% 96%;
 
-  --echo-shell-frame-border-alpha: 0.24;
+  --echo-shell-frame-border-alpha: 0.72;
   --echo-shell-frame-bg-alpha: 0;
-  --echo-shell-radius: 22px;
-  --echo-shell-panel-radius: 18px;
-  --echo-shell-shadow-window: 0 14px 34px rgba(15, 23, 42, 0.06);
+  --echo-shell-radius: 26px;
+  --echo-shell-panel-radius: 22px;
+  --echo-shell-shadow-window: none;
   --echo-shell-padding-compact: 0rem;
   --echo-shell-padding-regular: 0rem;
-  --echo-shell-column-gap-open: 0.4rem;
+  --echo-shell-column-gap-open: 0rem;
 
-  --echo-panel-border-alpha: 0.45;
-  --echo-panel-bg-alpha: 0.98;
+  --echo-panel-border-alpha: 0.78;
+  --echo-panel-bg-alpha: 1;
 
-  --echo-sidebar-bg-alpha: 0.35;
-  --echo-nav-active-bg-alpha: 0.72;
-  --echo-nav-hover-bg-alpha: 0.72;
+  --echo-sidebar-bg-alpha: 1;
+  --echo-nav-active-bg-alpha: 0.62;
+  --echo-nav-hover-bg-alpha: 0.64;
   --echo-session-hover-bg-alpha: 0.78;
-  --echo-session-active-ring-alpha: 0.24;
-  --echo-sidebar-hover-bg: 0 0% 100%;
-  --echo-sidebar-hover-text: 220 18% 12%;
+  --echo-session-active-ring-alpha: 0;
+  --echo-sidebar-hover-bg: 34 18% 92%;
+  --echo-sidebar-hover-text: 24 12% 22%;
 
-  --echo-mode-switch-border-alpha: 0.45;
-  --echo-mode-switch-bg-alpha: 0.6;
-  --echo-mode-switch-thumb-bg-alpha: 0.75;
-  --echo-mode-switch-thumb-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
+  --echo-mode-switch-border-alpha: 0.62;
+  --echo-mode-switch-bg-alpha: 0.92;
+  --echo-mode-switch-thumb-bg-alpha: 1;
+  --echo-mode-switch-thumb-shadow: none;
 
-  --echo-card-border-alpha: 0.75;
-  --echo-card-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
-  --echo-control-radius: 0.5rem;
+  --echo-card-border-alpha: 0.82;
+  --echo-card-shadow: none;
+  --echo-control-radius: 0.875rem;
 
-  --echo-floating-toggle-shadow: 0 1px 6px rgba(15, 23, 42, 0.12);
+  --echo-floating-toggle-shadow: none;
 
-  --echo-chat-stage-max-width: 760px;
-  --echo-chat-assistant-max-width: 700px;
-  --echo-chat-user-surface-border-alpha: 0.78;
+  --echo-chat-stage-max-width: 680px;
+  --echo-chat-assistant-max-width: 760px;
+  --echo-chat-user-surface-border-alpha: 0.55;
   --echo-chat-user-surface-bg-alpha: 1;
-  --echo-chat-assistant-surface-bg-alpha: 0.14;
-  --echo-chat-markdown-line-height: 1.72;
-  --echo-chat-inline-code-bg-alpha: 0.72;
-  --echo-chat-code-header-bg-alpha: 0.55;
-  --echo-chat-code-border-alpha: 0.8;
+  --echo-chat-assistant-surface-bg-alpha: 0;
+  --echo-chat-markdown-line-height: 1.94;
+  --echo-chat-inline-code-bg-alpha: 0.9;
+  --echo-chat-code-header-bg-alpha: 0.9;
+  --echo-chat-code-border-alpha: 0.75;
 
   --echo-motion-fast: 160ms;
   --echo-motion-medium: 240ms;
   --echo-motion-slow: 320ms;
   --echo-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
 
-  --echo-conversation-max-width: 980px;
+  --echo-conversation-max-width: 1120px;
 }
 
 .dark {
-  --echo-shell-bg-start: 220 14% 14%;
-  --echo-shell-bg-mid: 220 15% 12%;
-  --echo-shell-bg-end: 220 16% 11%;
+  --echo-shell-bg-start: 28 10% 14%;
+  --echo-shell-bg-mid: 28 10% 13%;
+  --echo-shell-bg-end: 28 10% 12%;
 
   --echo-shell-frame-bg-alpha: 0.72;
   --echo-panel-bg-alpha: 1;
 
-  --echo-sidebar-bg-alpha: 0.42;
-  --echo-nav-active-bg-alpha: 0.62;
-  --echo-nav-hover-bg-alpha: 0.52;
+  --echo-sidebar-bg-alpha: 1;
+  --echo-nav-active-bg-alpha: 0.54;
+  --echo-nav-hover-bg-alpha: 0.44;
   --echo-session-hover-bg-alpha: 0.5;
-  --echo-sidebar-hover-bg: 220 13% 24%;
-  --echo-sidebar-hover-text: 220 12% 92%;
+  --echo-sidebar-hover-bg: 28 10% 20%;
+  --echo-sidebar-hover-text: 34 20% 92%;
 
-  --echo-mode-switch-bg-alpha: 0.48;
-  --echo-mode-switch-thumb-bg-alpha: 0.58;
-  --echo-mode-switch-thumb-shadow: 0 2px 8px rgba(2, 6, 23, 0.45);
+  --echo-mode-switch-bg-alpha: 0.56;
+  --echo-mode-switch-thumb-bg-alpha: 0.82;
+  --echo-mode-switch-thumb-shadow: none;
 
-  --echo-card-border-alpha: 0.65;
-  --echo-card-shadow: 0 1px 2px rgba(2, 6, 23, 0.4);
+  --echo-card-border-alpha: 0.68;
+  --echo-card-shadow: none;
 
-  --echo-floating-toggle-shadow: 0 1px 6px rgba(2, 6, 23, 0.42);
+  --echo-floating-toggle-shadow: none;
 
-  --echo-chat-assistant-surface-bg-alpha: 0.22;
-  --echo-chat-inline-code-bg-alpha: 0.62;
-  --echo-chat-code-header-bg-alpha: 0.45;
+  --echo-chat-assistant-surface-bg-alpha: 0;
+  --echo-chat-inline-code-bg-alpha: 0.52;
+  --echo-chat-code-header-bg-alpha: 0.4;
   --echo-chat-code-border-alpha: 0.65;
 }

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { PanelLeft } from "lucide-react";
 import { AgentView } from "../../components/AgentView";
-import { AttachmentTray } from "../../components/AttachmentTray";
 import { ChatView } from "../../components/ChatView";
 import { CommandPalette } from "../../components/CommandPalette";
 import {
@@ -9,37 +8,40 @@ import {
   isEditableEventTarget,
   matchesShortcut
 } from "../../components/command-palette/shortcut-utils";
-import { Composer } from "../../components/Composer";
 import { SettingsCenter } from "../../components/SettingsCenter";
 import { Sidebar } from "../../components/Sidebar";
 import { Button } from "../../components/ui/button";
+import { AgentComposerPanel } from "./AgentComposerPanel";
 import { buildCommandPaletteCommands } from "./build-command-palette-commands";
+import { ChatSessionHeader } from "./chat-session-header";
 import { useAppController } from "./use-app-controller";
 import { ChatComposerPanel } from "./ChatComposerPanel";
 
-type ChatSessionHeaderProps = {
-  className?: string;
-  messageCount: number;
-  title: string;
+export const getFloatingSidebarToggleContainerClassName = (isMacPlatform: boolean) =>
+  isMacPlatform ? "absolute left-[96px] top-2 z-20" : "absolute left-3 top-3 z-20";
+
+export const getChatHeaderClassNameForFloatingToggle = (
+  showFloatingSidebarToggle: boolean,
+  isMacPlatform: boolean
+) => {
+  if (!showFloatingSidebarToggle) {
+    return undefined;
+  }
+
+  if (isMacPlatform) {
+    return "pl-[144px] sm:pl-[148px]";
+  }
+
+  return "pl-[132px] sm:pl-[136px]";
 };
 
-const ChatSessionHeader = ({ className, messageCount, title }: ChatSessionHeaderProps) => {
-  const classes = [
-    "paper-conversation-stage mx-auto flex min-h-12 w-full flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 py-2 text-[12px] text-muted-foreground sm:px-4",
-    className ?? ""
-  ]
-    .join(" ")
-    .trim();
+export const getCenteredLandingComposerClassName = () =>
+  "chat-reading-stage mx-auto w-full min-w-0";
 
-  return (
-    <div className={classes}>
-      <div className="min-w-0">
-        <p className="truncate text-[13px] font-medium text-foreground">{title}</p>
-      </div>
-      <div className="shrink-0 text-right leading-none">消息 {messageCount}</div>
-    </div>
-  );
-};
+export const CENTERED_LANDING_HEADING_TEXT = "Welcome back.";
+
+export const getCenteredLandingHeadingClassName = () =>
+  "landing-title-hero mb-10 text-center text-[36px] font-semibold leading-tight text-foreground sm:mb-12 sm:text-[44px] md:mb-14";
 
 export const AppView = () => {
   const controller = useAppController();
@@ -107,7 +109,6 @@ export const AppView = () => {
     clearAllSessions,
     isChatDragOver,
     showCenteredChatLanding,
-    activeChatMessageCount,
     handleChatDragEnter,
     handleChatDragOver,
     handleChatDragLeave,
@@ -309,7 +310,7 @@ export const AppView = () => {
   if (!isHydrated) {
     return (
       <div className="grid h-screen place-content-center bg-background text-muted-foreground">
-        <div className="sketch-panel rounded-lg px-6 py-5 text-center">
+        <div className="sketch-panel rounded-[24px] px-8 py-7 text-center">
           <p className="sketch-title text-[24px] leading-none text-foreground sm:text-[28px]">Echo</p>
           <p className="mt-2 text-sm">正在加载工作区...</p>
         </div>
@@ -319,7 +320,7 @@ export const AppView = () => {
 
   return (
     <div
-      className="app-shell relative h-screen min-w-0 overflow-hidden bg-background p-1.5 sm:p-2"
+      className="app-shell relative h-screen min-w-0 overflow-hidden bg-background p-0"
       data-file-dragging={activeView === "chat" && isChatDragOver ? "true" : "false"}
     >
       <div className="app-window-drag-layer" style={{ left: 0, height: topFrameHeightPx }} aria-hidden />
@@ -362,23 +363,26 @@ export const AppView = () => {
           ) : null}
           {activeView === "chat" && soulStatusToast ? (
             <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center px-4">
-              <div className="state-note min-w-[220px] max-w-[420px] whitespace-pre-line rounded-2xl px-4 py-2 text-center text-sm shadow-[0_16px_40px_rgba(15,23,42,0.12)]">
+              <div className="state-note min-w-[220px] max-w-[420px] whitespace-pre-line rounded-full px-4 py-2 text-center text-sm">
                 {soulStatusToast}
               </div>
             </div>
           ) : null}
           {showFloatingSidebarToggle ? (
-            <div className="absolute left-3 top-3 z-20">
+            <div className={getFloatingSidebarToggleContainerClassName(isMacPlatform)}>
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="floating-sidebar-toggle h-8 w-8 rounded-xl p-0 text-muted-foreground hover:text-foreground"
+                className={[
+                  "floating-sidebar-toggle rounded-full p-0 text-muted-foreground hover:text-foreground",
+                  isMacPlatform ? "h-8 w-8" : "h-9 w-9"
+                ].join(" ")}
                 onClick={() => setIsSidebarOpen((previous) => !previous)}
                 aria-label="展开侧边栏"
                 title="展开侧边栏"
               >
-                <PanelLeft className="h-4 w-4" />
+                <PanelLeft className={isMacPlatform ? "h-[18px] w-[18px]" : "h-4 w-4"} />
               </Button>
             </div>
           ) : null}
@@ -411,15 +415,14 @@ export const AppView = () => {
                 <section className="flex h-full w-full flex-col px-4 py-6 sm:px-6">
                   <div className="w-full max-w-[920px] self-center">
                     <ChatSessionHeader
-                      className="mb-10"
+                      className="mb-10 border-b-0"
                       title={activeSession?.title ?? "New Chat"}
-                      messageCount={activeChatMessageCount}
                     />
                   </div>
                   <div className="flex min-h-0 flex-1 items-center justify-center">
                     <div className="w-full max-w-[920px]">
-                      <h2 className="mb-14 text-center text-[36px] font-semibold leading-tight text-foreground sm:mb-16 sm:text-[44px] md:mb-20">
-                        今天有什么可以帮到你？
+                      <h2 className={getCenteredLandingHeadingClassName()}>
+                        {CENTERED_LANDING_HEADING_TEXT}
                       </h2>
                       <ChatComposerPanel
                         draft={draft}
@@ -446,7 +449,7 @@ export const AppView = () => {
                         isGenerating={isGenerating}
                         isSoulModeEnabled={isSoulModeEnabled}
                         toggleSoulMode={toggleSoulMode}
-                        containerClassName="mx-auto w-full max-w-[720px]"
+                        containerClassName={getCenteredLandingComposerClassName()}
                       />
                     </div>
                   </div>
@@ -455,9 +458,11 @@ export const AppView = () => {
                 <div className="flex h-full min-h-0 flex-col">
                   <div className="flex min-h-0 flex-1 flex-col bg-transparent">
                     <ChatSessionHeader
-                      className={showFloatingSidebarToggle ? "pl-[132px] sm:pl-[136px]" : undefined}
+                      className={getChatHeaderClassNameForFloatingToggle(
+                        showFloatingSidebarToggle,
+                        isMacPlatform
+                      )}
                       title={activeSession?.title ?? "New Chat"}
-                      messageCount={activeChatMessageCount}
                     />
                     <div className="min-h-0 flex-1">
                       <ChatView
@@ -465,6 +470,7 @@ export const AppView = () => {
                         messages={activeSession?.messages ?? []}
                         isConfigured={isConfigured}
                         isGenerating={isGenerating}
+                        markdownRenderMode={appSettings.markdownRenderMode}
                         onEditMessage={editMessage}
                         onDeleteMessage={deleteMessage}
                         onResendMessage={resendMessage}
@@ -498,7 +504,7 @@ export const AppView = () => {
                       isGenerating={isGenerating}
                       isSoulModeEnabled={isSoulModeEnabled}
                       toggleSoulMode={toggleSoulMode}
-                      containerClassName="paper-conversation-stage mx-auto w-full max-w-[720px] min-w-0"
+                      containerClassName={getCenteredLandingComposerClassName()}
                     />
                   </div>
                 </div>
@@ -541,6 +547,7 @@ export const AppView = () => {
                       sessionId={activeAgentSessionId}
                       messages={activeAgentMessages}
                       isRunning={isAgentRunning}
+                      markdownRenderMode={appSettings.markdownRenderMode}
                       permissionRequest={activeAgentPermissionRequest}
                       onResolvePermission={resolveAgentPermissionRequest}
                     />
@@ -549,7 +556,7 @@ export const AppView = () => {
               </div>
 
               {activeAgentPermissionRequest ? (
-                <div className="mx-2 mb-1 overflow-hidden rounded-lg border border-amber-500/40 bg-amber-50/80 dark:bg-amber-950/30 sm:mx-3 md:mx-4">
+                <div className="mx-3 mb-2 overflow-hidden rounded-[18px] border border-amber-500/35 bg-amber-50/70 dark:bg-amber-950/20 sm:mx-4">
                   <div className="flex items-start justify-between gap-3 px-3 py-2.5">
                     <div className="min-w-0 flex-1">
                       <p className="text-[12.5px] font-semibold text-amber-800 dark:text-amber-300">
@@ -621,56 +628,37 @@ export const AppView = () => {
 
               <div
                 className="px-2 pb-2 pt-0 sm:px-3 sm:pb-3 md:px-4 md:pb-4"
-                data-agent-composer-root="true"
               >
-                <div className="paper-conversation-stage mx-auto w-full min-w-0">
-                  <AttachmentTray
-                    attachments={agentDraftAttachments}
-                    onRemoveAttachment={removeAgentAttachment}
-                  />
-                  <Composer
-                    value={agentDraft}
-                    modelLabel={agentSettingsSnapshot?.model || "Agent 模型"}
-                    modelValue={activeAgentModelValue}
-                    modelOptions={agentModelOptions}
-                    modelCapabilities={activeModelCapabilities}
-                    sendWithEnter={appSettings.sendWithEnter}
-                    chatContextWindow={appSettings.chatContextWindow}
-                    attachmentCount={agentDraftAttachments.length}
-                    mcpServers={[]}
-                    enabledMcpServers={[]}
-                    skills={[]}
-                    activeSkill={null}
-                    onChangeActiveSkill={() => {}}
-                    onAddFiles={addAgentFiles}
-                    onChangeChatContextWindow={updateChatContextWindow}
-                    onSelectModel={selectAgentModel}
-                    onChangeMcpServers={() => {}}
-                    onChange={setAgentDraft}
-                    onSubmit={(value) => {
-                      void sendAgentMessage(value);
-                    }}
-                    onApplySkill={() => {}}
-                    onStop={() => {
-                      void stopAgentRun();
-                    }}
-                    usageLabel={null}
-                    disabled={!isAgentConfigured || isAgentRunning}
-                    disabledPlaceholder={isAgentRunning ? "Agent 正在运行..." : "请先完成模型配置"}
-                    isGenerating={isAgentRunning}
-                  />
-                </div>
+                <AgentComposerPanel
+                  draft={agentDraft}
+                  setDraft={setAgentDraft}
+                  draftAttachments={agentDraftAttachments}
+                  removeAttachment={removeAgentAttachment}
+                  addFiles={addAgentFiles}
+                  appSettings={appSettings}
+                  agentModelLabel={agentSettingsSnapshot?.model || "Agent 模型"}
+                  activeAgentModelValue={activeAgentModelValue}
+                  agentModelOptions={agentModelOptions}
+                  activeModelCapabilities={activeModelCapabilities}
+                  updateChatContextWindow={updateChatContextWindow}
+                  selectAgentModel={selectAgentModel}
+                  sendAgentMessage={sendAgentMessage}
+                  stopAgentRun={stopAgentRun}
+                  isAgentConfigured={isAgentConfigured}
+                  isAgentRunning={isAgentRunning}
+                  containerClassName={getCenteredLandingComposerClassName()}
+                />
               </div>
             </div>
           ) : (
             <>
-              <header className="bg-card/72 px-3 py-2.5 sm:px-4">
+              <header className="border-b border-border/70 bg-card px-5 py-3 sm:px-6">
                 <div className="flex items-start gap-3">
                   <div>
                     <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
                       工作区
                     </p>
-                    <p className="text-[17px] font-semibold leading-none text-foreground sm:text-[19px]">
+                    <p className="text-[16px] font-semibold leading-none text-foreground sm:text-[18px]">
                       设置
                     </p>
                   </div>

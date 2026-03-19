@@ -7,6 +7,16 @@ type AttachmentTrayProps = {
   onRemoveAttachment: (attachmentId: string) => void;
 };
 
+export const getAttachmentTrayClassNames = () => ({
+  tray: "composer-attachment-tray mb-2.5 flex flex-wrap gap-2.5",
+  item:
+    "w-[190px] rounded-[18px] border border-border/70 bg-background/80 px-3 py-2.5 text-left",
+  preview: "mt-2 h-14 w-full rounded-[14px] border border-border/60 object-cover",
+  textPreview: "mt-2 rounded-[14px] border border-border/60 bg-accent/20 px-2 py-1.5",
+  removeButton:
+    "h-6 w-6 shrink-0 rounded-full text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+});
+
 const TEXT_PREVIEW_MAX_CHARS = 300;
 
 const formatBytes = (size: number) => {
@@ -38,12 +48,14 @@ export const AttachmentTray = ({ attachments, onRemoveAttachment }: AttachmentTr
     return null;
   }
 
+  const classNames = getAttachmentTrayClassNames();
+
   return (
-    <div className="mb-3 flex flex-wrap gap-2 sm:mb-3.5">
+    <div className={classNames.tray}>
       {attachments.map((attachment) => (
         <div
           key={attachment.id}
-          className="w-[170px] rounded-md border border-border/75 bg-card px-2.5 py-2 sm:w-[184px]"
+          className={classNames.item}
         >
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
@@ -61,7 +73,7 @@ export const AttachmentTray = ({ attachments, onRemoveAttachment }: AttachmentTr
               type="button"
               variant="ghost"
               size="icon"
-              className="h-5 w-5 shrink-0 rounded-md"
+              className={classNames.removeButton}
               onClick={() => onRemoveAttachment(attachment.id)}
               aria-label="Remove attachment"
             >
@@ -72,11 +84,11 @@ export const AttachmentTray = ({ attachments, onRemoveAttachment }: AttachmentTr
             <img
               src={attachment.previewUrl}
               alt={attachment.name}
-              className="mt-1.5 h-12 w-full rounded-md border border-border object-cover"
+              className={classNames.preview}
             />
           ) : null}
           {attachment.kind === "text" ? (
-            <div className="mt-1.5 rounded-md border border-border/80 bg-accent/30 px-1.5 py-1">
+            <div className={classNames.textPreview}>
               <pre className="max-h-16 overflow-hidden whitespace-pre-wrap break-all font-mono text-[10px] leading-4 text-muted-foreground">
                 {toTextPreview(attachment.textContent)}
               </pre>

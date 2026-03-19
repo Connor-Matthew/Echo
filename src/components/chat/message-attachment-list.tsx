@@ -15,7 +15,7 @@ export const MessageAttachmentList = ({ attachments, isUser }: MessageAttachment
       {attachments.map((attachment) => (
         <span
           key={attachment.id}
-          className="inline-flex items-center rounded-full border border-border bg-card px-2 py-0.5 text-[12px] text-muted-foreground"
+          className="inline-flex items-center rounded-full border border-border/75 bg-background px-2.5 py-1 text-[12px] text-muted-foreground"
         >
           {attachment.name}
         </span>
