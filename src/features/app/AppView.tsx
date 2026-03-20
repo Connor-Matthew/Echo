@@ -36,12 +36,24 @@ export const getChatHeaderClassNameForFloatingToggle = (
 };
 
 export const getCenteredLandingComposerClassName = () =>
-  "chat-reading-stage mx-auto w-full min-w-0";
+  "chat-reading-stage mx-auto w-full min-w-0 max-w-[980px]";
 
+export const CENTERED_LANDING_EYEBROW_TEXT = "The Digital Atelier";
 export const CENTERED_LANDING_HEADING_TEXT = "Welcome back.";
+export const CENTERED_LANDING_BODY_TEXT =
+  "Start with a clear question, a half-formed idea, or the next thing you want Echo to shape.";
+
+export const getCenteredLandingContentClassName = () =>
+  "flex min-h-0 flex-1 items-start justify-center pt-[9vh] sm:pt-[11vh] md:pt-[12vh]";
+
+export const getCenteredLandingEyebrowClassName = () =>
+  "mb-4 text-center text-[11px] font-semibold uppercase tracking-[0.28em] text-muted-foreground/72 sm:mb-5";
 
 export const getCenteredLandingHeadingClassName = () =>
-  "landing-title-hero mb-10 text-center text-[36px] font-semibold leading-tight text-foreground sm:mb-12 sm:text-[44px] md:mb-14";
+  "landing-title-hero mb-5 text-center text-[42px] font-semibold leading-[1.02] tracking-[-0.04em] text-foreground sm:mb-6 sm:text-[52px] md:text-[60px]";
+
+export const getCenteredLandingBodyClassName = () =>
+  "mx-auto mt-0 max-w-[620px] text-center text-[15px] leading-7 text-muted-foreground/84 sm:text-[16px]";
 
 export const AppView = () => {
   const controller = useAppController();
@@ -389,7 +401,7 @@ export const AppView = () => {
           {activeView === "chat" ? (
             <>
               {removedSession || errorBanner ? (
-                <div className="mx-auto mt-2 grid w-[min(920px,calc(100%-40px))] gap-2">
+                <div className="mx-auto mt-2 grid w-[min(980px,calc(100%-40px))] gap-2">
                   {removedSession ? (
                     <div className="state-note flex items-center justify-between px-3 py-2">
                       <span>会话已删除。</span>
@@ -412,18 +424,24 @@ export const AppView = () => {
               ) : null}
 
               {showCenteredChatLanding ? (
-                <section className="flex h-full w-full flex-col px-4 py-6 sm:px-6">
-                  <div className="w-full max-w-[920px] self-center">
+                <section className="flex h-full w-full flex-col px-4 py-8 sm:px-6 sm:py-10">
+                  <div className="w-full max-w-[980px] self-center">
                     <ChatSessionHeader
                       className="mb-10 border-b-0"
                       title={activeSession?.title ?? "New Chat"}
                     />
                   </div>
-                  <div className="flex min-h-0 flex-1 items-center justify-center">
-                    <div className="w-full max-w-[920px]">
+                  <div className={getCenteredLandingContentClassName()}>
+                    <div className="w-full max-w-[980px]">
+                      <p className={getCenteredLandingEyebrowClassName()}>
+                        {CENTERED_LANDING_EYEBROW_TEXT}
+                      </p>
                       <h2 className={getCenteredLandingHeadingClassName()}>
                         {CENTERED_LANDING_HEADING_TEXT}
                       </h2>
+                      <p className={getCenteredLandingBodyClassName()}>
+                        {CENTERED_LANDING_BODY_TEXT}
+                      </p>
                       <ChatComposerPanel
                         draft={draft}
                         setDraft={setDraft}
@@ -513,7 +531,7 @@ export const AppView = () => {
           ) : activeView === "agent" ? (
             <div className="flex h-full min-h-0 flex-col">
               {agentErrorBanner ? (
-                <div className="mx-auto mt-2 w-[min(920px,calc(100%-40px))]">
+                <div className="mx-auto mt-2 w-[min(980px,calc(100%-40px))]">
                   <div className="state-error px-3 py-2 text-sm">
                     {agentErrorBanner}
                   </div>
@@ -521,7 +539,7 @@ export const AppView = () => {
               ) : null}
 
               {!isAgentConfigured ? (
-                <div className="mx-auto mt-2 w-[min(920px,calc(100%-40px))]">
+                <div className="mx-auto mt-2 w-[min(980px,calc(100%-40px))]">
                   <div className="state-warning px-3 py-2 text-sm">
                     请在设置中选择 `Claude Agent SDK` 或 `Anthropic` 兼容渠道，并配置 API Key / Model。
                     例如：`https://api.siliconflow.cn/v1/messages` 这类 Anthropic 兼容地址。
@@ -532,7 +550,7 @@ export const AppView = () => {
               <div className="min-h-0 flex-1">
                 {activeAgentMessages.length === 0 && isAgentConfigured ? (
                   <section className="flex h-full w-full items-center justify-center px-4 py-6 sm:px-6">
-                    <div className="w-full max-w-[920px]">
+                    <div className="w-full max-w-[980px]">
                       <h2 className="mb-4 text-center text-[34px] font-semibold leading-tight text-foreground sm:text-[40px]">
                         Agent 模式，直接下达任务
                       </h2>

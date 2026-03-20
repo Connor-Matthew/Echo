@@ -121,8 +121,10 @@ const MessageFrameInner = ({
 
 export const getMessageSurfaceClassName = (isUser: boolean) =>
   [
-    "inline-block w-fit max-w-full break-words transition-opacity duration-150",
-    isUser ? "chat-message-surface-user px-3 py-2 sm:px-4" : "chat-message-surface-assistant px-0 py-1.5"
+    "max-w-full break-words transition-opacity duration-150",
+    isUser
+      ? "chat-message-surface-user inline-block w-fit px-4 py-3 sm:px-5"
+      : "chat-message-surface-assistant w-full rounded-[30px] border border-border/55 bg-card/95 px-6 py-5 sm:px-7 sm:py-6"
   ].join(" ");
 
 const areMessageFramePropsEqual = (prev: MessageFrameProps, next: MessageFrameProps) => {

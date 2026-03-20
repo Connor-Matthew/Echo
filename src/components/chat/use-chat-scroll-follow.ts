@@ -98,6 +98,16 @@ export const getTopSnappedMessageScrollTop = (payload: {
       (payload.containerTop + payload.topInset)
   );
 
+export const getAnchoredMessageTargetScrollTop = (payload: {
+  messageOffsetTop: number;
+  contentOffsetTop: number;
+  contentPaddingTop: number;
+}) =>
+  Math.max(
+    0,
+    payload.messageOffsetTop - payload.contentOffsetTop - payload.contentPaddingTop
+  );
+
 export const getTopSnapBottomSpacerHeight = (payload: {
   targetTop: number;
   intrinsicBottomTop: number;
@@ -297,27 +307,16 @@ export const useChatScrollFollow = ({
       return false;
     }
 
-    const containerRect = container.getBoundingClientRect();
-    const messageRect = messageElement.getBoundingClientRect();
-    const containerPaddingTop =
-      Number.parseFloat(window.getComputedStyle(container).paddingTop || "0") || 0;
     const contentPaddingTop =
       Number.parseFloat(window.getComputedStyle(content).paddingTop || "0") || 0;
-    const topInset = getScrollFollowTopInset({
-      containerPaddingTop,
+    // Use layout coordinates relative to the scroll content so entry transforms
+    // and outer container offsets do not skew the anchor target.
+    const targetTop = getAnchoredMessageTargetScrollTop({
+      messageOffsetTop: messageElement.offsetTop,
+      contentOffsetTop: content.offsetTop,
       contentPaddingTop
     });
-    const topDelta = getAnchoredMessageTopDelta({
-      containerTop: containerRect.top,
-      topInset,
-      messageTop: messageRect.top
-    });
-    const targetTop = getTopSnappedMessageScrollTop({
-      currentScrollTop: container.scrollTop,
-      containerTop: containerRect.top,
-      topInset,
-      messageTop: messageRect.top
-    });
+    const topDelta = container.scrollTop - targetTop;
 
     const currentBottomSpacerHeight =
       Number.parseFloat(window.getComputedStyle(content).paddingBottom || "0") || 0;

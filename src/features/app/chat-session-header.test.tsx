@@ -17,8 +17,10 @@ describe("features/app/chat-session-header", () => {
 
   it("uses a more compact header height and title scale", () => {
     const className = getChatSessionHeaderClassName();
-    assert.ok(className.includes("min-h-11"));
-    assert.ok(className.includes("py-0"));
+    assert.ok(className.includes("min-h-14"));
+    assert.ok(className.includes("border-border/45"));
+    assert.ok(className.includes("pt-2"));
+    assert.ok(className.includes("pb-3"));
 
     const element = ChatSessionHeader({ title: "你好" });
     assert.ok(isValidElement(element));
@@ -27,7 +29,8 @@ describe("features/app/chat-session-header", () => {
     const titleWrapper = Children.only(header.props.children) as ReactElement<{ children: ReactNode }>;
     const title = Children.only(titleWrapper.props.children) as ReactElement<{ className?: string }>;
 
-    assert.ok(String(title.props.className).includes("text-[14px]"));
-    assert.ok(String(title.props.className).includes("leading-none"));
+    assert.ok(String(title.props.className).includes("text-[15px]"));
+    assert.ok(String(title.props.className).includes("tracking-[-0.01em]"));
+    assert.ok(String(title.props.className).includes("text-foreground/94"));
   });
 });

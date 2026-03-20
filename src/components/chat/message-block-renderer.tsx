@@ -71,6 +71,22 @@ const PendingToolBanner = ({
   );
 };
 
+const GeneratingIndicator = () => (
+  <span
+    className="generating-flow text-sm text-muted-foreground"
+    role="status"
+    aria-live="polite"
+    aria-label="Generating"
+  >
+    <span className="generating-flow__text">Generating</span>
+    <span className="generating-flow__dots" aria-hidden="true">
+      {[0, 1, 2].map((i) => (
+        <span key={i} className="generating-flow__dot" style={{ animationDelay: `${i * 0.18}s` }} />
+      ))}
+    </span>
+  </span>
+);
+
 const registry: MessageBlockRendererRegistry = {
   skill_badge: ({ node }) => <AppliedSkillBadge appliedSkill={node.appliedSkill} />,
   pending_tool_banner: ({ node }) => <PendingToolBanner toolCalls={node.toolCalls} />,
@@ -110,7 +126,7 @@ const registry: MessageBlockRendererRegistry = {
   ),
   markdown: ({ node, context, markdownRenderMode }) => {
     if (!node.content && !node.isUser && context.isCurrentGeneratingAssistant) {
-      return <span className="text-muted-foreground">Generating...</span>;
+      return <GeneratingIndicator />;
     }
     return (
       <MarkdownContent

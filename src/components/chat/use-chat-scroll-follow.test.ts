@@ -4,6 +4,7 @@ import type { ChatMessage } from "../../shared/contracts";
 import {
   type ChatScrollMode,
   getActiveGeneratingAssistantId,
+  getAnchoredMessageTargetScrollTop,
   getAnchoredMessageTopDelta,
   getScrollFollowTopInset,
   getLatestTurnAnchorKey,
@@ -73,6 +74,28 @@ describe("components/chat/use-chat-scroll-follow helpers", () => {
         messageTop: 620
       }),
       620
+    );
+  });
+
+  it("derives the anchored target from layout offset so transform animations do not skew it", () => {
+    assert.equal(
+      getAnchoredMessageTargetScrollTop({
+        messageOffsetTop: 620,
+        contentOffsetTop: 0,
+        contentPaddingTop: 20
+      }),
+      600
+    );
+  });
+
+  it("subtracts the content container offset so the anchor does not overshoot under the top edge", () => {
+    assert.equal(
+      getAnchoredMessageTargetScrollTop({
+        messageOffsetTop: 620,
+        contentOffsetTop: 48,
+        contentPaddingTop: 20
+      }),
+      552
     );
   });
 

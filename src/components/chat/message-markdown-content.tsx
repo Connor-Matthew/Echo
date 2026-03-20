@@ -148,6 +148,53 @@ type MarkdownSegment =
       content: string;
     };
 
+const splitStreamingMarkdownContent = (content: string) => {
+  if (!content) {
+    return { stableMarkdown: "", trailingText: "" };
+  }
+
+  const lines = content.split("\n");
+  const endsWithNewline = content.endsWith("\n");
+  let stableLength = 0;
+  let consumedLength = 0;
+  let inFencedCodeBlock = false;
+  let inMathBlock = false;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    const trimmed = line.trimStart();
+    const isLastLine = index === lines.length - 1;
+    const lineLength = line.length + (isLastLine ? 0 : 1);
+
+    consumedLength += lineLength;
+
+    if (trimmed.startsWith("```")) {
+      inFencedCodeBlock = !inFencedCodeBlock;
+      if (!inFencedCodeBlock && !inMathBlock) {
+        stableLength = consumedLength;
+      }
+      continue;
+    }
+
+    if (!inFencedCodeBlock && line.trim() === "$$") {
+      inMathBlock = !inMathBlock;
+      if (!inMathBlock) {
+        stableLength = consumedLength;
+      }
+      continue;
+    }
+
+    if (!inFencedCodeBlock && !inMathBlock && (!isLastLine || endsWithNewline)) {
+      stableLength = consumedLength;
+    }
+  }
+
+  return {
+    stableMarkdown: content.slice(0, stableLength),
+    trailingText: content.slice(stableLength)
+  };
+};
+
 const splitMarkdownIntoLineSegments = (content: string): MarkdownSegment[] => {
   const lines = content.split("\n");
   const segments: MarkdownSegment[] = [];
@@ -339,23 +386,10 @@ const MarkdownContentInner = ({
   streaming?: boolean;
   renderMode?: MarkdownRenderMode;
 }) => {
-  const rootClassName = [
-    "chat-markdown-root break-words text-[15px]",
-    streaming ? "chat-streaming-markdown whitespace-pre-wrap" : "",
-    isUser ? "text-foreground" : "text-foreground"
-  ]
+  const rootClassName = ["chat-markdown-root break-words text-[15px]", isUser ? "text-foreground" : "text-foreground"]
     .filter(Boolean)
     .join(" ");
-
-  if (streaming) {
-    return (
-      <div className={rootClassName} data-render-mode={renderMode}>
-        {content}
-      </div>
-    );
-  }
-
-  const normalizedContent = normalizeMathMarkdown(content);
+  const streamingTailClassName = "chat-streaming-markdown whitespace-pre-wrap";
   const renderMarkdown = (markdown: string, key?: string) => (
     <ReactMarkdown
       key={key}
@@ -367,6 +401,33 @@ const MarkdownContentInner = ({
     </ReactMarkdown>
   );
 
+  if (streaming) {
+    const { stableMarkdown, trailingText } = splitStreamingMarkdownContent(content);
+    const normalizedStableMarkdown = stableMarkdown ? normalizeMathMarkdown(stableMarkdown) : "";
+    const lineSegments =
+      renderMode === "line" && normalizedStableMarkdown
+        ? splitMarkdownIntoLineSegments(normalizedStableMarkdown)
+        : [];
+
+    return (
+      <div className={rootClassName} data-render-mode={renderMode}>
+        {renderMode === "line"
+          ? lineSegments.map((segment) =>
+              segment.kind === "spacer" ? (
+                <div key={segment.key} aria-hidden="true" className="h-2" />
+              ) : (
+                renderMarkdown(segment.content, segment.key)
+              )
+            )
+          : normalizedStableMarkdown
+            ? renderMarkdown(normalizedStableMarkdown, "streaming-stable")
+            : null}
+        {trailingText ? <div className={streamingTailClassName}>{trailingText}</div> : null}
+      </div>
+    );
+  }
+
+  const normalizedContent = normalizeMathMarkdown(content);
   const lineSegments = renderMode === "line" ? splitMarkdownIntoLineSegments(normalizedContent) : [];
 
   return (

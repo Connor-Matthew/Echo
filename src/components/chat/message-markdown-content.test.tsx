@@ -76,4 +76,34 @@ describe("components/chat/message-markdown-content", () => {
     assert.doesNotMatch(markup, /\\\[/);
     assert.doesNotMatch(markup, /\\\]/);
   });
+
+  it("renders completed markdown blocks while keeping the unfinished streaming tail as plain text", () => {
+    const markup = renderToStaticMarkup(
+      <MarkdownContent
+        content={
+          [
+            "## 已完成标题",
+            "",
+            "- 第一项",
+            "- 第二项",
+            "",
+            "```ts",
+            "const answer = 42;",
+            "```",
+            "",
+            "未完成的 **粗体"
+          ].join("\n")
+        }
+        isUser={false}
+        streaming
+        renderMode="line"
+      />
+    );
+
+    assert.match(markup, /<h2 class="[^"]*">已完成标题<\/h2>/);
+    assert.match(markup, /<ul class="[^"]*">/);
+    assert.match(markup, /const answer = 42;/);
+    assert.match(markup, /未完成的 \*\*粗体/);
+    assert.doesNotMatch(markup, /<strong>粗体<\/strong>/);
+  });
 });

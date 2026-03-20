@@ -33,12 +33,23 @@ describe("components/chat/message-frame", () => {
     const className = getMessageSurfaceClassName(true);
 
     assert.match(className, /\bchat-message-surface-user\b/);
-    assert.match(className, /\bpx-3\b/);
-    assert.match(className, /\bpy-2\b/);
-    assert.match(className, /\bsm:px-4\b/);
-    assert.doesNotMatch(className, /(?:^|\s)px-4(?:\s|$)/);
-    assert.doesNotMatch(className, /(?:^|\s)py-3(?:\s|$)/);
-    assert.doesNotMatch(className, /\bsm:px-5\b/);
+    assert.match(className, /\bpx-4\b/);
+    assert.match(className, /\bpy-3\b/);
+    assert.match(className, /\bsm:px-5\b/);
+    assert.doesNotMatch(className, /(?:^|\s)px-3(?:\s|$)/);
+    assert.doesNotMatch(className, /(?:^|\s)py-2(?:\s|$)/);
+  });
+
+  it("renders assistant responses as an editorial card shell", () => {
+    const className = getMessageSurfaceClassName(false);
+
+    assert.match(className, /\bchat-message-surface-assistant\b/);
+    assert.match(className, /rounded-\[30px\]/);
+    assert.match(className, /\bborder-border\/55\b/);
+    assert.match(className, /\bbg-card\/95\b/);
+    assert.match(className, /\bpx-6\b/);
+    assert.match(className, /\bpy-5\b/);
+    assert.match(className, /\bsm:px-7\b/);
   });
 
   it("keeps the action bar tucked closer to the message bubble", () => {
@@ -138,5 +149,30 @@ describe("components/chat/message-frame", () => {
     assert.match(markup, />允许</);
     assert.match(markup, />始终允许</);
     assert.match(markup, />拒绝</);
+  });
+
+  it("renders an animated generating indicator for empty assistant streaming messages", () => {
+    const markup = renderToStaticMarkup(
+      <MessageFrame
+        message={createMessage({
+          id: "message-4",
+          role: "assistant",
+          content: ""
+        })}
+        isGenerating={true}
+        isTopSnapActive={false}
+        activeGeneratingAssistantId="message-4"
+        mode="chat"
+        markdownRenderMode="paragraph"
+        onEditMessage={() => {}}
+        onDeleteMessage={() => {}}
+        onResendMessage={() => {}}
+      />
+    );
+
+    assert.match(markup, /generating-flow/);
+    assert.match(markup, /generating-flow__text/);
+    assert.match(markup, /generating-flow__dots/);
+    assert.match(markup, /aria-label="Generating"/);
   });
 });

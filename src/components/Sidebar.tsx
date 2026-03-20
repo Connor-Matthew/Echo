@@ -452,8 +452,8 @@ export const Sidebar = (props: SidebarProps) => {
     return (
       <>
         <aside className="sidebar-surface relative flex h-full flex-col overflow-hidden">
-          <div className="border-b border-border/70 px-3 pb-3 pt-2.5">
-            <div className="-mt-[12px] mb-3 flex items-center justify-end">
+          <div className="border-b border-border/55 px-4 pb-4 pt-3">
+            <div className="-mt-[12px] mb-4 flex items-center justify-end">
               {props.onToggleSidebar ? (
                 <Button
                   type="button"
@@ -475,9 +475,9 @@ export const Sidebar = (props: SidebarProps) => {
             />
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden pb-3 pl-3 pr-px pt-3">
-            <div className="mb-3 flex items-center justify-between pl-1 pr-3">
-              <p className="text-[12px] font-semibold text-muted-foreground/85">对话</p>
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden pb-4 pl-4 pr-1 pt-4">
+            <div className="mb-4 flex items-center justify-between pl-1 pr-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/72">对话</p>
               <Button
                 variant="ghost"
                 size="icon"
@@ -666,10 +666,10 @@ export const Sidebar = (props: SidebarProps) => {
             </div>
           </div>
 
-          <div className="border-t border-border/70 px-3 py-2.5">
+          <div className="border-t border-border/55 px-4 py-3">
             <Button
               variant="ghost"
-              className="h-10 w-full justify-start rounded-full text-sm text-foreground/80 hover:bg-card"
+              className="h-10 w-full justify-start rounded-full text-sm text-foreground/78 hover:bg-card/80"
               onClick={() => props.onEnterSettings("provider")}
             >
               <Settings className="mr-1 h-4 w-4" />
@@ -768,8 +768,8 @@ export const Sidebar = (props: SidebarProps) => {
     return (
       <>
         <aside className="sidebar-surface relative flex h-full flex-col overflow-hidden">
-          <div className="border-b border-border/70 px-3 pb-3 pt-2.5">
-            <div className="-mt-[12px] mb-3 flex items-center justify-end">
+          <div className="border-b border-border/55 px-4 pb-4 pt-3">
+            <div className="-mt-[12px] mb-4 flex items-center justify-end">
               {props.onToggleSidebar ? (
                 <Button
                   type="button"
@@ -791,9 +791,9 @@ export const Sidebar = (props: SidebarProps) => {
             />
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden pb-3 pl-3 pr-px pt-3">
-            <div className="mb-3 flex items-center justify-between pl-1 pr-3">
-              <p className="text-[12px] font-semibold text-muted-foreground/85">Agent 会话</p>
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden pb-4 pl-4 pr-1 pt-4">
+            <div className="mb-4 flex items-center justify-between pl-1 pr-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/72">Agent 会话</p>
               <Button
                 variant="ghost"
                 size="icon"
@@ -885,10 +885,10 @@ export const Sidebar = (props: SidebarProps) => {
             </div>
           </div>
 
-          <div className="border-t border-border/70 px-3 py-2.5">
+          <div className="border-t border-border/55 px-4 py-3">
             <Button
               variant="ghost"
-              className="h-10 w-full justify-start rounded-full text-sm text-foreground/80 hover:bg-card"
+              className="h-10 w-full justify-start rounded-full text-sm text-foreground/78 hover:bg-card/80"
               onClick={() => props.onEnterSettings("provider")}
             >
               <Settings className="mr-1 h-4 w-4" />

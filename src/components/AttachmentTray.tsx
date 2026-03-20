@@ -10,9 +10,9 @@ type AttachmentTrayProps = {
 export const getAttachmentTrayClassNames = () => ({
   tray: "composer-attachment-tray mb-2.5 flex flex-wrap gap-2.5",
   item:
-    "w-[190px] rounded-[18px] border border-border/70 bg-background/80 px-3 py-2.5 text-left",
-  preview: "mt-2 h-14 w-full rounded-[14px] border border-border/60 object-cover",
-  textPreview: "mt-2 rounded-[14px] border border-border/60 bg-accent/20 px-2 py-1.5",
+    "w-[190px] rounded-[20px] border border-border/60 bg-card/72 px-3 py-2.5 text-left backdrop-blur-lg",
+  preview: "mt-2 h-14 w-full rounded-[16px] border border-border/60 object-cover",
+  textPreview: "mt-2 rounded-[16px] border border-border/60 bg-accent/28 px-2 py-1.5",
   removeButton:
     "h-6 w-6 shrink-0 rounded-full text-muted-foreground hover:bg-accent/60 hover:text-foreground"
 });

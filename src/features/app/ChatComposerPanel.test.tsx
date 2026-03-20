@@ -91,7 +91,8 @@ describe("features/app/ChatComposerPanel", () => {
     });
 
     assert.ok(isValidElement(element));
-    const panel = element as ReactElement<{ children: ReactNode }>;
+    const panel = element as ReactElement<{ children: ReactNode; className?: string }>;
+    assert.equal(panel.props.className, "chat-reading-stage");
     const children = Children.toArray(panel.props.children);
     assert.equal(children.length, 2);
 
@@ -114,8 +115,9 @@ describe("features/app/ChatComposerPanel", () => {
     assert.ok(classNames.trigger.includes("border-0"));
     assert.ok(!classNames.modelSelect.includes("rounded-full"));
     assert.ok(classNames.modelSelect.includes("border-0"));
-    assert.ok(!classNames.actionButton.includes("rounded-full"));
-    assert.ok(classNames.actionButton.includes("border-0"));
+    assert.ok(classNames.actionButton.includes("rounded-full"));
+    assert.ok(classNames.actionButton.includes("bg-primary"));
+    assert.ok(classNames.stopButton.includes("rounded-full"));
   });
 
   it("uses a flatter composer shell in minimal-controls mode", () => {
@@ -123,12 +125,11 @@ describe("features/app/ChatComposerPanel", () => {
     const footerClassName = getComposerFooterClassName({ minimalControls: true });
     const textareaClassName = getComposerTextareaClassName({ minimalControls: true });
 
-    assert.ok(containerClassName.includes("rounded-[24px]"));
-    assert.ok(!containerClassName.includes("rounded-[28px]"));
-    assert.ok(containerClassName.includes("py-3"));
-    assert.ok(!containerClassName.includes("py-4"));
-    assert.ok(footerClassName.includes("mt-1.5"));
-    assert.ok(textareaClassName.includes("h-[38px]"));
-    assert.ok(textareaClassName.includes("min-h-[38px]"));
+    assert.ok(containerClassName.includes("rounded-[30px]"));
+    assert.ok(containerClassName.includes("py-4"));
+    assert.ok(!containerClassName.includes("rounded-[24px]"));
+    assert.ok(footerClassName.includes("mt-2.5"));
+    assert.ok(textareaClassName.includes("h-[42px]"));
+    assert.ok(textareaClassName.includes("min-h-[42px]"));
   });
 });

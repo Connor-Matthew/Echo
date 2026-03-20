@@ -14,9 +14,10 @@ describe("components/chat/conversation-viewport layout", () => {
 
     assert.match(layoutClassNames.scrollContent, /\bchat-scroll-content\b/);
     assert.match(layoutClassNames.scrollContent, /\bmx-auto\b/);
-    assert.match(layoutClassNames.scrollContent, /\bgap-5\b/);
-    assert.match(layoutClassNames.scrollContent, /\bpb-40\b/);
-    assert.doesNotMatch(layoutClassNames.scrollContent, /max-w-\[/);
+    assert.match(layoutClassNames.scrollContent, /\bgap-8\b/);
+    assert.match(layoutClassNames.scrollContent, /max-w-\[980px\]/);
+    assert.match(layoutClassNames.scrollContent, /\bpb-56\b/);
+    assert.match(layoutClassNames.scrollContent, /\bpt-10\b/);
     assert.doesNotMatch(layoutClassNames.scrollContent, /\boverflow-auto\b/);
   });
 });

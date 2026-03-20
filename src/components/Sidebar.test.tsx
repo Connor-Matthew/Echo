@@ -43,9 +43,9 @@ describe("components/Sidebar", () => {
       />
     );
 
-    assert.match(markup, /border-b border-border\/70 px-3 pb-3 pt-2\.5/);
-    assert.match(markup, /flex min-h-0 flex-1 flex-col overflow-hidden pb-3 pl-3 pr-px pt-3/);
-    assert.match(markup, /mb-3 flex items-center justify-between pl-1 pr-3/);
+    assert.match(markup, /border-b border-border\/55 px-4 pb-4 pt-3/);
+    assert.match(markup, /flex min-h-0 flex-1 flex-col overflow-hidden pb-4 pl-4 pr-1 pt-4/);
+    assert.match(markup, /mb-4 flex items-center justify-between pl-1 pr-4/);
     assert.match(markup, /echo-scrollbar-minimal/);
     assert.match(markup, /min-h-0 [^"]*overflow-auto/);
     assert.match(markup, /relative z-10 h-8 justify-center rounded-full text-\[13px\] transition-colors/);
@@ -66,8 +66,8 @@ describe("components/Sidebar", () => {
       />
     );
 
-    assert.match(markup, /flex min-h-0 flex-1 flex-col overflow-hidden pb-3 pl-3 pr-px pt-3/);
-    assert.match(markup, /mb-3 flex items-center justify-between pl-1 pr-3/);
+    assert.match(markup, /flex min-h-0 flex-1 flex-col overflow-hidden pb-4 pl-4 pr-1 pt-4/);
+    assert.match(markup, /mb-4 flex items-center justify-between pl-1 pr-4/);
     assert.match(markup, /echo-scrollbar-minimal/);
   });
 
