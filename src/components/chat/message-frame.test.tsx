@@ -33,23 +33,24 @@ describe("components/chat/message-frame", () => {
     const className = getMessageSurfaceClassName(true);
 
     assert.match(className, /\bchat-message-surface-user\b/);
-    assert.match(className, /\bpx-4\b/);
-    assert.match(className, /\bpy-3\b/);
-    assert.match(className, /\bsm:px-5\b/);
+    assert.match(className, /\bpx-5\b/);
+    assert.match(className, /\bpy-3\.5\b/);
+    assert.match(className, /\bsm:px-6\b/);
     assert.doesNotMatch(className, /(?:^|\s)px-3(?:\s|$)/);
     assert.doesNotMatch(className, /(?:^|\s)py-2(?:\s|$)/);
   });
 
-  it("renders assistant responses as an editorial card shell", () => {
+  it("renders assistant responses as a softer editorial card shell", () => {
     const className = getMessageSurfaceClassName(false);
 
     assert.match(className, /\bchat-message-surface-assistant\b/);
-    assert.match(className, /rounded-\[30px\]/);
-    assert.match(className, /\bborder-border\/55\b/);
-    assert.match(className, /\bbg-card\/95\b/);
-    assert.match(className, /\bpx-6\b/);
-    assert.match(className, /\bpy-5\b/);
-    assert.match(className, /\bsm:px-7\b/);
+    assert.match(className, /rounded-\[34px\]/);
+    assert.match(className, /\bborder-border\/45\b/);
+    assert.match(className, /\bbg-card\/88\b/);
+    assert.match(className, /\bpx-7\b/);
+    assert.match(className, /\bpy-6\b/);
+    assert.match(className, /\bsm:px-8\b/);
+    assert.match(className, /\bsm:py-7\b/);
   });
 
   it("keeps the action bar tucked closer to the message bubble", () => {

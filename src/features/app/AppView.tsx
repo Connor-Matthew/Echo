@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { PanelLeft } from "lucide-react";
+import { CircleUserRound, PanelLeft, Search } from "lucide-react";
 import { AgentView } from "../../components/AgentView";
 import { ChatView } from "../../components/ChatView";
 import { CommandPalette } from "../../components/CommandPalette";
@@ -13,7 +13,6 @@ import { Sidebar } from "../../components/Sidebar";
 import { Button } from "../../components/ui/button";
 import { AgentComposerPanel } from "./AgentComposerPanel";
 import { buildCommandPaletteCommands } from "./build-command-palette-commands";
-import { ChatSessionHeader } from "./chat-session-header";
 import { useAppController } from "./use-app-controller";
 import { ChatComposerPanel } from "./ChatComposerPanel";
 
@@ -36,24 +35,73 @@ export const getChatHeaderClassNameForFloatingToggle = (
 };
 
 export const getCenteredLandingComposerClassName = () =>
-  "chat-reading-stage mx-auto w-full min-w-0 max-w-[980px]";
+  "chat-reading-stage mx-auto w-full min-w-0 max-w-[1040px]";
 
-export const CENTERED_LANDING_EYEBROW_TEXT = "The Digital Atelier";
-export const CENTERED_LANDING_HEADING_TEXT = "Welcome back.";
+export const CENTERED_LANDING_EYEBROW_TEXT = "The Atelier";
+export const CENTERED_LANDING_HEADING_TEXT = "Echo Silk";
 export const CENTERED_LANDING_BODY_TEXT =
-  "Start with a clear question, a half-formed idea, or the next thing you want Echo to shape.";
+  "Describe a direction, drop in a reference, or keep shaping the conversation with Echo.";
 
 export const getCenteredLandingContentClassName = () =>
-  "flex min-h-0 flex-1 items-start justify-center pt-[9vh] sm:pt-[11vh] md:pt-[12vh]";
+  "flex min-h-0 flex-1 items-center justify-center px-2 py-10 sm:px-3 sm:py-12";
 
 export const getCenteredLandingEyebrowClassName = () =>
-  "mb-4 text-center text-[11px] font-semibold uppercase tracking-[0.28em] text-muted-foreground/72 sm:mb-5";
+  "mb-3 text-center text-[12px] font-semibold uppercase tracking-[0.32em] text-muted-foreground/70 sm:mb-4";
 
 export const getCenteredLandingHeadingClassName = () =>
-  "landing-title-hero mb-5 text-center text-[42px] font-semibold leading-[1.02] tracking-[-0.04em] text-foreground sm:mb-6 sm:text-[52px] md:text-[60px]";
+  "landing-title-hero mb-4 text-center text-[46px] font-semibold leading-[0.98] tracking-[-0.05em] text-foreground sm:mb-5 sm:text-[58px] md:text-[66px]";
 
 export const getCenteredLandingBodyClassName = () =>
-  "mx-auto mt-0 max-w-[620px] text-center text-[15px] leading-7 text-muted-foreground/84 sm:text-[16px]";
+  "mx-auto mt-0 max-w-[640px] text-center text-[15px] leading-7 text-muted-foreground/86 sm:text-[17px]";
+
+export const getChatHomeTopNavClassName = () =>
+  "chat-reading-stage mx-auto flex w-full items-center justify-between gap-6 px-2 pb-8 pt-5 sm:px-3";
+
+export const getChatHomeNavLinksClassName = () =>
+  "hidden items-center text-[15px] text-foreground/70 md:flex";
+
+export const getChatHomeSearchClassName = () =>
+  "flex h-11 w-[240px] items-center gap-3 rounded-full border border-border/55 bg-background/72 px-4 text-[14px] text-muted-foreground shadow-[0_10px_30px_rgba(83,65,44,0.06)] backdrop-blur";
+
+const ChatHomeTopNav = ({
+  onOpenSearch,
+  onOpenProfile
+}: {
+  onOpenSearch: () => void;
+  onOpenProfile: () => void;
+}) => (
+  <div className={getChatHomeTopNavClassName()}>
+    <div className="flex min-w-0 items-center">
+      <nav className={getChatHomeNavLinksClassName()} aria-label="Chat home sections">
+        <button type="button" className="font-medium text-foreground" aria-current="page">
+          Chat
+        </button>
+      </nav>
+    </div>
+    <div className="flex items-center gap-3">
+      <button
+        type="button"
+        className={getChatHomeSearchClassName()}
+        onClick={onOpenSearch}
+        aria-label="Search archive"
+      >
+        <Search className="h-4 w-4 shrink-0 text-muted-foreground/86" />
+        <span className="truncate">Search archive...</span>
+      </button>
+      <Button
+        type="button"
+        variant="ghost"
+        className="h-11 w-11 rounded-full border border-border/55 bg-background/72 text-muted-foreground shadow-[0_10px_30px_rgba(83,65,44,0.06)] backdrop-blur hover:bg-background hover:text-foreground"
+        onClick={onOpenProfile}
+        aria-label="Open profile settings"
+      >
+        <CircleUserRound className="h-5 w-5" />
+      </Button>
+    </div>
+  </div>
+);
+
+export const __ChatHomeTopNavForTest = ChatHomeTopNav;
 
 export const AppView = () => {
   const controller = useAppController();
@@ -191,6 +239,7 @@ export const AppView = () => {
     updateSessionSoulMode(activeSession.id, activeSession.soulModeEnabled === false);
   };
   const isMacPlatform = useMemo(() => detectIsMacPlatform(), []);
+  const openChatSearch = () => setIsCommandPaletteOpen(true);
 
   const commandPaletteCommands = useMemo(
     () =>
@@ -424,15 +473,13 @@ export const AppView = () => {
               ) : null}
 
               {showCenteredChatLanding ? (
-                <section className="flex h-full w-full flex-col px-4 py-8 sm:px-6 sm:py-10">
-                  <div className="w-full max-w-[980px] self-center">
-                    <ChatSessionHeader
-                      className="mb-10 border-b-0"
-                      title={activeSession?.title ?? "New Chat"}
-                    />
-                  </div>
+                <section className="chat-home-stage flex h-full w-full min-h-0 flex-col px-4 pb-8 pt-3 sm:px-6 sm:pb-10 sm:pt-4">
+                  <ChatHomeTopNav
+                    onOpenSearch={openChatSearch}
+                    onOpenProfile={() => openSettings("profile")}
+                  />
                   <div className={getCenteredLandingContentClassName()}>
-                    <div className="w-full max-w-[980px]">
+                    <div className="w-full max-w-[760px]">
                       <p className={getCenteredLandingEyebrowClassName()}>
                         {CENTERED_LANDING_EYEBROW_TEXT}
                       </p>
@@ -442,46 +489,54 @@ export const AppView = () => {
                       <p className={getCenteredLandingBodyClassName()}>
                         {CENTERED_LANDING_BODY_TEXT}
                       </p>
-                      <ChatComposerPanel
-                        draft={draft}
-                        setDraft={setDraft}
-                        draftAttachments={draftAttachments}
-                        removeAttachment={removeAttachment}
-                        addFiles={addFiles}
-                        appSettings={appSettings}
-                        activeComposerModelValue={activeComposerModelValue}
-                        composerModelOptions={composerModelOptions}
-                        activeModelCapabilities={activeModelCapabilities}
-                        activeEnabledMcpServers={activeEnabledMcpServers}
-                        userSkills={userSkills}
-                        activeSkill={activeSkill}
-                        setActiveSkill={setActiveSkill}
-                        updateChatContextWindow={updateChatContextWindow}
-                        selectComposerModel={selectComposerModel}
-                        updateSessionMcpServers={updateSessionMcpServers}
-                        sendMessage={sendMessage}
-                        handleApplySkill={handleApplySkill}
-                        stopGenerating={stopGenerating}
-                        composerUsageLabel={composerUsageLabel}
-                        isConfigured={isConfigured}
-                        isGenerating={isGenerating}
-                        isSoulModeEnabled={isSoulModeEnabled}
-                        toggleSoulMode={toggleSoulMode}
-                        containerClassName={getCenteredLandingComposerClassName()}
-                      />
                     </div>
+                  </div>
+                  <div className="px-0 pb-1 pt-2 sm:pb-2">
+                    <ChatComposerPanel
+                      draft={draft}
+                      setDraft={setDraft}
+                      draftAttachments={draftAttachments}
+                      removeAttachment={removeAttachment}
+                      addFiles={addFiles}
+                      appSettings={appSettings}
+                      activeComposerModelValue={activeComposerModelValue}
+                      composerModelOptions={composerModelOptions}
+                      activeModelCapabilities={activeModelCapabilities}
+                      activeEnabledMcpServers={activeEnabledMcpServers}
+                      userSkills={userSkills}
+                      activeSkill={activeSkill}
+                      setActiveSkill={setActiveSkill}
+                      updateChatContextWindow={updateChatContextWindow}
+                      selectComposerModel={selectComposerModel}
+                      updateSessionMcpServers={updateSessionMcpServers}
+                      sendMessage={sendMessage}
+                      handleApplySkill={handleApplySkill}
+                      stopGenerating={stopGenerating}
+                      composerUsageLabel={composerUsageLabel}
+                      isConfigured={isConfigured}
+                      isGenerating={isGenerating}
+                      isSoulModeEnabled={isSoulModeEnabled}
+                      toggleSoulMode={toggleSoulMode}
+                      containerClassName={getCenteredLandingComposerClassName()}
+                    />
                   </div>
                 </section>
               ) : (
-                <div className="flex h-full min-h-0 flex-col">
+                <div className="chat-home-stage flex h-full min-h-0 flex-col px-4 pb-4 pt-3 sm:px-6 sm:pb-6 sm:pt-4">
+                  <ChatHomeTopNav
+                    onOpenSearch={openChatSearch}
+                    onOpenProfile={() => openSettings("profile")}
+                  />
+                  <div className="chat-reading-stage mx-auto mb-3 flex w-full items-center justify-between gap-4 px-2 text-[12px] uppercase tracking-[0.2em] text-muted-foreground/72 sm:px-3">
+                    <span className={getChatHeaderClassNameForFloatingToggle(
+                      showFloatingSidebarToggle,
+                      isMacPlatform
+                    )}>
+                      {activeSession?.title ?? "New Chat"}
+                    </span>
+                    <span>Chat</span>
+                  </div>
                   <div className="flex min-h-0 flex-1 flex-col bg-transparent">
-                    <ChatSessionHeader
-                      className={getChatHeaderClassNameForFloatingToggle(
-                        showFloatingSidebarToggle,
-                        isMacPlatform
-                      )}
-                      title={activeSession?.title ?? "New Chat"}
-                    />
                     <div className="min-h-0 flex-1">
                       <ChatView
                         sessionId={activeSessionId}
@@ -496,7 +551,7 @@ export const AppView = () => {
                     </div>
                   </div>
 
-                  <div className="px-2 pb-2 pt-0 sm:px-3 sm:pb-3 md:px-4 md:pb-4">
+                  <div className="px-0 pb-1 pt-2 sm:pb-2">
                     <ChatComposerPanel
                       draft={draft}
                       setDraft={setDraft}

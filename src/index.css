@@ -106,10 +106,12 @@
   }
 
   .state-note {
-    border-radius: 16px;
-    border: 1px solid hsl(var(--border) / 0.75);
-    background: hsl(var(--card));
+    border-radius: 999px;
+    border: 1px solid hsl(var(--border) / 0.58);
+    background: hsl(var(--card) / 0.78);
     color: hsl(var(--foreground) / 0.88);
+    box-shadow: 0 16px 36px hsl(28 24% 35% / 0.1);
+    backdrop-filter: blur(18px);
   }
 
   .state-success {
@@ -153,17 +155,21 @@
 
   .app-shell {
     background:
-      radial-gradient(circle at top left, hsl(26 68% 73% / 0.12), transparent 26%),
-      linear-gradient(180deg, hsl(var(--background)), hsl(34 22% 95%));
+      radial-gradient(circle at top left, hsl(22 86% 74% / 0.16), transparent 24%),
+      radial-gradient(circle at 82% 8%, hsl(38 58% 88% / 0.44), transparent 22%),
+      linear-gradient(180deg, hsl(34 30% 97%), hsl(32 24% 95%));
   }
 
   .app-shell-frame {
     overflow: hidden;
     border-radius: var(--echo-shell-radius);
     border: 1px solid hsl(var(--border) / var(--echo-shell-frame-border-alpha));
-    background: hsl(var(--card) / var(--echo-shell-frame-bg-alpha));
+    background:
+      linear-gradient(180deg, hsl(var(--card) / 0.82), hsl(34 24% 96% / 0.88));
     padding: var(--echo-shell-padding-compact);
-    box-shadow: var(--echo-shell-shadow-window);
+    box-shadow:
+      var(--echo-shell-shadow-window),
+      inset 0 1px 0 hsl(0 0% 100% / 0.42);
     backdrop-filter: blur(26px);
   }
 
@@ -182,15 +188,17 @@
   .app-shell-panel {
     border-radius: 0;
     border: 0;
-    background: hsl(var(--card) / 0.88);
+    background: transparent;
     box-shadow: none;
   }
 
   .app-shell-panel-sidebar {
-    box-shadow: inset -1px 0 0 hsl(var(--border) / 0.46);
+    box-shadow:
+      inset -1px 0 0 hsl(var(--border) / 0.42),
+      12px 0 36px hsl(30 20% 40% / 0.04);
     border-radius: 0;
     background:
-      linear-gradient(180deg, hsl(var(--secondary) / 0.78), hsl(var(--secondary) / 0.56));
+      linear-gradient(180deg, hsl(34 26% 96% / 0.96), hsl(32 22% 94% / 0.9));
   }
 
   .sketch-title {
@@ -309,7 +317,7 @@
 
   .sidebar-surface {
     background:
-      linear-gradient(180deg, hsl(var(--secondary) / 0.62), hsl(var(--secondary) / 0.36));
+      linear-gradient(180deg, hsl(34 26% 96% / 0.96), hsl(32 22% 94% / 0.78));
   }
 
   .mode-switch-track {
@@ -329,7 +337,7 @@
   }
 
   .sidebar-nav-button[data-active="true"] {
-    background: hsl(var(--accent) / var(--echo-nav-active-bg-alpha));
+    background: hsl(24 38% 86% / 0.28);
     color: hsl(var(--foreground));
   }
 
@@ -349,10 +357,10 @@
   }
 
   .session-list-item[data-active="true"] {
-    background: linear-gradient(180deg, hsl(32 28% 92% / 0.96), hsl(30 26% 89% / 0.94));
+    background: linear-gradient(180deg, hsl(34 24% 94% / 0.96), hsl(32 20% 92% / 0.9));
     box-shadow:
-      inset 0 0 0 1px hsl(30 18% 76% / 0.32),
-      0 10px 22px hsl(28 24% 38% / 0.06);
+      inset 0 0 0 1px hsl(30 18% 78% / 0.26),
+      0 14px 28px hsl(28 24% 38% / 0.05);
   }
 
   .dark .session-list-item[data-active="true"] {
@@ -393,14 +401,14 @@
   }
 
   .floating-sidebar-toggle {
-    background: hsl(var(--card) / 0.86);
-    border: 1px solid hsl(var(--border) / 0.58);
+    background: hsl(var(--card) / 0.78);
+    border: 1px solid hsl(var(--border) / 0.52);
     box-shadow: var(--echo-floating-toggle-shadow);
     transition:
       background-color var(--echo-motion-fast) var(--echo-ease-standard),
       color var(--echo-motion-fast) var(--echo-ease-standard),
       box-shadow var(--echo-motion-fast) var(--echo-ease-standard);
-    backdrop-filter: blur(20px);
+    backdrop-filter: blur(22px);
   }
 
   .floating-sidebar-toggle:hover {
@@ -445,27 +453,33 @@
   }
 
   .chat-reading-stage {
-    max-width: var(--echo-chat-stage-max-width);
+    max-width: var(--echo-topbar-max-width);
   }
 
   .chat-scroll-content {
     max-width: var(--echo-chat-stage-max-width);
   }
 
+  .chat-home-stage {
+    background:
+      radial-gradient(circle at 50% 0%, hsl(36 42% 91% / 0.26), transparent 30%),
+      linear-gradient(180deg, hsl(34 22% 97% / 0.56), transparent 22%);
+  }
+
   .chat-message-column-user {
-    max-width: 74%;
+    max-width: 78%;
     align-items: flex-end;
   }
 
   @media (min-width: 640px) {
     .chat-message-column-user {
-      max-width: 66%;
+      max-width: 62%;
     }
   }
 
   @media (min-width: 1024px) {
     .chat-message-column-user {
-      max-width: 58%;
+      max-width: 54%;
     }
   }
 
@@ -476,16 +490,19 @@
   }
 
   .chat-message-surface-user {
-    border: 1px solid hsl(var(--border) / var(--echo-chat-user-surface-border-alpha));
-    background: hsl(var(--secondary) / var(--echo-chat-user-surface-bg-alpha));
-    border-radius: 24px;
-    box-shadow: 0 12px 28px hsl(28 24% 38% / 0.05);
+    border: 1px solid hsl(18 88% 64% / 0.18);
+    background:
+      linear-gradient(180deg, hsl(17 100% 74%), hsl(17 94% 69%));
+    border-radius: 28px;
+    box-shadow: 0 18px 36px hsl(18 58% 56% / 0.16);
+    color: hsl(18 54% 18%);
   }
 
   .chat-message-surface-assistant {
-    border: 1px solid hsl(var(--border) / 0.48);
-    background: hsl(var(--card) / var(--echo-chat-assistant-surface-bg-alpha));
-    box-shadow: 0 20px 42px hsl(28 24% 38% / 0.06);
+    border: 1px solid hsl(var(--border) / 0.4);
+    background:
+      linear-gradient(180deg, hsl(36 28% 96% / 0.96), hsl(34 24% 94% / 0.92));
+    box-shadow: 0 28px 54px hsl(28 24% 38% / 0.06);
   }
 
   .chat-markdown-root {

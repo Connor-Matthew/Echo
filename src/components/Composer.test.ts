@@ -58,57 +58,58 @@ describe("components/Composer tool menu labels", () => {
 });
 
 describe("components/Composer tool menu classes", () => {
-  it("uses a flat utility-sheet style for the plus-button menu", () => {
+  it("uses a warmer floating sheet style for the plus-button menu", () => {
     const classNames = getComposerToolMenuClassNames();
 
-    assert.match(classNames.trigger, /\bh-9\b/);
-    assert.match(classNames.trigger, /\bw-9\b/);
-    assert.match(classNames.trigger, /border-border\/65/);
-    assert.match(classNames.trigger, /rounded-\[16px\]/);
-    assert.match(classNames.surface, /w-\[320px\]/);
-    assert.match(classNames.surface, /rounded-\[20px\]/);
-    assert.match(classNames.surface, /shadow-\[0_24px_60px_rgba\(42,37,30,0\.12\)\]/);
-    assert.match(classNames.item, /h-\[46px\]/);
+    assert.match(classNames.trigger, /\bh-10\b/);
+    assert.match(classNames.trigger, /\bw-10\b/);
+    assert.match(classNames.trigger, /border-border\/55/);
+    assert.match(classNames.trigger, /rounded-full/);
+    assert.match(classNames.surface, /w-\[340px\]/);
+    assert.match(classNames.surface, /rounded-\[24px\]/);
+    assert.match(classNames.surface, /shadow-\[0_28px_80px_rgba\(42,37,30,0\.14\)\]/);
+    assert.match(classNames.item, /h-\[48px\]/);
     assert.match(classNames.item, /text-\[14px\]/);
-    assert.match(classNames.nestedPanel, /rounded-\[14px\]/);
-    assert.match(classNames.divider, /bg-border\/55/);
+    assert.match(classNames.nestedPanel, /rounded-\[18px\]/);
+    assert.match(classNames.divider, /bg-border\/45/);
   });
 });
 
 describe("components/Composer container classes", () => {
-  it("uses a tighter composer shell radius in minimal mode", () => {
+  it("uses a long pill-shaped shell in minimal mode", () => {
     const className = getComposerContainerClassName({ minimalControls: true });
 
-    assert.match(className, /rounded-\[30px\]/);
-    assert.match(className, /border-border\/65/);
-    assert.match(className, /bg-card\/95/);
-    assert.match(className, /shadow-\[0_18px_48px_rgba\(42,37,30,0\.1\)\]/);
+    assert.match(className, /rounded-\[38px\]/);
+    assert.match(className, /border-border\/50/);
+    assert.match(className, /bg-card\/78/);
+    assert.match(className, /shadow-\[0_26px_60px_rgba\(42,37,30,0\.12\)\]/);
   });
 
   it("keeps the outer highlight ring visible even before focus", () => {
     const className = getComposerContainerClassName({ minimalControls: true });
     const tokens = className.split(/\s+/);
 
-    assert.ok(tokens.includes("backdrop-blur-xl"));
-    assert.ok(tokens.includes("supports-[backdrop-filter]:bg-card/82"));
+    assert.ok(tokens.includes("backdrop-blur-2xl"));
+    assert.ok(tokens.includes("supports-[backdrop-filter]:bg-card/68"));
   });
 });
 
 describe("components/Composer minimal controls", () => {
-  it("keeps utility controls shell-less but gives the send action a primary round button", () => {
+  it("uses softer utility controls while keeping a prominent round send button", () => {
     const classNames = getComposerMinimalControlClassNames();
 
-    assert.ok(!classNames.trigger.includes("rounded-full"));
-    assert.ok(classNames.trigger.includes("border-0"));
+    assert.ok(classNames.trigger.includes("rounded-full"));
+    assert.ok(classNames.trigger.includes("h-10"));
+    assert.ok(classNames.trigger.includes("w-10"));
     assert.ok(!classNames.modelSelect.includes("rounded-full"));
     assert.ok(classNames.modelSelect.includes("border-0"));
-    assert.ok(classNames.actionButton.includes("h-10"));
-    assert.ok(classNames.actionButton.includes("w-10"));
+    assert.ok(classNames.actionButton.includes("h-12"));
+    assert.ok(classNames.actionButton.includes("w-12"));
     assert.ok(classNames.actionButton.includes("rounded-full"));
     assert.ok(classNames.actionButton.includes("bg-primary"));
     assert.ok(classNames.actionButton.includes("text-primary-foreground"));
-    assert.ok(classNames.stopButton.includes("h-10"));
-    assert.ok(classNames.stopButton.includes("w-10"));
+    assert.ok(classNames.stopButton.includes("h-12"));
+    assert.ok(classNames.stopButton.includes("w-12"));
     assert.ok(classNames.stopButton.includes("rounded-full"));
   });
 });

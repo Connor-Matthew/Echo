@@ -108,11 +108,11 @@ describe("features/app/ChatComposerPanel", () => {
     assert.ok(!footerClassName.includes("pt-3"));
   });
 
-  it("uses shell-less controls in minimal-controls mode", () => {
+  it("uses softer utility controls in minimal-controls mode", () => {
     const classNames = getComposerMinimalControlClassNames();
 
-    assert.ok(!classNames.trigger.includes("rounded-full"));
-    assert.ok(classNames.trigger.includes("border-0"));
+    assert.ok(classNames.trigger.includes("rounded-full"));
+    assert.ok(classNames.trigger.includes("h-10"));
     assert.ok(!classNames.modelSelect.includes("rounded-full"));
     assert.ok(classNames.modelSelect.includes("border-0"));
     assert.ok(classNames.actionButton.includes("rounded-full"));
@@ -120,16 +120,16 @@ describe("features/app/ChatComposerPanel", () => {
     assert.ok(classNames.stopButton.includes("rounded-full"));
   });
 
-  it("uses a flatter composer shell in minimal-controls mode", () => {
+  it("uses a larger hero shell in minimal-controls mode", () => {
     const containerClassName = getComposerContainerClassName({ minimalControls: true });
     const footerClassName = getComposerFooterClassName({ minimalControls: true });
     const textareaClassName = getComposerTextareaClassName({ minimalControls: true });
 
-    assert.ok(containerClassName.includes("rounded-[30px]"));
+    assert.ok(containerClassName.includes("rounded-[38px]"));
     assert.ok(containerClassName.includes("py-4"));
     assert.ok(!containerClassName.includes("rounded-[24px]"));
-    assert.ok(footerClassName.includes("mt-2.5"));
-    assert.ok(textareaClassName.includes("h-[42px]"));
-    assert.ok(textareaClassName.includes("min-h-[42px]"));
+    assert.ok(footerClassName.includes("mt-3"));
+    assert.ok(textareaClassName.includes("h-[40px]"));
+    assert.ok(textareaClassName.includes("min-h-[40px]"));
   });
 });

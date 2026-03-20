@@ -8,11 +8,11 @@ type AttachmentTrayProps = {
 };
 
 export const getAttachmentTrayClassNames = () => ({
-  tray: "composer-attachment-tray mb-2.5 flex flex-wrap gap-2.5",
+  tray: "composer-attachment-tray mb-3 flex flex-wrap gap-3",
   item:
-    "w-[190px] rounded-[20px] border border-border/60 bg-card/72 px-3 py-2.5 text-left backdrop-blur-lg",
-  preview: "mt-2 h-14 w-full rounded-[16px] border border-border/60 object-cover",
-  textPreview: "mt-2 rounded-[16px] border border-border/60 bg-accent/28 px-2 py-1.5",
+    "w-[196px] rounded-[24px] border border-border/50 bg-card/78 px-3.5 py-3 text-left backdrop-blur-xl",
+  preview: "mt-2 h-14 w-full rounded-[18px] border border-border/50 object-cover",
+  textPreview: "mt-2 rounded-[18px] border border-border/50 bg-accent/22 px-2.5 py-2",
   removeButton:
     "h-6 w-6 shrink-0 rounded-full text-muted-foreground hover:bg-accent/60 hover:text-foreground"
 });

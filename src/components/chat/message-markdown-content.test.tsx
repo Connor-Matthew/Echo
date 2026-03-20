@@ -106,4 +106,41 @@ describe("components/chat/message-markdown-content", () => {
     assert.match(markup, /未完成的 \*\*粗体/);
     assert.doesNotMatch(markup, /<strong>粗体<\/strong>/);
   });
+
+  it("gives structured assistant markdown clearer section and callout hierarchy", () => {
+    const markup = renderToStaticMarkup(
+      <MarkdownContent
+        content={[
+          "## 材料建议",
+          "### Materials",
+          "- 石灰墙面",
+          "- 胡桃木边柜",
+          "",
+          "> 优先保留自然光"
+        ].join("\n")}
+        isUser={false}
+      />
+    );
+
+    assert.match(
+      markup,
+      /<h2 class="mb-3\.5 mt-2 text-\[1\.02rem\] font-semibold tracking-\[-0\.01em\] text-foreground\/92">材料建议<\/h2>/
+    );
+    assert.match(
+      markup,
+      /<h3 class="mb-2\.5 mt-2 inline-flex rounded-full border border-border\/55 bg-background\/72 px-3 py-1 text-\[0\.78rem\] font-semibold uppercase tracking-\[0\.16em\] text-foreground\/78">Materials<\/h3>/
+    );
+    assert.match(
+      markup,
+      /<ul class="mb-3\.5 list-disc space-y-2 pl-5 marker:text-primary\/70 last:mb-0">/
+    );
+    assert.match(
+      markup,
+      /<li class="rounded-\[18px\] border border-border\/45 bg-background\/68 px-3\.5 py-2\.5 text-foreground\/88 shadow-\[inset_0_1px_0_hsl\(0_0%_100%\/0\.2\)\]">石灰墙面<\/li>/
+    );
+    assert.match(
+      markup,
+      /<blockquote class="mb-3\.5 rounded-\[22px\] border border-border\/55 bg-accent\/24 px-4 py-3\.5 text-muted-foreground\/92 shadow-\[inset_0_1px_0_hsl\(0_0%_100%\/0\.2\)\]">/
+    );
+  });
 });

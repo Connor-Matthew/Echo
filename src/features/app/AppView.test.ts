@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { createElement } from "react";
 import {
   CENTERED_LANDING_BODY_TEXT,
   CENTERED_LANDING_EYEBROW_TEXT,
@@ -9,6 +10,9 @@ import {
   getCenteredLandingContentClassName,
   getCenteredLandingEyebrowClassName,
   getCenteredLandingHeadingClassName,
+  getChatHomeNavLinksClassName,
+  getChatHomeSearchClassName,
+  getChatHomeTopNavClassName,
   getChatHeaderClassNameForFloatingToggle,
   getFloatingSidebarToggleContainerClassName
 } from "./AppView";
@@ -40,41 +44,73 @@ describe("features/app/AppView", () => {
   it("uses the shared reading stage width for the centered landing composer", () => {
     assert.equal(
       getCenteredLandingComposerClassName(),
-      "chat-reading-stage mx-auto w-full min-w-0 max-w-[980px]"
+      "chat-reading-stage mx-auto w-full min-w-0 max-w-[1040px]"
     );
   });
 
-  it("uses the approved English heading copy for the centered landing state", () => {
-    assert.equal(CENTERED_LANDING_HEADING_TEXT, "Welcome back.");
+  it("uses the approved high-fidelity heading copy for the centered landing state", () => {
+    assert.equal(CENTERED_LANDING_HEADING_TEXT, "Echo Silk");
   });
 
-  it("adds a quiet atelier eyebrow above the welcome heading", () => {
-    assert.equal(CENTERED_LANDING_EYEBROW_TEXT, "The Digital Atelier");
+  it("adds a quieter atelier eyebrow above the hero heading", () => {
+    assert.equal(CENTERED_LANDING_EYEBROW_TEXT, "The Atelier");
     assert.equal(
       getCenteredLandingEyebrowClassName(),
-      "mb-4 text-center text-[11px] font-semibold uppercase tracking-[0.28em] text-muted-foreground/72 sm:mb-5"
+      "mb-3 text-center text-[12px] font-semibold uppercase tracking-[0.32em] text-muted-foreground/70 sm:mb-4"
     );
   });
 
-  it("adds a dedicated modern heading font hook for the centered landing title", () => {
+  it("gives the centered landing title a larger editorial shell", () => {
     assert.equal(
       getCenteredLandingHeadingClassName(),
-      "landing-title-hero mb-5 text-center text-[42px] font-semibold leading-[1.02] tracking-[-0.04em] text-foreground sm:mb-6 sm:text-[52px] md:text-[60px]"
+      "landing-title-hero mb-4 text-center text-[46px] font-semibold leading-[0.98] tracking-[-0.05em] text-foreground sm:mb-5 sm:text-[58px] md:text-[66px]"
     );
   });
 
-  it("uses lighter supporting copy and extra top whitespace for the landing hero", () => {
+  it("uses warmer supporting copy and extra top whitespace for the landing hero", () => {
     assert.equal(
       CENTERED_LANDING_BODY_TEXT,
-      "Start with a clear question, a half-formed idea, or the next thing you want Echo to shape."
+      "Describe a direction, drop in a reference, or keep shaping the conversation with Echo."
     );
     assert.equal(
       getCenteredLandingBodyClassName(),
-      "mx-auto mt-0 max-w-[620px] text-center text-[15px] leading-7 text-muted-foreground/84 sm:text-[16px]"
+      "mx-auto mt-0 max-w-[640px] text-center text-[15px] leading-7 text-muted-foreground/86 sm:text-[17px]"
     );
     assert.equal(
       getCenteredLandingContentClassName(),
-      "flex min-h-0 flex-1 items-start justify-center pt-[9vh] sm:pt-[11vh] md:pt-[12vh]"
+      "flex min-h-0 flex-1 items-center justify-center px-2 py-10 sm:px-3 sm:py-12"
     );
   });
+
+  it("uses a dedicated top navigation shell for the high-fidelity chat page", () => {
+    assert.equal(
+      getChatHomeTopNavClassName(),
+      "chat-reading-stage mx-auto flex w-full items-center justify-between gap-6 px-2 pb-8 pt-5 sm:px-3"
+    );
+    assert.equal(
+      getChatHomeNavLinksClassName(),
+      "hidden items-center text-[15px] text-foreground/70 md:flex"
+    );
+    assert.equal(
+      getChatHomeSearchClassName(),
+      "flex h-11 w-[240px] items-center gap-3 rounded-full border border-border/55 bg-background/72 px-4 text-[14px] text-muted-foreground shadow-[0_10px_30px_rgba(83,65,44,0.06)] backdrop-blur"
+    );
+  });
+
+  it("removes the top-left Echo Silk editorial brand copy from the chat nav", async () => {
+    const { renderToStaticMarkup } = await import("react-dom/server");
+    const { __ChatHomeTopNavForTest } = await import("./AppView");
+
+    const markup = renderToStaticMarkup(
+      createElement(__ChatHomeTopNavForTest, {
+        onOpenSearch: () => {},
+        onOpenProfile: () => {}
+      })
+    );
+
+    assert.doesNotMatch(markup, /Echo Silk/);
+    assert.doesNotMatch(markup, /Editorial Workspace/);
+    assert.match(markup, />Chat</);
+  });
+
 });

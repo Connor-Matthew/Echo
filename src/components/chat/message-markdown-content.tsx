@@ -318,21 +318,35 @@ const CodeBlock = ({ code, language }: { code: string; language?: string }) => {
   );
 };
 
-const markdownComponents: Components = {
+const createMarkdownComponents = (isUser: boolean): Components => ({
   h1: ({ children }) => (
-    <h1 className="mb-3 mt-1 text-[1.34rem] font-semibold leading-tight">{children}</h1>
+    <h1 className="mb-4 mt-1 text-[1.38rem] font-semibold leading-tight tracking-[-0.02em] text-foreground/94">{children}</h1>
   ),
   h2: ({ children }) => (
-    <h2 className="mb-3 mt-1 text-[1.16rem] font-semibold leading-tight">{children}</h2>
+    <h2 className="mb-3.5 mt-2 text-[1.02rem] font-semibold tracking-[-0.01em] text-foreground/92">{children}</h2>
   ),
-  h3: ({ children }) => <h3 className="mb-2 mt-1 text-[1rem] font-semibold">{children}</h3>,
-  h4: ({ children }) => <h4 className="mb-1.5 mt-1 text-[0.95rem] font-semibold">{children}</h4>,
+  h3: ({ children }) =>
+    isUser ? (
+      <h3 className="mb-2.5 mt-2 text-[0.98rem] font-semibold tracking-[-0.01em] text-foreground/90">{children}</h3>
+    ) : (
+      <h3 className="mb-2.5 mt-2 inline-flex rounded-full border border-border/55 bg-background/72 px-3 py-1 text-[0.78rem] font-semibold uppercase tracking-[0.16em] text-foreground/78">
+        {children}
+      </h3>
+    ),
+  h4: ({ children }) => <h4 className="mb-2 mt-1.5 text-[0.92rem] font-semibold text-foreground/88">{children}</h4>,
   p: ({ children }) => <p className="mb-2.5 last:mb-0">{children}</p>,
-  ul: ({ children }) => <ul className="mb-2.5 list-disc pl-5 last:mb-0">{children}</ul>,
-  ol: ({ children }) => <ol className="mb-2.5 list-decimal pl-5 last:mb-0">{children}</ol>,
-  li: ({ children }) => <li className="mb-0.5">{children}</li>,
+  ul: ({ children }) => <ul className="mb-3.5 list-disc space-y-2 pl-5 marker:text-primary/70 last:mb-0">{children}</ul>,
+  ol: ({ children }) => <ol className="mb-3.5 list-decimal space-y-2 pl-5 marker:text-primary/70 last:mb-0">{children}</ol>,
+  li: ({ children }) =>
+    isUser ? (
+      <li className="pl-0.5">{children}</li>
+    ) : (
+      <li className="rounded-[18px] border border-border/45 bg-background/68 px-3.5 py-2.5 text-foreground/88 shadow-[inset_0_1px_0_hsl(0_0%_100%/0.2)]">
+        {children}
+      </li>
+    ),
   blockquote: ({ children }) => (
-    <blockquote className="mb-2 border-l-2 border-border pl-3 text-muted-foreground">
+    <blockquote className="mb-3.5 rounded-[22px] border border-border/55 bg-accent/24 px-4 py-3.5 text-muted-foreground/92 shadow-[inset_0_1px_0_hsl(0_0%_100%/0.2)]">
       {children}
     </blockquote>
   ),
@@ -362,7 +376,7 @@ const markdownComponents: Components = {
     );
   },
   table: ({ children }) => (
-    <div className="mb-1.5 overflow-x-auto last:mb-0">
+    <div className="mb-3.5 overflow-x-auto rounded-[22px] border border-border/55 bg-background/74 p-1.5 last:mb-0">
       <table className="w-full border-collapse text-left text-[13px]">{children}</table>
     </div>
   ),
@@ -373,7 +387,7 @@ const markdownComponents: Components = {
   ),
   td: ({ children }) => <td className="border border-border px-2 py-1.5">{children}</td>,
   hr: () => <hr className="my-2.5 border-border" />
-};
+});
 
 const MarkdownContentInner = ({
   content,
@@ -390,6 +404,7 @@ const MarkdownContentInner = ({
     .filter(Boolean)
     .join(" ");
   const streamingTailClassName = "chat-streaming-markdown whitespace-pre-wrap";
+  const markdownComponents = createMarkdownComponents(isUser);
   const renderMarkdown = (markdown: string, key?: string) => (
     <ReactMarkdown
       key={key}

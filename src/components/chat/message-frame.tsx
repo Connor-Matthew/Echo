@@ -123,8 +123,8 @@ export const getMessageSurfaceClassName = (isUser: boolean) =>
   [
     "max-w-full break-words transition-opacity duration-150",
     isUser
-      ? "chat-message-surface-user inline-block w-fit px-4 py-3 sm:px-5"
-      : "chat-message-surface-assistant w-full rounded-[30px] border border-border/55 bg-card/95 px-6 py-5 sm:px-7 sm:py-6"
+      ? "chat-message-surface-user inline-block w-fit px-5 py-3.5 sm:px-6"
+      : "chat-message-surface-assistant w-full rounded-[34px] border border-border/45 bg-card/88 px-7 py-6 sm:px-8 sm:py-7"
   ].join(" ");
 
 const areMessageFramePropsEqual = (prev: MessageFrameProps, next: MessageFrameProps) => {

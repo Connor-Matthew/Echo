@@ -3,16 +3,16 @@ import { describe, it } from "node:test";
 import { getAttachmentTrayClassNames } from "./AttachmentTray";
 
 describe("components/AttachmentTray classes", () => {
-  it("uses low-noise dock chips that visually merge with the minimalist composer", () => {
+  it("uses warmer dock cards that visually merge with the hero composer", () => {
     const classNames = getAttachmentTrayClassNames();
 
     assert.match(classNames.tray, /\bcomposer-attachment-tray\b/);
-    assert.match(classNames.tray, /\bgap-2\.5\b/);
-    assert.match(classNames.item, /rounded-\[20px\]/);
-    assert.match(classNames.item, /border-border\/60/);
-    assert.match(classNames.item, /bg-card\/72/);
-    assert.match(classNames.preview, /rounded-\[16px\]/);
-    assert.match(classNames.preview, /border-border\/60/);
-    assert.match(classNames.textPreview, /bg-accent\/28/);
+    assert.match(classNames.tray, /\bgap-3\b/);
+    assert.match(classNames.item, /rounded-\[24px\]/);
+    assert.match(classNames.item, /border-border\/50/);
+    assert.match(classNames.item, /bg-card\/78/);
+    assert.match(classNames.preview, /rounded-\[18px\]/);
+    assert.match(classNames.preview, /border-border\/50/);
+    assert.match(classNames.textPreview, /bg-accent\/22/);
   });
 });

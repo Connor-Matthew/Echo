@@ -116,14 +116,14 @@ export const getComposerToolMenuItemLabels = ({
 
 export const getComposerToolMenuClassNames = () => ({
   trigger:
-    "h-9 w-9 rounded-[16px] border border-border/65 bg-background/88 text-foreground/78 hover:bg-accent/45 hover:text-foreground",
+    "h-10 w-10 rounded-full border border-border/55 bg-background/82 text-foreground/78 hover:bg-accent/40 hover:text-foreground",
   surface:
-    "absolute bottom-full left-0 z-[80] mb-3 w-[320px] rounded-[20px] border border-border/70 bg-card/95 p-3 shadow-[0_24px_60px_rgba(42,37,30,0.12)] backdrop-blur-xl",
+    "absolute bottom-full left-0 z-[80] mb-3 w-[340px] rounded-[24px] border border-border/60 bg-card/92 p-3 shadow-[0_28px_80px_rgba(42,37,30,0.14)] backdrop-blur-2xl",
   section: "flex flex-col gap-0",
   item:
-    "flex h-[46px] w-full items-center gap-2.5 rounded-[14px] px-3.5 text-left text-[14px] font-medium tracking-[-0.01em] text-foreground transition-colors hover:bg-accent/30",
-  divider: "my-1.5 h-px bg-border/55",
-  nestedPanel: "mt-1 mb-1 ml-3 mr-1 rounded-[14px] border border-border/50 bg-background/92 p-1.5",
+    "flex h-[48px] w-full items-center gap-2.5 rounded-[16px] px-3.5 text-left text-[14px] font-medium tracking-[-0.01em] text-foreground transition-colors hover:bg-accent/30",
+  divider: "my-1.5 h-px bg-border/45",
+  nestedPanel: "mb-1 ml-3 mr-1 mt-1 rounded-[18px] border border-border/50 bg-background/92 p-1.5",
   nestedItem:
     "flex w-full items-center gap-2 rounded-[12px] px-2.5 py-2 text-left text-[12px] font-medium text-foreground/92 transition-colors hover:bg-accent/35",
   contextChip:
@@ -140,7 +140,7 @@ export const getComposerFooterClassName = ({
   minimalControls: boolean;
 }) =>
   minimalControls
-    ? "mt-2.5 flex items-center justify-between gap-2.5"
+    ? "mt-3 flex items-center justify-between gap-3"
     : "mt-3 flex items-center justify-between gap-3 border-t border-border/55 pt-3";
 
 export const getComposerContainerClassName = ({
@@ -151,7 +151,7 @@ export const getComposerContainerClassName = ({
   cn(
     "flex w-full flex-col border transition-[border-color,box-shadow,background-color] duration-200",
     minimalControls
-      ? "rounded-[30px] border-border/65 bg-card/95 px-6 py-4 shadow-[0_18px_48px_rgba(42,37,30,0.1)] backdrop-blur-xl supports-[backdrop-filter]:bg-card/82 sm:px-7"
+      ? "rounded-[38px] border-border/50 bg-card/78 px-6 py-4 shadow-[0_26px_60px_rgba(42,37,30,0.12)] backdrop-blur-2xl supports-[backdrop-filter]:bg-card/68 sm:px-7"
       : "rounded-[26px] border-border/70 bg-card px-5 py-4 shadow-[0_14px_34px_rgba(42,37,30,0.08)] sm:px-7 sm:py-5"
   );
 
@@ -163,22 +163,22 @@ export const getComposerTextareaClassName = ({
   cn(
     "resize-none border-0 bg-transparent px-0 py-0 text-[16px] text-foreground shadow-none placeholder:text-muted-foreground/68 focus-visible:ring-0",
     minimalControls
-      ? "h-[42px] min-h-[42px] leading-[1.72]"
+      ? "h-[40px] min-h-[40px] text-[17px] leading-[1.75]"
       : "h-[44px] min-h-[44px] leading-[1.85]"
   );
 
 export const getComposerMinimalControlClassNames = () => ({
   trigger:
-    "inline-flex h-auto w-auto items-center justify-center border-0 bg-transparent p-0 text-foreground/72 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-0 disabled:pointer-events-none disabled:opacity-45",
+    "inline-flex h-10 w-10 items-center justify-center rounded-full border border-transparent bg-transparent p-0 text-foreground/72 transition-colors hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-0 disabled:pointer-events-none disabled:opacity-45",
   modelWrap: "relative shrink-0 pr-4",
   modelSelect:
     "h-auto w-auto max-w-[220px] appearance-none border-0 bg-transparent px-0 pr-4 text-[14px] font-medium text-foreground/82 focus-visible:outline-none focus-visible:ring-0 disabled:opacity-70",
   modelChevron:
     "pointer-events-none absolute right-0 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/88",
   actionButton:
-    "inline-flex h-10 w-10 items-center justify-center rounded-full border-0 bg-primary text-primary-foreground shadow-[0_12px_24px_hsl(var(--primary)/0.28)] transition-all hover:translate-y-[-1px] hover:bg-primary/92 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:bg-secondary disabled:text-muted-foreground/70 disabled:shadow-none",
+    "inline-flex h-12 w-12 items-center justify-center rounded-full border-0 bg-primary text-primary-foreground shadow-[0_14px_28px_hsl(var(--primary)/0.28)] transition-all hover:translate-y-[-1px] hover:bg-primary/92 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:bg-secondary disabled:text-muted-foreground/70 disabled:shadow-none",
   stopButton:
-    "inline-flex h-10 w-10 items-center justify-center rounded-full border border-border/55 bg-card/88 text-destructive shadow-[0_10px_24px_rgba(42,37,30,0.08)] transition-colors hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-45"
+    "inline-flex h-12 w-12 items-center justify-center rounded-full border border-border/55 bg-card/88 text-destructive shadow-[0_10px_24px_rgba(42,37,30,0.08)] transition-colors hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-45"
 });
 
 const DEFAULT_MIN_TEXTAREA_HEIGHT = 40;
