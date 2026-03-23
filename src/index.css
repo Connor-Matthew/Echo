@@ -30,44 +30,44 @@
 
 @layer base {
   :root {
-    --background: 34 30% 96%;
-    --foreground: 24 14% 18%;
-    --card: 34 24% 97%;
-    --card-foreground: 24 14% 18%;
-    --primary: 21 61% 55%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 34 22% 93%;
-    --secondary-foreground: 24 13% 24%;
-    --muted: 34 20% 92%;
-    --muted-foreground: 24 9% 44%;
-    --accent: 34 18% 91%;
-    --accent-foreground: 24 14% 18%;
+    --background: 222 24% 9%;
+    --foreground: 220 20% 92%;
+    --card: 222 20% 14%;
+    --card-foreground: 220 20% 92%;
+    --primary: 206 72% 64%;
+    --primary-foreground: 222 28% 10%;
+    --secondary: 222 18% 18%;
+    --secondary-foreground: 220 18% 88%;
+    --muted: 222 16% 16%;
+    --muted-foreground: 220 10% 66%;
+    --accent: 222 16% 20%;
+    --accent-foreground: 220 18% 92%;
     --destructive: 0 60% 45%;
     --destructive-foreground: 0 0% 98%;
-    --border: 30 18% 84%;
-    --input: 30 18% 84%;
-    --ring: 21 44% 52%;
+    --border: 220 12% 28%;
+    --input: 220 12% 28%;
+    --ring: 206 68% 62%;
     --radius: 12px;
   }
 
   .dark {
-    --background: 28 10% 12%;
-    --foreground: 34 18% 88%;
-    --card: 28 10% 15%;
-    --card-foreground: 34 18% 88%;
-    --primary: 25 68% 67%;
-    --primary-foreground: 24 16% 12%;
-    --secondary: 28 10% 18%;
-    --secondary-foreground: 34 18% 86%;
-    --muted: 28 10% 20%;
-    --muted-foreground: 34 8% 64%;
-    --accent: 28 10% 22%;
-    --accent-foreground: 34 18% 90%;
+    --background: 222 24% 8%;
+    --foreground: 220 20% 92%;
+    --card: 222 18% 13%;
+    --card-foreground: 220 20% 92%;
+    --primary: 206 72% 64%;
+    --primary-foreground: 222 28% 10%;
+    --secondary: 222 16% 18%;
+    --secondary-foreground: 220 18% 88%;
+    --muted: 222 14% 16%;
+    --muted-foreground: 220 10% 66%;
+    --accent: 222 14% 19%;
+    --accent-foreground: 220 18% 92%;
     --destructive: 0 69% 63%;
     --destructive-foreground: 0 0% 98%;
-    --border: 28 10% 28%;
-    --input: 28 10% 28%;
-    --ring: 25 42% 62%;
+    --border: 220 12% 26%;
+    --input: 220 12% 26%;
+    --ring: 206 68% 62%;
   }
 
   * {
@@ -155,9 +155,10 @@
 
   .app-shell {
     background:
-      radial-gradient(circle at top left, hsl(22 86% 74% / 0.16), transparent 24%),
-      radial-gradient(circle at 82% 8%, hsl(38 58% 88% / 0.44), transparent 22%),
-      linear-gradient(180deg, hsl(34 30% 97%), hsl(32 24% 95%));
+      radial-gradient(circle at 14% 16%, hsl(208 70% 60% / 0.14), transparent 24%),
+      radial-gradient(circle at 82% 8%, hsl(222 56% 38% / 0.24), transparent 28%),
+      radial-gradient(circle at 50% 120%, hsl(214 44% 22% / 0.32), transparent 42%),
+      linear-gradient(180deg, hsl(var(--echo-shell-bg-start)), hsl(var(--echo-shell-bg-mid)) 52%, hsl(var(--echo-shell-bg-end)));
   }
 
   .app-shell-frame {
@@ -165,12 +166,12 @@
     border-radius: var(--echo-shell-radius);
     border: 1px solid hsl(var(--border) / var(--echo-shell-frame-border-alpha));
     background:
-      linear-gradient(180deg, hsl(var(--card) / 0.82), hsl(34 24% 96% / 0.88));
+      linear-gradient(180deg, hsl(222 20% 13% / var(--echo-shell-frame-bg-alpha)), hsl(222 22% 10% / 0.82));
     padding: var(--echo-shell-padding-compact);
     box-shadow:
       var(--echo-shell-shadow-window),
-      inset 0 1px 0 hsl(0 0% 100% / 0.42);
-    backdrop-filter: blur(26px);
+      inset 0 1px 0 hsl(220 40% 96% / 0.08);
+    backdrop-filter: blur(var(--echo-shell-glass-blur));
   }
 
   @media (min-width: 640px) {
@@ -181,8 +182,8 @@
 
   .sketch-panel {
     border: 1px solid hsl(var(--border) / var(--echo-panel-border-alpha));
-    background: hsl(var(--card) / var(--echo-panel-bg-alpha));
-    box-shadow: 0 18px 42px hsl(28 28% 38% / 0.06);
+    background: linear-gradient(180deg, hsl(222 18% 16% / var(--echo-panel-bg-alpha)), hsl(222 18% 12% / calc(var(--echo-panel-bg-alpha) + 0.06)));
+    box-shadow: 0 18px 42px hsl(222 28% 4% / 0.24);
   }
 
   .app-shell-panel {
@@ -194,11 +195,12 @@
 
   .app-shell-panel-sidebar {
     box-shadow:
-      inset -1px 0 0 hsl(var(--border) / 0.42),
-      12px 0 36px hsl(30 20% 40% / 0.04);
+      inset -1px 0 0 hsl(220 26% 88% / 0.08),
+      1px 0 0 hsl(220 26% 88% / 0.04),
+      24px 0 48px hsl(222 26% 4% / 0.22);
     border-radius: 0;
     background:
-      linear-gradient(180deg, hsl(34 26% 96% / 0.96), hsl(32 22% 94% / 0.9));
+      linear-gradient(180deg, hsl(222 18% 16% / 0.94), hsl(222 18% 12% / 0.9));
   }
 
   .sketch-title {
@@ -208,8 +210,10 @@
   }
 
   .landing-title-hero {
-    font-family: "Avenir Next", "SF Pro Display", "Segoe UI", sans-serif;
-    letter-spacing: -0.03em;
+    font-family: "Iowan Old Style", "Palatino Linotype", "URW Palladio L", serif;
+    font-style: italic;
+    font-weight: 400;
+    letter-spacing: -0.045em;
   }
 
   .sketch-grid-paper {
@@ -317,7 +321,8 @@
 
   .sidebar-surface {
     background:
-      linear-gradient(180deg, hsl(34 26% 96% / 0.96), hsl(32 22% 94% / 0.78));
+      linear-gradient(180deg, hsl(222 18% 18% / var(--echo-sidebar-bg-alpha)), hsl(222 18% 13% / calc(var(--echo-sidebar-bg-alpha) + 0.08)));
+    backdrop-filter: blur(calc(var(--echo-shell-glass-blur) - 2px));
   }
 
   .mode-switch-track {
@@ -337,7 +342,7 @@
   }
 
   .sidebar-nav-button[data-active="true"] {
-    background: hsl(24 38% 86% / 0.28);
+    background: hsl(42 18% 88% / 0.68);
     color: hsl(var(--foreground));
   }
 
@@ -352,15 +357,15 @@
   }
 
   .sidebar-nav-button[data-active="false"]:hover {
-    background: hsl(var(--echo-sidebar-hover-bg) / var(--echo-nav-hover-bg-alpha));
-    color: hsl(var(--echo-sidebar-hover-text));
+    background: hsl(42 24% 91% / 0.78);
+    color: hsl(var(--foreground));
   }
 
   .session-list-item[data-active="true"] {
-    background: linear-gradient(180deg, hsl(34 24% 94% / 0.96), hsl(32 20% 92% / 0.9));
+    background: linear-gradient(180deg, hsl(42 22% 92% / 0.96), hsl(38 16% 90% / 0.92));
     box-shadow:
-      inset 0 0 0 1px hsl(30 18% 78% / 0.26),
-      0 14px 28px hsl(28 24% 38% / 0.05);
+      inset 0 0 0 1px hsl(34 16% 78% / 0.22),
+      0 16px 34px hsl(28 18% 38% / 0.045);
   }
 
   .dark .session-list-item[data-active="true"] {
@@ -401,8 +406,8 @@
   }
 
   .floating-sidebar-toggle {
-    background: hsl(var(--card) / 0.78);
-    border: 1px solid hsl(var(--border) / 0.52);
+    background: hsl(222 18% 18% / 0.74);
+    border: 1px solid hsl(220 24% 92% / 0.1);
     box-shadow: var(--echo-floating-toggle-shadow);
     transition:
       background-color var(--echo-motion-fast) var(--echo-ease-standard),
@@ -412,7 +417,7 @@
   }
 
   .floating-sidebar-toggle:hover {
-    background: hsl(var(--card));
+    background: hsl(222 18% 20% / 0.86);
   }
 
   .echo-card {
@@ -462,8 +467,27 @@
 
   .chat-home-stage {
     background:
-      radial-gradient(circle at 50% 0%, hsl(36 42% 91% / 0.26), transparent 30%),
-      linear-gradient(180deg, hsl(34 22% 97% / 0.56), transparent 22%);
+      radial-gradient(circle at 50% 0%, hsl(208 74% 70% / 0.08), transparent 24%),
+      linear-gradient(180deg, hsl(222 20% 14% / 0.34), transparent 22%);
+  }
+
+  .chat-home-toolbar-shell {
+    margin-inline: auto;
+    width: 100%;
+    max-width: var(--echo-topbar-max-width);
+    border: 1px solid hsl(220 24% 92% / 0.08);
+    border-radius: 22px;
+    background:
+      linear-gradient(180deg, hsl(222 18% 16% / var(--echo-toolbar-bg-alpha)), hsl(222 18% 12% / calc(var(--echo-toolbar-bg-alpha) + 0.08)));
+    box-shadow:
+      inset 0 1px 0 hsl(220 30% 96% / 0.08),
+      0 18px 36px hsl(222 26% 4% / 0.18);
+    backdrop-filter: blur(calc(var(--echo-shell-glass-blur) - 4px));
+  }
+
+  .chat-reading-stage-meta {
+    border-bottom: 1px solid hsl(220 20% 88% / 0.08);
+    padding-bottom: 1rem;
   }
 
   .chat-message-column-user {
@@ -485,24 +509,16 @@
 
   .chat-message-column-assistant {
     width: 100%;
-    max-width: var(--echo-chat-assistant-max-width);
+    max-width: min(var(--echo-chat-assistant-max-width), 100%);
     align-items: flex-start;
   }
 
   .chat-message-surface-user {
-    border: 1px solid hsl(18 88% 64% / 0.18);
-    background:
-      linear-gradient(180deg, hsl(17 100% 74%), hsl(17 94% 69%));
-    border-radius: 28px;
-    box-shadow: 0 18px 36px hsl(18 58% 56% / 0.16);
-    color: hsl(18 54% 18%);
+    color: hsl(220 18% 94%);
   }
 
   .chat-message-surface-assistant {
-    border: 1px solid hsl(var(--border) / 0.4);
-    background:
-      linear-gradient(180deg, hsl(36 28% 96% / 0.96), hsl(34 24% 94% / 0.92));
-    box-shadow: 0 28px 54px hsl(28 24% 38% / 0.06);
+    color: hsl(220 16% 91%);
   }
 
   .chat-markdown-root {

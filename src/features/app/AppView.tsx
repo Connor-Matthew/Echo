@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { CircleUserRound, PanelLeft, Search } from "lucide-react";
+import { PanelLeft } from "lucide-react";
 import { AgentView } from "../../components/AgentView";
 import { ChatView } from "../../components/ChatView";
 import { CommandPalette } from "../../components/CommandPalette";
@@ -17,7 +17,7 @@ import { useAppController } from "./use-app-controller";
 import { ChatComposerPanel } from "./ChatComposerPanel";
 
 export const getFloatingSidebarToggleContainerClassName = (isMacPlatform: boolean) =>
-  isMacPlatform ? "absolute left-[96px] top-2 z-20" : "absolute left-3 top-3 z-20";
+  isMacPlatform ? "absolute left-[104px] top-3 z-20" : "absolute left-4 top-4 z-20";
 
 export const getChatHeaderClassNameForFloatingToggle = (
   showFloatingSidebarToggle: boolean,
@@ -28,75 +28,71 @@ export const getChatHeaderClassNameForFloatingToggle = (
   }
 
   if (isMacPlatform) {
-    return "pl-[144px] sm:pl-[148px]";
+    return "pl-[152px] sm:pl-[156px]";
   }
 
-  return "pl-[132px] sm:pl-[136px]";
+  return "pl-[140px] sm:pl-[144px]";
 };
 
 export const getCenteredLandingComposerClassName = () =>
-  "chat-reading-stage mx-auto w-full min-w-0 max-w-[1040px]";
+  "chat-reading-stage mx-auto w-full min-w-0 max-w-[1120px]";
 
-export const CENTERED_LANDING_EYEBROW_TEXT = "The Atelier";
-export const CENTERED_LANDING_HEADING_TEXT = "Echo Silk";
+export const CHAT_HOME_CENTER_TITLE_TEXT = "Echo";
+export const CENTERED_LANDING_HEADING_TEXT = "Start a conversation with Echo";
 export const CENTERED_LANDING_BODY_TEXT =
-  "Describe a direction, drop in a reference, or keep shaping the conversation with Echo.";
+  "Draft, review, and keep moving without leaving the conversation.";
 
 export const getCenteredLandingContentClassName = () =>
-  "flex min-h-0 flex-1 items-center justify-center px-2 py-10 sm:px-3 sm:py-12";
-
-export const getCenteredLandingEyebrowClassName = () =>
-  "mb-3 text-center text-[12px] font-semibold uppercase tracking-[0.32em] text-muted-foreground/70 sm:mb-4";
+  "flex min-h-0 flex-1 flex-col items-center justify-center px-4 pb-8 pt-8 sm:px-5 sm:pb-10 sm:pt-10";
 
 export const getCenteredLandingHeadingClassName = () =>
-  "landing-title-hero mb-4 text-center text-[46px] font-semibold leading-[0.98] tracking-[-0.05em] text-foreground sm:mb-5 sm:text-[58px] md:text-[66px]";
+  "landing-title-hero mx-auto max-w-[780px] text-center text-[38px] leading-[1] tracking-[-0.05em] text-foreground sm:text-[48px] md:text-[58px]";
 
 export const getCenteredLandingBodyClassName = () =>
-  "mx-auto mt-0 max-w-[640px] text-center text-[15px] leading-7 text-muted-foreground/86 sm:text-[17px]";
+  "mx-auto mt-4 max-w-[620px] text-center text-[15px] leading-[1.75] text-muted-foreground/80 sm:text-[16px]";
 
 export const getChatHomeTopNavClassName = () =>
-  "chat-reading-stage mx-auto flex w-full items-center justify-between gap-6 px-2 pb-8 pt-5 sm:px-3";
+  "chat-reading-stage mx-auto grid w-full grid-cols-[auto_1fr_auto] items-center gap-4 px-4 pb-5 pt-4 sm:px-5";
 
-export const getChatHomeNavLinksClassName = () =>
-  "hidden items-center text-[15px] text-foreground/70 md:flex";
+export const getChatHomeNavBrandClassName = () =>
+  "text-[15px] font-semibold uppercase tracking-[0.2em] text-foreground/86";
 
-export const getChatHomeSearchClassName = () =>
-  "flex h-11 w-[240px] items-center gap-3 rounded-full border border-border/55 bg-background/72 px-4 text-[14px] text-muted-foreground shadow-[0_10px_30px_rgba(83,65,44,0.06)] backdrop-blur";
+export const getChatHomeNavActionClassName = () =>
+  "text-[12px] font-medium uppercase tracking-[0.18em] text-foreground/52 transition-colors hover:text-foreground/84";
 
 const ChatHomeTopNav = ({
   onOpenSearch,
-  onOpenProfile
+  onExportArchive
 }: {
   onOpenSearch: () => void;
-  onOpenProfile: () => void;
+  onExportArchive: () => void;
 }) => (
-  <div className={getChatHomeTopNavClassName()}>
-    <div className="flex min-w-0 items-center">
-      <nav className={getChatHomeNavLinksClassName()} aria-label="Chat home sections">
-        <button type="button" className="font-medium text-foreground" aria-current="page">
-          Chat
+  <div className="chat-home-toolbar-shell">
+    <div className={getChatHomeTopNavClassName()}>
+      <div className="min-w-0">
+        <p className={getChatHomeNavBrandClassName()}>{CHAT_HOME_CENTER_TITLE_TEXT}</p>
+        <p className="mt-1 text-[10px] uppercase tracking-[0.24em] text-muted-foreground/50">
+          Chat Workspace
+        </p>
+      </div>
+      <div aria-hidden className="hidden h-px w-full sm:block" />
+      <div className="col-start-3 flex items-center justify-self-end gap-3 sm:gap-4">
+        <button
+          type="button"
+          className={getChatHomeNavActionClassName()}
+          onClick={onOpenSearch}
+          aria-label="Search archive"
+        >
+          Search
         </button>
-      </nav>
-    </div>
-    <div className="flex items-center gap-3">
-      <button
-        type="button"
-        className={getChatHomeSearchClassName()}
-        onClick={onOpenSearch}
-        aria-label="Search archive"
-      >
-        <Search className="h-4 w-4 shrink-0 text-muted-foreground/86" />
-        <span className="truncate">Search archive...</span>
-      </button>
-      <Button
-        type="button"
-        variant="ghost"
-        className="h-11 w-11 rounded-full border border-border/55 bg-background/72 text-muted-foreground shadow-[0_10px_30px_rgba(83,65,44,0.06)] backdrop-blur hover:bg-background hover:text-foreground"
-        onClick={onOpenProfile}
-        aria-label="Open profile settings"
-      >
-        <CircleUserRound className="h-5 w-5" />
-      </Button>
+        <button
+          type="button"
+          className={getChatHomeNavActionClassName()}
+          onClick={onExportArchive}
+        >
+          Export
+        </button>
+      </div>
     </div>
   </div>
 );
@@ -323,6 +319,7 @@ export const AppView = () => {
           closeSidebarIfCompact();
         }}
         onEnterSettings={(section) => openSettings(section ?? "provider")}
+        onOpenSearch={openChatSearch}
         onSaveUserSkills={saveUserSkills}
         onToggleSidebar={() => setIsSidebarOpen(false)}
       />
@@ -473,25 +470,26 @@ export const AppView = () => {
               ) : null}
 
               {showCenteredChatLanding ? (
-                <section className="chat-home-stage flex h-full w-full min-h-0 flex-col px-4 pb-8 pt-3 sm:px-6 sm:pb-10 sm:pt-4">
+                <section className="chat-home-stage flex h-full w-full min-h-0 flex-col overflow-auto px-5 pb-6 pt-4 sm:px-7 sm:pb-8 sm:pt-5">
                   <ChatHomeTopNav
                     onOpenSearch={openChatSearch}
-                    onOpenProfile={() => openSettings("profile")}
+                    onExportArchive={() => {
+                      void exportSessions();
+                    }}
                   />
                   <div className={getCenteredLandingContentClassName()}>
-                    <div className="w-full max-w-[760px]">
-                      <p className={getCenteredLandingEyebrowClassName()}>
-                        {CENTERED_LANDING_EYEBROW_TEXT}
-                      </p>
-                      <h2 className={getCenteredLandingHeadingClassName()}>
-                        {CENTERED_LANDING_HEADING_TEXT}
-                      </h2>
-                      <p className={getCenteredLandingBodyClassName()}>
-                        {CENTERED_LANDING_BODY_TEXT}
-                      </p>
+                    <div className="w-full max-w-[920px]">
+                      <div className="mx-auto max-w-[720px]">
+                        <h2 className={getCenteredLandingHeadingClassName()}>
+                          {CENTERED_LANDING_HEADING_TEXT}
+                        </h2>
+                        <p className={getCenteredLandingBodyClassName()}>
+                          {CENTERED_LANDING_BODY_TEXT}
+                        </p>
+                      </div>
                     </div>
                   </div>
-                  <div className="px-0 pb-1 pt-2 sm:pb-2">
+                  <div className="px-0 pb-2 pt-3 sm:pb-3">
                     <ChatComposerPanel
                       draft={draft}
                       setDraft={setDraft}
@@ -522,19 +520,21 @@ export const AppView = () => {
                   </div>
                 </section>
               ) : (
-                <div className="chat-home-stage flex h-full min-h-0 flex-col px-4 pb-4 pt-3 sm:px-6 sm:pb-6 sm:pt-4">
+                <div className="chat-home-stage flex h-full min-h-0 flex-col px-5 pb-5 pt-4 sm:px-7 sm:pb-7 sm:pt-5">
                   <ChatHomeTopNav
                     onOpenSearch={openChatSearch}
-                    onOpenProfile={() => openSettings("profile")}
+                    onExportArchive={() => {
+                      void exportSessions();
+                    }}
                   />
-                  <div className="chat-reading-stage mx-auto mb-3 flex w-full items-center justify-between gap-4 px-2 text-[12px] uppercase tracking-[0.2em] text-muted-foreground/72 sm:px-3">
+                  <div className="chat-reading-stage chat-reading-stage-meta mx-auto mb-5 flex w-full items-center justify-between gap-4 px-3 text-[11px] uppercase tracking-[0.24em] text-muted-foreground/68 sm:px-4">
                     <span className={getChatHeaderClassNameForFloatingToggle(
                       showFloatingSidebarToggle,
                       isMacPlatform
                     )}>
                       {activeSession?.title ?? "New Chat"}
                     </span>
-                    <span>Chat</span>
+                    <span>Conversation</span>
                   </div>
                   <div className="flex min-h-0 flex-1 flex-col bg-transparent">
                     <div className="min-h-0 flex-1">
@@ -551,7 +551,7 @@ export const AppView = () => {
                     </div>
                   </div>
 
-                  <div className="px-0 pb-1 pt-2 sm:pb-2">
+                  <div className="px-0 pb-2 pt-4 sm:pb-3">
                     <ChatComposerPanel
                       draft={draft}
                       setDraft={setDraft}

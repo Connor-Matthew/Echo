@@ -13,6 +13,7 @@ import {
   PenLine,
   Pin,
   Plus,
+  Search,
   Server,
   Settings,
   SlidersHorizontal,
@@ -52,6 +53,7 @@ type ChatSidebarProps = {
   onExportSessionMarkdown: (sessionId: string) => void;
   onEnterAgent: () => void;
   onEnterSettings: (section?: SettingsSection) => void;
+  onOpenSearch?: () => void;
   onSaveUserSkills: (skills: Skill[]) => void;
   onToggleSidebar?: () => void;
 };
@@ -452,25 +454,20 @@ export const Sidebar = (props: SidebarProps) => {
     return (
       <>
         <aside className="sidebar-surface relative flex h-full flex-col overflow-hidden">
-          <div className="px-5 pb-5 pt-4">
-            <div className="-mt-[8px] mb-5 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[0_12px_28px_hsl(var(--primary)/0.22)]">
-                  <Sparkles className="h-4 w-4" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-[1.08rem] font-semibold tracking-[-0.03em] text-foreground">Echo</p>
-                  <p className="mt-0.5 text-[11px] tracking-[0.04em] text-muted-foreground/80">
-                    Creative partner for deep work
-                  </p>
-                </div>
+          <div className="px-5 pb-4 pt-5">
+            <div className="mb-6 flex items-start justify-between">
+              <div className="min-w-0">
+                <p className="text-[1.05rem] font-semibold tracking-[-0.03em] text-foreground">Echo</p>
+                <p className="mt-1 text-[10px] uppercase tracking-[0.22em] text-muted-foreground/64">
+                  Desktop Chat
+                </p>
               </div>
               {props.onToggleSidebar ? (
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 rounded-full text-muted-foreground hover:bg-card/80 hover:text-foreground"
+                  className="h-8 w-8 rounded-full text-muted-foreground hover:bg-white/70 hover:text-foreground"
                   onClick={props.onToggleSidebar}
                   aria-label="收缩侧边栏"
                   title="收缩侧边栏"
@@ -480,62 +477,65 @@ export const Sidebar = (props: SidebarProps) => {
               ) : null}
             </div>
             <Button
-              className="mb-4 h-12 w-full justify-start rounded-[20px] border-0 bg-foreground/[0.045] px-3.5 text-foreground shadow-none hover:bg-foreground/[0.065]"
+              type="button"
+              variant="ghost"
+              className="mb-3 h-11 w-full justify-start rounded-[18px] border border-white/10 bg-white/[0.04] px-3.5 text-[14px] text-foreground/78 shadow-none hover:bg-white/[0.08] hover:text-foreground"
+              onClick={() => props.onOpenSearch?.()}
+            >
+              <Search className="mr-3 h-4 w-4" />
+              Search
+            </Button>
+            <Button
+              className="mb-4 h-11 w-full justify-start rounded-[18px] border border-white/12 bg-white/[0.09] px-4 text-[14px] text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] hover:bg-white/[0.14]"
               onClick={props.onCreateSession}
             >
-              <span className="mr-3 flex h-8 w-8 items-center justify-center rounded-[14px] bg-primary text-primary-foreground">
-                <Plus className="h-4 w-4" />
-              </span>
+              <Plus className="mr-3 h-4 w-4" />
               New Chat
             </Button>
-
-            <div className="space-y-1">
+            <div className="space-y-1 rounded-[20px] border border-white/8 bg-black/10 p-2">
               <Button
                 type="button"
                 variant="ghost"
-                className="sidebar-nav-button h-11 w-full justify-start rounded-[18px] px-3 text-[15px] text-foreground/82 hover:bg-card/75"
+                className="sidebar-nav-button h-11 w-full justify-start rounded-[16px] px-3 text-[14px] text-foreground/82 hover:bg-card/75"
                 data-active="true"
                 onClick={() => props.onSelectSession(props.activeSessionId)}
               >
-                <MessageSquare className="mr-2 h-4 w-4" />
-                History
+                <MessageSquare className="mr-2.5 h-4 w-4" />
+                Chat
               </Button>
               <Button
                 type="button"
                 variant="ghost"
-                className="sidebar-nav-button h-11 w-full justify-start rounded-[18px] px-3 text-[15px] text-foreground/82 hover:bg-card/75"
+                className="sidebar-nav-button h-11 w-full justify-start rounded-[16px] px-3 text-[14px] text-foreground/82 hover:bg-card/75"
+                data-active="false"
+                onClick={props.onEnterAgent}
+              >
+                <Bot className="mr-2.5 h-4 w-4" />
+                Agent
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="sidebar-nav-button h-11 w-full justify-start rounded-[16px] px-3 text-[14px] text-foreground/82 hover:bg-card/75"
                 data-active="false"
                 onClick={() => props.onEnterSettings("skills")}
               >
-                <Sparkles className="mr-2 h-4 w-4" />
-                Prompts
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                className="sidebar-nav-button h-11 w-full justify-start rounded-[18px] px-3 text-[15px] text-foreground/82 hover:bg-card/75"
-                data-active="false"
-                onClick={() => props.onEnterSettings("data")}
-              >
-                <BookOpen className="mr-2 h-4 w-4" />
-                Library
+                <Sparkles className="mr-2.5 h-4 w-4" />
+                Skills
               </Button>
             </div>
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-4">
-            <div className="mb-5 flex items-center justify-between">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/72">Recent</p>
-              <Button
-                type="button"
-                variant="ghost"
-                className="h-8 rounded-full px-3 text-[11px] uppercase tracking-[0.14em] text-muted-foreground hover:bg-card/75 hover:text-foreground"
-                onClick={props.onEnterAgent}
-              >
-                Agent
-              </Button>
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-2">
+            <div className="mb-4 flex items-center justify-between">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/66">
+                Recent Chats
+              </p>
+              <span className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground/52">
+                {sortedSessions.length} items
+              </span>
             </div>
-            <div className="echo-scrollbar-minimal min-h-0 space-y-5 overflow-auto">
+            <div className="echo-scrollbar-minimal min-h-0 space-y-5 overflow-auto pr-1">
               {pinnedSessions.length > 0 ? (
                 <section>
                   <p className="flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/[0.08] px-2.5 py-1 text-[12px] font-semibold text-primary">
@@ -712,19 +712,13 @@ export const Sidebar = (props: SidebarProps) => {
             </div>
           </div>
 
-          <div className="border-t border-border/45 px-5 pb-5 pt-4">
-            <div className="mb-3 rounded-[24px] border border-border/55 bg-card/68 p-4 shadow-[0_16px_32px_rgba(79,60,35,0.05)]">
-              <p className="text-[15px] font-semibold tracking-[-0.02em] text-foreground">Ready to create</p>
-              <p className="mt-1 text-[12px] leading-5 text-muted-foreground">
-                Keep the stage clean and drop into Agent mode when the task needs deeper execution.
-              </p>
-            </div>
+          <div className="border-t border-border/35 px-6 pb-7 pt-5">
             <Button
               variant="ghost"
-              className="h-11 w-full justify-start rounded-[18px] text-sm text-foreground/82 hover:bg-card/80"
+              className="h-11 w-full justify-start rounded-[16px] text-sm text-foreground/78 hover:bg-white/70"
               onClick={() => props.onEnterSettings("provider")}
             >
-              <Settings className="mr-1 h-4 w-4" />
+              <Settings className="mr-3 h-4 w-4" />
               Settings
             </Button>
           </div>

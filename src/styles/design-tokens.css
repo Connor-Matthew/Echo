@@ -1,84 +1,87 @@
 :root {
-  --echo-shell-bg-start: 34 24% 94%;
-  --echo-shell-bg-mid: 34 22% 95%;
-  --echo-shell-bg-end: 34 20% 96%;
+  --echo-shell-bg-start: 222 17% 13%;
+  --echo-shell-bg-mid: 222 18% 10%;
+  --echo-shell-bg-end: 222 20% 7%;
 
   --echo-shell-frame-border-alpha: 0.58;
-  --echo-shell-frame-bg-alpha: 0.74;
-  --echo-shell-radius: 36px;
-  --echo-shell-panel-radius: 28px;
-  --echo-shell-shadow-window: 0 22px 80px hsl(28 28% 40% / 0.08);
+  --echo-shell-frame-bg-alpha: 0.7;
+  --echo-shell-radius: 28px;
+  --echo-shell-panel-radius: 24px;
+  --echo-shell-shadow-window: 0 34px 90px hsl(222 30% 3% / 0.42);
   --echo-shell-padding-compact: 0rem;
   --echo-shell-padding-regular: 0rem;
-  --echo-shell-column-gap-open: 0rem;
+  --echo-shell-column-gap-open: 1rem;
+  --echo-shell-glass-blur: 28px;
 
-  --echo-panel-border-alpha: 0.64;
-  --echo-panel-bg-alpha: 1;
+  --echo-panel-border-alpha: 0.38;
+  --echo-panel-bg-alpha: 0.68;
 
-  --echo-sidebar-bg-alpha: 1;
-  --echo-nav-active-bg-alpha: 0.54;
-  --echo-nav-hover-bg-alpha: 0.5;
-  --echo-session-hover-bg-alpha: 0.62;
+  --echo-sidebar-bg-alpha: 0.82;
+  --echo-toolbar-bg-alpha: 0.58;
+  --echo-nav-active-bg-alpha: 0.74;
+  --echo-nav-hover-bg-alpha: 0.58;
+  --echo-session-hover-bg-alpha: 0.54;
   --echo-session-active-ring-alpha: 0;
-  --echo-sidebar-hover-bg: 34 18% 92%;
-  --echo-sidebar-hover-text: 24 12% 22%;
+  --echo-sidebar-hover-bg: 220 15% 20%;
+  --echo-sidebar-hover-text: 220 18% 92%;
 
   --echo-mode-switch-border-alpha: 0.5;
-  --echo-mode-switch-bg-alpha: 0.8;
-  --echo-mode-switch-thumb-bg-alpha: 1;
-  --echo-mode-switch-thumb-shadow: 0 10px 22px hsl(28 18% 38% / 0.08);
+  --echo-mode-switch-bg-alpha: 0.42;
+  --echo-mode-switch-thumb-bg-alpha: 0.8;
+  --echo-mode-switch-thumb-shadow: 0 12px 28px hsl(222 20% 2% / 0.36);
 
-  --echo-card-border-alpha: 0.68;
-  --echo-card-shadow: 0 18px 38px hsl(28 24% 40% / 0.06);
+  --echo-card-border-alpha: 0.42;
+  --echo-card-shadow: 0 18px 48px hsl(222 24% 4% / 0.28);
   --echo-control-radius: 1.1rem;
 
-  --echo-floating-toggle-shadow: 0 10px 24px hsl(28 24% 35% / 0.08);
+  --echo-floating-toggle-shadow: 0 14px 34px hsl(222 24% 4% / 0.34);
 
-  --echo-chat-stage-max-width: 780px;
-  --echo-chat-assistant-max-width: 860px;
-  --echo-chat-user-surface-border-alpha: 0.55;
-  --echo-chat-user-surface-bg-alpha: 1;
-  --echo-chat-assistant-surface-bg-alpha: 0.96;
-  --echo-chat-markdown-line-height: 1.72;
-  --echo-chat-inline-code-bg-alpha: 0.9;
-  --echo-chat-code-header-bg-alpha: 0.9;
-  --echo-chat-code-border-alpha: 0.75;
+  --echo-chat-stage-max-width: 900px;
+  --echo-chat-assistant-max-width: 980px;
+  --echo-chat-user-surface-border-alpha: 0.3;
+  --echo-chat-user-surface-bg-alpha: 0.72;
+  --echo-chat-assistant-surface-bg-alpha: 0.78;
+  --echo-chat-markdown-line-height: 1.76;
+  --echo-chat-inline-code-bg-alpha: 0.42;
+  --echo-chat-code-header-bg-alpha: 0.34;
+  --echo-chat-code-border-alpha: 0.4;
 
   --echo-motion-fast: 160ms;
   --echo-motion-medium: 240ms;
   --echo-motion-slow: 320ms;
   --echo-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
 
-  --echo-conversation-max-width: 1320px;
-  --echo-topbar-max-width: 1180px;
+  --echo-conversation-max-width: 1420px;
+  --echo-topbar-max-width: 1240px;
 }
 
 .dark {
-  --echo-shell-bg-start: 28 10% 14%;
-  --echo-shell-bg-mid: 28 10% 13%;
-  --echo-shell-bg-end: 28 10% 12%;
+  --echo-shell-bg-start: 222 16% 12%;
+  --echo-shell-bg-mid: 222 18% 9%;
+  --echo-shell-bg-end: 222 20% 6%;
 
-  --echo-shell-frame-bg-alpha: 0.78;
-  --echo-panel-bg-alpha: 1;
+  --echo-shell-frame-bg-alpha: 0.76;
+  --echo-panel-bg-alpha: 0.72;
 
-  --echo-sidebar-bg-alpha: 1;
-  --echo-nav-active-bg-alpha: 0.48;
-  --echo-nav-hover-bg-alpha: 0.34;
-  --echo-session-hover-bg-alpha: 0.4;
-  --echo-sidebar-hover-bg: 28 10% 20%;
-  --echo-sidebar-hover-text: 34 20% 92%;
+  --echo-sidebar-bg-alpha: 0.86;
+  --echo-toolbar-bg-alpha: 0.62;
+  --echo-nav-active-bg-alpha: 0.68;
+  --echo-nav-hover-bg-alpha: 0.44;
+  --echo-session-hover-bg-alpha: 0.46;
+  --echo-sidebar-hover-bg: 220 14% 18%;
+  --echo-sidebar-hover-text: 220 16% 94%;
 
-  --echo-mode-switch-bg-alpha: 0.46;
-  --echo-mode-switch-thumb-bg-alpha: 0.82;
-  --echo-mode-switch-thumb-shadow: 0 12px 28px hsl(28 12% 2% / 0.24);
+  --echo-mode-switch-bg-alpha: 0.4;
+  --echo-mode-switch-thumb-bg-alpha: 0.76;
+  --echo-mode-switch-thumb-shadow: 0 12px 30px hsl(222 20% 2% / 0.42);
 
-  --echo-card-border-alpha: 0.6;
-  --echo-card-shadow: 0 18px 38px hsl(28 18% 2% / 0.26);
+  --echo-card-border-alpha: 0.4;
+  --echo-card-shadow: 0 18px 42px hsl(222 22% 2% / 0.34);
 
-  --echo-floating-toggle-shadow: 0 10px 24px hsl(28 18% 2% / 0.18);
+  --echo-floating-toggle-shadow: 0 12px 28px hsl(222 24% 2% / 0.32);
 
-  --echo-chat-assistant-surface-bg-alpha: 0.84;
-  --echo-chat-inline-code-bg-alpha: 0.52;
-  --echo-chat-code-header-bg-alpha: 0.4;
-  --echo-chat-code-border-alpha: 0.65;
+  --echo-chat-assistant-surface-bg-alpha: 0.74;
+  --echo-chat-inline-code-bg-alpha: 0.38;
+  --echo-chat-code-header-bg-alpha: 0.32;
+  --echo-chat-code-border-alpha: 0.36;
 }

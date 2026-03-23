@@ -116,16 +116,16 @@ export const getComposerToolMenuItemLabels = ({
 
 export const getComposerToolMenuClassNames = () => ({
   trigger:
-    "h-10 w-10 rounded-full border border-border/55 bg-background/82 text-foreground/78 hover:bg-accent/40 hover:text-foreground",
+    "h-10 w-10 rounded-full border border-white/10 bg-[rgba(18,24,38,0.82)] text-foreground/78 shadow-[0_16px_36px_rgba(3,8,18,0.28)] hover:bg-[rgba(24,31,48,0.92)] hover:text-foreground",
   surface:
-    "absolute bottom-full left-0 z-[80] mb-3 w-[340px] rounded-[24px] border border-border/60 bg-card/92 p-3 shadow-[0_28px_80px_rgba(42,37,30,0.14)] backdrop-blur-2xl",
+    "absolute bottom-full left-0 z-[80] mb-3 w-[340px] rounded-[26px] border border-white/10 bg-[rgba(17,22,34,0.94)] p-3 shadow-[0_32px_90px_rgba(3,8,18,0.42)] backdrop-blur-2xl",
   section: "flex flex-col gap-0",
   item:
-    "flex h-[48px] w-full items-center gap-2.5 rounded-[16px] px-3.5 text-left text-[14px] font-medium tracking-[-0.01em] text-foreground transition-colors hover:bg-accent/30",
-  divider: "my-1.5 h-px bg-border/45",
-  nestedPanel: "mb-1 ml-3 mr-1 mt-1 rounded-[18px] border border-border/50 bg-background/92 p-1.5",
+    "flex h-[48px] w-full items-center gap-2.5 rounded-[16px] px-3.5 text-left text-[14px] font-medium tracking-[-0.01em] text-foreground transition-colors hover:bg-white/[0.06]",
+  divider: "my-1.5 h-px bg-white/10",
+  nestedPanel: "mb-1 ml-3 mr-1 mt-1 rounded-[20px] border border-white/10 bg-white/[0.04] p-1.5",
   nestedItem:
-    "flex w-full items-center gap-2 rounded-[12px] px-2.5 py-2 text-left text-[12px] font-medium text-foreground/92 transition-colors hover:bg-accent/35",
+    "flex w-full items-center gap-2 rounded-[12px] px-2.5 py-2 text-left text-[12px] font-medium text-foreground/92 transition-colors hover:bg-white/[0.06]",
   contextChip:
     "rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors",
   trailingIcon:
@@ -151,7 +151,7 @@ export const getComposerContainerClassName = ({
   cn(
     "flex w-full flex-col border transition-[border-color,box-shadow,background-color] duration-200",
     minimalControls
-      ? "rounded-[38px] border-border/50 bg-card/78 px-6 py-4 shadow-[0_26px_60px_rgba(42,37,30,0.12)] backdrop-blur-2xl supports-[backdrop-filter]:bg-card/68 sm:px-7"
+      ? "min-h-[128px] rounded-[30px] border-white/10 bg-[rgba(12,18,30,0.78)] px-6 py-4 shadow-[0_28px_80px_rgba(3,8,18,0.34)] backdrop-blur-2xl supports-[backdrop-filter]:bg-[rgba(12,18,30,0.72)] sm:px-7"
       : "rounded-[26px] border-border/70 bg-card px-5 py-4 shadow-[0_14px_34px_rgba(42,37,30,0.08)] sm:px-7 sm:py-5"
   );
 
@@ -163,26 +163,26 @@ export const getComposerTextareaClassName = ({
   cn(
     "resize-none border-0 bg-transparent px-0 py-0 text-[16px] text-foreground shadow-none placeholder:text-muted-foreground/68 focus-visible:ring-0",
     minimalControls
-      ? "h-[40px] min-h-[40px] text-[17px] leading-[1.75]"
+      ? "h-[60px] min-h-[60px] text-[16px] leading-[1.7] placeholder:text-[16px]"
       : "h-[44px] min-h-[44px] leading-[1.85]"
   );
 
 export const getComposerMinimalControlClassNames = () => ({
   trigger:
-    "inline-flex h-10 w-10 items-center justify-center rounded-full border border-transparent bg-transparent p-0 text-foreground/72 transition-colors hover:bg-background/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-0 disabled:pointer-events-none disabled:opacity-45",
-  modelWrap: "relative shrink-0 pr-4",
+    "inline-flex h-10 w-10 items-center justify-center rounded-full border border-transparent bg-transparent p-0 text-foreground/68 transition-colors hover:bg-white/[0.08] hover:text-foreground focus-visible:outline-none focus-visible:ring-0 disabled:pointer-events-none disabled:opacity-45",
+  modelWrap: "relative shrink-0 rounded-full border border-white/10 bg-white/[0.05] px-4 pr-9 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]",
   modelSelect:
-    "h-auto w-auto max-w-[220px] appearance-none border-0 bg-transparent px-0 pr-4 text-[14px] font-medium text-foreground/82 focus-visible:outline-none focus-visible:ring-0 disabled:opacity-70",
+    "h-9 w-auto max-w-[220px] appearance-none rounded-full border-0 bg-transparent px-0 pr-4 text-[13px] font-medium uppercase tracking-[0.08em] text-foreground/76 focus-visible:outline-none focus-visible:ring-0 disabled:opacity-70",
   modelChevron:
-    "pointer-events-none absolute right-0 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/88",
+    "pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/82",
   actionButton:
-    "inline-flex h-12 w-12 items-center justify-center rounded-full border-0 bg-primary text-primary-foreground shadow-[0_14px_28px_hsl(var(--primary)/0.28)] transition-all hover:translate-y-[-1px] hover:bg-primary/92 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:bg-secondary disabled:text-muted-foreground/70 disabled:shadow-none",
+    "inline-flex h-12 w-12 items-center justify-center rounded-full border border-primary/20 bg-primary text-primary-foreground shadow-[0_18px_36px_rgba(44,117,196,0.24)] transition-all hover:translate-y-[-1px] hover:bg-primary/92 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:bg-secondary disabled:text-muted-foreground/70 disabled:shadow-none",
   stopButton:
-    "inline-flex h-12 w-12 items-center justify-center rounded-full border border-border/55 bg-card/88 text-destructive shadow-[0_10px_24px_rgba(42,37,30,0.08)] transition-colors hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-45"
+    "inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-[rgba(18,24,38,0.92)] text-destructive shadow-[0_14px_30px_rgba(3,8,18,0.26)] transition-colors hover:bg-[rgba(22,30,46,0.96)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-45"
 });
 
 const DEFAULT_MIN_TEXTAREA_HEIGHT = 40;
-const MINIMAL_MIN_TEXTAREA_HEIGHT = 38;
+const MINIMAL_MIN_TEXTAREA_HEIGHT = 60;
 const MAX_TEXTAREA_ROWS = 4;
 const CONTEXT_WINDOW_OPTIONS: Array<{ value: ChatContextWindow; label: string }> = [
   { value: 5, label: "5" },
@@ -463,7 +463,7 @@ export const Composer = ({
           placeholder={
             disabled
               ? (disabledPlaceholder ?? "请先完成模型配置")
-              : "给 Echo 发送消息"
+              : "Message Echo..."
           }
         />
 

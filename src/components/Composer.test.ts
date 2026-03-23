@@ -58,51 +58,54 @@ describe("components/Composer tool menu labels", () => {
 });
 
 describe("components/Composer tool menu classes", () => {
-  it("uses a warmer floating sheet style for the plus-button menu", () => {
+  it("uses a dark floating sheet style for the plus-button menu", () => {
     const classNames = getComposerToolMenuClassNames();
 
     assert.match(classNames.trigger, /\bh-10\b/);
     assert.match(classNames.trigger, /\bw-10\b/);
-    assert.match(classNames.trigger, /border-border\/55/);
+    assert.match(classNames.trigger, /border-white\/10/);
     assert.match(classNames.trigger, /rounded-full/);
     assert.match(classNames.surface, /w-\[340px\]/);
-    assert.match(classNames.surface, /rounded-\[24px\]/);
-    assert.match(classNames.surface, /shadow-\[0_28px_80px_rgba\(42,37,30,0\.14\)\]/);
+    assert.match(classNames.surface, /rounded-\[26px\]/);
+    assert.match(classNames.surface, /bg-\[rgba\(17,22,34,0\.94\)\]/);
+    assert.match(classNames.surface, /shadow-\[0_32px_90px_rgba\(3,8,18,0\.42\)\]/);
     assert.match(classNames.item, /h-\[48px\]/);
     assert.match(classNames.item, /text-\[14px\]/);
-    assert.match(classNames.nestedPanel, /rounded-\[18px\]/);
-    assert.match(classNames.divider, /bg-border\/45/);
+    assert.match(classNames.nestedPanel, /rounded-\[20px\]/);
+    assert.match(classNames.divider, /bg-white\/10/);
   });
 });
 
 describe("components/Composer container classes", () => {
-  it("uses a long pill-shaped shell in minimal mode", () => {
+  it("uses a deeper dark-glass shell in minimal mode", () => {
     const className = getComposerContainerClassName({ minimalControls: true });
 
-    assert.match(className, /rounded-\[38px\]/);
-    assert.match(className, /border-border\/50/);
-    assert.match(className, /bg-card\/78/);
-    assert.match(className, /shadow-\[0_26px_60px_rgba\(42,37,30,0\.12\)\]/);
+    assert.match(className, /rounded-\[30px\]/);
+    assert.match(className, /border-white\/10/);
+    assert.match(className, /bg-\[rgba\(12,18,30,0\.78\)\]/);
+    assert.match(className, /min-h-\[128px\]/);
+    assert.match(className, /shadow-\[0_28px_80px_rgba\(3,8,18,0\.34\)\]/);
   });
 
-  it("keeps the outer highlight ring visible even before focus", () => {
+  it("keeps a blurred glass treatment around the landing composer shell", () => {
     const className = getComposerContainerClassName({ minimalControls: true });
     const tokens = className.split(/\s+/);
 
     assert.ok(tokens.includes("backdrop-blur-2xl"));
-    assert.ok(tokens.includes("supports-[backdrop-filter]:bg-card/68"));
+    assert.ok(tokens.includes("supports-[backdrop-filter]:bg-[rgba(12,18,30,0.72)]"));
   });
 });
 
 describe("components/Composer minimal controls", () => {
-  it("uses softer utility controls while keeping a prominent round send button", () => {
+  it("uses darker utility controls while keeping a restrained send button", () => {
     const classNames = getComposerMinimalControlClassNames();
 
     assert.ok(classNames.trigger.includes("rounded-full"));
     assert.ok(classNames.trigger.includes("h-10"));
     assert.ok(classNames.trigger.includes("w-10"));
-    assert.ok(!classNames.modelSelect.includes("rounded-full"));
-    assert.ok(classNames.modelSelect.includes("border-0"));
+    assert.ok(classNames.modelWrap.includes("rounded-full"));
+    assert.ok(classNames.modelWrap.includes("border-white/10"));
+    assert.ok(classNames.modelSelect.includes("rounded-full"));
     assert.ok(classNames.actionButton.includes("h-12"));
     assert.ok(classNames.actionButton.includes("w-12"));
     assert.ok(classNames.actionButton.includes("rounded-full"));
@@ -111,5 +114,6 @@ describe("components/Composer minimal controls", () => {
     assert.ok(classNames.stopButton.includes("h-12"));
     assert.ok(classNames.stopButton.includes("w-12"));
     assert.ok(classNames.stopButton.includes("rounded-full"));
+    assert.ok(classNames.stopButton.includes("bg-[rgba(18,24,38,0.92)]"));
   });
 });

@@ -23,7 +23,7 @@ const createAgentSession = (overrides: Partial<AgentSessionMeta> = {}): AgentSes
 });
 
 describe("components/Sidebar", () => {
-  it("renders the approved high-fidelity chat sidebar shell", () => {
+  it("renders the fixed-nav dark-glass chat sidebar shell", () => {
     const markup = renderToStaticMarkup(
       <Sidebar
         mode="chat"
@@ -39,19 +39,19 @@ describe("components/Sidebar", () => {
         onExportSessionMarkdown={() => {}}
         onEnterAgent={() => {}}
         onEnterSettings={() => {}}
+        onOpenSearch={() => {}}
         onSaveUserSkills={() => {}}
       />
     );
 
-    assert.match(markup, /px-5 pb-5 pt-4/);
-    assert.match(markup, /flex min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-4/);
-    assert.match(markup, /mb-5 flex items-center justify-between/);
+    assert.match(markup, /px-5 pb-4 pt-5/);
+    assert.match(markup, /flex min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-2/);
+    assert.match(markup, /mb-6 flex items-start justify-between/);
     assert.match(markup, /echo-scrollbar-minimal/);
     assert.match(markup, /min-h-0 [^"]*overflow-auto/);
-    assert.match(markup, /sidebar-nav-button h-11 w-full justify-start rounded-\[18px\] px-3 text-\[15px\]/);
   });
 
-  it("gives the chat sidebar a branded header, a New Chat button, and top-level nav entries", () => {
+  it("gives the chat sidebar a search affordance, fixed nav block, and recent chat index", () => {
     const markup = renderToStaticMarkup(
       <Sidebar
         mode="chat"
@@ -67,19 +67,21 @@ describe("components/Sidebar", () => {
         onExportSessionMarkdown={() => {}}
         onEnterAgent={() => {}}
         onEnterSettings={() => {}}
+        onOpenSearch={() => {}}
         onSaveUserSkills={() => {}}
       />
     );
 
-    assert.match(markup, /Echo/);
-    assert.match(markup, /Creative partner for deep work/);
-    assert.match(markup, /h-12 w-full justify-start rounded-\[20px\]/);
-    assert.match(markup, /bg-foreground\/\[0\.045\]/);
-    assert.match(markup, /px-3\.5 text-foreground shadow-none/);
+    assert.match(markup, />Echo</);
+    assert.match(markup, />Desktop Chat</);
+    assert.match(markup, />Search</);
     assert.match(markup, />New Chat</);
-    assert.match(markup, />History</);
-    assert.match(markup, />Prompts</);
-    assert.match(markup, />Library</);
+    assert.match(markup, />Chat</);
+    assert.match(markup, />Agent</);
+    assert.match(markup, />Skills</);
+    assert.match(markup, />Recent Chats</);
+    assert.doesNotMatch(markup, /The Atelier/);
+    assert.doesNotMatch(markup, />Archive</);
   });
 
   it("aligns the agent session scrollbar to the sidebar edge too", () => {
@@ -118,6 +120,7 @@ describe("components/Sidebar", () => {
         onExportSessionMarkdown={() => {}}
         onEnterAgent={() => {}}
         onEnterSettings={() => {}}
+        onOpenSearch={() => {}}
         onSaveUserSkills={() => {}}
       />
     );
@@ -141,6 +144,7 @@ describe("components/Sidebar", () => {
         onExportSessionMarkdown={() => {}}
         onEnterAgent={() => {}}
         onEnterSettings={() => {}}
+        onOpenSearch={() => {}}
         onSaveUserSkills={() => {}}
       />
     );
@@ -151,7 +155,7 @@ describe("components/Sidebar", () => {
     assert.match(markup, /session-list-item-meta-active/);
   });
 
-  it("keeps a dedicated settings entry in the bottom dock", () => {
+  it("keeps only settings in the bottom dock", () => {
     const markup = renderToStaticMarkup(
       <Sidebar
         mode="chat"
@@ -167,11 +171,14 @@ describe("components/Sidebar", () => {
         onExportSessionMarkdown={() => {}}
         onEnterAgent={() => {}}
         onEnterSettings={() => {}}
+        onOpenSearch={() => {}}
         onSaveUserSkills={() => {}}
       />
     );
 
     assert.match(markup, />Settings</);
-    assert.match(markup, /Ready to create/);
+    assert.doesNotMatch(markup, />Help</);
+    assert.doesNotMatch(markup, />Local Workspace</);
+    assert.doesNotMatch(markup, />Personal AI desk</);
   });
 });
