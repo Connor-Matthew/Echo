@@ -52,13 +52,13 @@ export const getCenteredLandingBodyClassName = () =>
   "mx-auto mt-4 max-w-[620px] text-center text-[15px] leading-[1.75] text-muted-foreground/80 sm:text-[16px]";
 
 export const getChatHomeTopNavClassName = () =>
-  "chat-reading-stage mx-auto grid w-full grid-cols-[auto_1fr_auto] items-center gap-4 px-4 pb-5 pt-4 sm:px-5";
+  "chat-reading-stage mx-auto grid w-full grid-cols-[auto_1fr_auto] items-center gap-4 px-5 pb-4 pt-4 sm:px-6";
 
 export const getChatHomeNavBrandClassName = () =>
-  "text-[15px] font-semibold uppercase tracking-[0.2em] text-foreground/86";
+  "text-[14px] font-medium tracking-[-0.01em] text-foreground/88";
 
 export const getChatHomeNavActionClassName = () =>
-  "text-[12px] font-medium uppercase tracking-[0.18em] text-foreground/52 transition-colors hover:text-foreground/84";
+  "rounded-full px-3 py-1.5 text-[11px] font-medium tracking-[0.08em] text-foreground/58 transition-colors hover:bg-white/[0.04] hover:text-foreground/86";
 
 const ChatHomeTopNav = ({
   onOpenSearch,
@@ -69,14 +69,8 @@ const ChatHomeTopNav = ({
 }) => (
   <div className="chat-home-toolbar-shell">
     <div className={getChatHomeTopNavClassName()}>
-      <div className="min-w-0">
-        <p className={getChatHomeNavBrandClassName()}>{CHAT_HOME_CENTER_TITLE_TEXT}</p>
-        <p className="mt-1 text-[10px] uppercase tracking-[0.24em] text-muted-foreground/50">
-          Chat Workspace
-        </p>
-      </div>
-      <div aria-hidden className="hidden h-px w-full sm:block" />
-      <div className="col-start-3 flex items-center justify-self-end gap-3 sm:gap-4">
+      <div aria-hidden className="hidden h-px w-full bg-white/[0.04] sm:block" />
+      <div className="col-start-3 flex items-center justify-self-end gap-2 sm:gap-3">
         <button
           type="button"
           className={getChatHomeNavActionClassName()}
@@ -471,12 +465,6 @@ export const AppView = () => {
 
               {showCenteredChatLanding ? (
                 <section className="chat-home-stage flex h-full w-full min-h-0 flex-col overflow-auto px-5 pb-6 pt-4 sm:px-7 sm:pb-8 sm:pt-5">
-                  <ChatHomeTopNav
-                    onOpenSearch={openChatSearch}
-                    onExportArchive={() => {
-                      void exportSessions();
-                    }}
-                  />
                   <div className={getCenteredLandingContentClassName()}>
                     <div className="w-full max-w-[920px]">
                       <div className="mx-auto max-w-[720px]">
@@ -521,21 +509,6 @@ export const AppView = () => {
                 </section>
               ) : (
                 <div className="chat-home-stage flex h-full min-h-0 flex-col px-5 pb-5 pt-4 sm:px-7 sm:pb-7 sm:pt-5">
-                  <ChatHomeTopNav
-                    onOpenSearch={openChatSearch}
-                    onExportArchive={() => {
-                      void exportSessions();
-                    }}
-                  />
-                  <div className="chat-reading-stage chat-reading-stage-meta mx-auto mb-5 flex w-full items-center justify-between gap-4 px-3 text-[11px] uppercase tracking-[0.24em] text-muted-foreground/68 sm:px-4">
-                    <span className={getChatHeaderClassNameForFloatingToggle(
-                      showFloatingSidebarToggle,
-                      isMacPlatform
-                    )}>
-                      {activeSession?.title ?? "New Chat"}
-                    </span>
-                    <span>Conversation</span>
-                  </div>
                   <div className="flex min-h-0 flex-1 flex-col bg-transparent">
                     <div className="min-h-0 flex-1">
                       <ChatView

@@ -457,9 +457,9 @@ export const Sidebar = (props: SidebarProps) => {
           <div className="px-5 pb-4 pt-5">
             <div className="mb-6 flex items-start justify-between">
               <div className="min-w-0">
-                <p className="text-[1.05rem] font-semibold tracking-[-0.03em] text-foreground">Echo</p>
-                <p className="mt-1 text-[10px] uppercase tracking-[0.22em] text-muted-foreground/64">
-                  Desktop Chat
+                <p className="text-[1.02rem] font-medium tracking-[-0.02em] text-foreground/92">Echo</p>
+                <p className="mt-1 text-[11px] tracking-[0.04em] text-muted-foreground/52">
+                  Desktop chat
                 </p>
               </div>
               {props.onToggleSidebar ? (
@@ -467,7 +467,7 @@ export const Sidebar = (props: SidebarProps) => {
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 rounded-full text-muted-foreground hover:bg-white/70 hover:text-foreground"
+                  className="h-8 w-8 rounded-full border border-white/[0.06] bg-white/[0.02] text-muted-foreground hover:bg-white/[0.05] hover:text-foreground"
                   onClick={props.onToggleSidebar}
                   aria-label="收缩侧边栏"
                   title="收缩侧边栏"
@@ -476,27 +476,29 @@ export const Sidebar = (props: SidebarProps) => {
                 </Button>
               ) : null}
             </div>
-            <Button
-              type="button"
-              variant="ghost"
-              className="mb-3 h-11 w-full justify-start rounded-[18px] border border-white/10 bg-white/[0.04] px-3.5 text-[14px] text-foreground/78 shadow-none hover:bg-white/[0.08] hover:text-foreground"
-              onClick={() => props.onOpenSearch?.()}
-            >
-              <Search className="mr-3 h-4 w-4" />
-              Search
-            </Button>
-            <Button
-              className="mb-4 h-11 w-full justify-start rounded-[18px] border border-white/12 bg-white/[0.09] px-4 text-[14px] text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] hover:bg-white/[0.14]"
-              onClick={props.onCreateSession}
-            >
-              <Plus className="mr-3 h-4 w-4" />
-              New Chat
-            </Button>
-            <div className="space-y-1 rounded-[20px] border border-white/8 bg-black/10 p-2">
+            <div className="space-y-2">
               <Button
                 type="button"
                 variant="ghost"
-                className="sidebar-nav-button h-11 w-full justify-start rounded-[16px] px-3 text-[14px] text-foreground/82 hover:bg-card/75"
+                className="h-11 w-full justify-start rounded-[18px] border border-white/[0.07] bg-white/[0.025] px-3.5 text-[14px] font-medium text-foreground/72 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] hover:bg-white/[0.05] hover:text-foreground"
+                onClick={() => props.onOpenSearch?.()}
+              >
+                <Search className="mr-3 h-4 w-4" />
+                Search
+              </Button>
+              <Button
+                className="h-11 w-full justify-start rounded-[18px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(255,255,255,0.07),rgba(255,255,255,0.03))] px-4 text-[14px] font-medium text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] hover:bg-[linear-gradient(180deg,rgba(255,255,255,0.1),rgba(255,255,255,0.05))]"
+                onClick={props.onCreateSession}
+              >
+                <Plus className="mr-3 h-4 w-4" />
+                New Chat
+              </Button>
+            </div>
+            <div className="mt-4 space-y-1 rounded-[22px] border border-white/[0.06] bg-black/10 p-2 backdrop-blur-xl">
+              <Button
+                type="button"
+                variant="ghost"
+                className="sidebar-nav-button h-11 w-full justify-start rounded-[16px] px-3 text-[14px] font-medium text-foreground/82"
                 data-active="true"
                 onClick={() => props.onSelectSession(props.activeSessionId)}
               >
@@ -506,7 +508,7 @@ export const Sidebar = (props: SidebarProps) => {
               <Button
                 type="button"
                 variant="ghost"
-                className="sidebar-nav-button h-11 w-full justify-start rounded-[16px] px-3 text-[14px] text-foreground/82 hover:bg-card/75"
+                className="sidebar-nav-button h-11 w-full justify-start rounded-[16px] px-3 text-[14px] font-medium text-foreground/82"
                 data-active="false"
                 onClick={props.onEnterAgent}
               >
@@ -516,7 +518,7 @@ export const Sidebar = (props: SidebarProps) => {
               <Button
                 type="button"
                 variant="ghost"
-                className="sidebar-nav-button h-11 w-full justify-start rounded-[16px] px-3 text-[14px] text-foreground/82 hover:bg-card/75"
+                className="sidebar-nav-button h-11 w-full justify-start rounded-[16px] px-3 text-[14px] font-medium text-foreground/82"
                 data-active="false"
                 onClick={() => props.onEnterSettings("skills")}
               >
@@ -526,23 +528,23 @@ export const Sidebar = (props: SidebarProps) => {
             </div>
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-2">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-3">
             <div className="mb-4 flex items-center justify-between">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/66">
+              <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground/58">
                 Recent Chats
               </p>
-              <span className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground/52">
+              <span className="rounded-full border border-white/[0.05] bg-white/[0.02] px-2.5 py-1 text-[10px] tracking-[0.12em] text-muted-foreground/46">
                 {sortedSessions.length} items
               </span>
             </div>
             <div className="echo-scrollbar-minimal min-h-0 space-y-5 overflow-auto pr-1">
               {pinnedSessions.length > 0 ? (
                 <section>
-                  <p className="flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/[0.08] px-2.5 py-1 text-[12px] font-semibold text-primary">
+                  <p className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.04] px-2.5 py-1 text-[11px] font-medium tracking-[0.08em] text-foreground/76">
                     <Pin className="h-3.5 w-3.5 fill-current" />
-                    置顶
+                    Pinned
                   </p>
-                  <div className="mt-2 space-y-1">
+                  <div className="mt-2 space-y-1.5">
                     {pinnedSessions.map((session) => {
                       const active = session.id === props.activeSessionId;
                       const editing = session.id === editingChatSessionId;
@@ -627,7 +629,7 @@ export const Sidebar = (props: SidebarProps) => {
               {groupedSessions.map((group) => (
                 <section key={group.label}>
                   <p className="px-1 text-[12px] font-semibold text-muted-foreground/85">{group.label}</p>
-                  <div className="mt-1.5 space-y-1">
+                  <div className="mt-2 space-y-1.5">
                     {group.sessions.map((session) => {
                       const active = session.id === props.activeSessionId;
                       const editing = session.id === editingChatSessionId;
@@ -712,10 +714,10 @@ export const Sidebar = (props: SidebarProps) => {
             </div>
           </div>
 
-          <div className="border-t border-border/35 px-6 pb-7 pt-5">
+          <div className="border-t border-white/[0.06] px-5 pb-6 pt-4">
             <Button
               variant="ghost"
-              className="h-11 w-full justify-start rounded-[16px] text-sm text-foreground/78 hover:bg-white/70"
+              className="h-11 w-full justify-start rounded-[16px] border border-white/[0.06] bg-white/[0.02] text-sm font-medium text-foreground/76 hover:bg-white/[0.05]"
               onClick={() => props.onEnterSettings("provider")}
             >
               <Settings className="mr-3 h-4 w-4" />
@@ -817,9 +819,9 @@ export const Sidebar = (props: SidebarProps) => {
           <div className="px-5 pb-5 pt-4">
             <div className="-mt-[8px] mb-5 flex items-center justify-between">
               <div>
-                <p className="text-[1.02rem] font-semibold tracking-[-0.02em] text-foreground">Agent</p>
-                <p className="mt-0.5 text-[11px] tracking-[0.04em] text-muted-foreground/80">
-                  Task execution workspace
+                <p className="text-[1rem] font-medium tracking-[-0.01em] text-foreground/92">Agent</p>
+                <p className="mt-0.5 text-[11px] tracking-[0.03em] text-muted-foreground/52">
+                  Task workspace
                 </p>
               </div>
               {props.onToggleSidebar ? (
@@ -827,7 +829,7 @@ export const Sidebar = (props: SidebarProps) => {
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 rounded-full text-muted-foreground hover:bg-card hover:text-foreground"
+                  className="h-8 w-8 rounded-full border border-white/[0.06] bg-white/[0.02] text-muted-foreground hover:bg-white/[0.05] hover:text-foreground"
                   onClick={props.onToggleSidebar}
                   aria-label="收缩侧边栏"
                   title="收缩侧边栏"
@@ -845,11 +847,11 @@ export const Sidebar = (props: SidebarProps) => {
 
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-4">
             <div className="mb-5 flex items-center justify-between">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/72">Agent 会话</p>
+              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground/58">Agent 会话</p>
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 rounded-full hover:bg-card"
+                className="h-8 w-8 rounded-full border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.05]"
                 onClick={props.onCreateSession}
                 aria-label="新增 Agent 会话"
                 title="新增 Agent 会话"
@@ -857,7 +859,7 @@ export const Sidebar = (props: SidebarProps) => {
                 <Plus className="h-3.5 w-3.5" />
               </Button>
             </div>
-            <div className="echo-scrollbar-minimal min-h-0 space-y-1 overflow-auto">
+            <div className="echo-scrollbar-minimal min-h-0 space-y-1.5 overflow-auto pr-1">
               {props.sessions.map((session) => {
                 const active = session.id === props.activeSessionId;
                 const editing = session.id === editingAgentSessionId;
@@ -937,13 +939,13 @@ export const Sidebar = (props: SidebarProps) => {
             </div>
           </div>
 
-          <div className="border-t border-border/55 px-4 py-3">
+          <div className="border-t border-white/[0.06] px-5 py-4">
             <Button
               variant="ghost"
-              className="h-10 w-full justify-start rounded-full text-sm text-foreground/78 hover:bg-card/80"
+              className="h-11 w-full justify-start rounded-[16px] border border-white/[0.06] bg-white/[0.02] text-sm font-medium text-foreground/76 hover:bg-white/[0.05]"
               onClick={() => props.onEnterSettings("provider")}
             >
-              <Settings className="mr-1 h-4 w-4" />
+              <Settings className="mr-3 h-4 w-4" />
               设置
             </Button>
           </div>

@@ -125,11 +125,11 @@ describe("features/app/ChatComposerPanel", () => {
     const footerClassName = getComposerFooterClassName({ minimalControls: true });
     const textareaClassName = getComposerTextareaClassName({ minimalControls: true });
 
-    assert.ok(containerClassName.includes("rounded-[30px]"));
-    assert.ok(containerClassName.includes("min-h-[128px]"));
+    assert.ok(containerClassName.includes("rounded-[34px]"));
+    assert.ok(containerClassName.includes("min-h-[124px]"));
     assert.ok(!containerClassName.includes("rounded-[24px]"));
     assert.ok(footerClassName.includes("mt-3"));
-    assert.ok(textareaClassName.includes("h-[60px]"));
-    assert.ok(textareaClassName.includes("min-h-[60px]"));
+    assert.ok(textareaClassName.includes("h-[56px]"));
+    assert.ok(textareaClassName.includes("min-h-[56px]"));
   });
 });

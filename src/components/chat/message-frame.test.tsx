@@ -34,8 +34,11 @@ describe("components/chat/message-frame", () => {
 
     assert.match(className, /\bchat-message-surface-user\b/);
     assert.match(className, /rounded-\[28px\]/);
-    assert.match(className, /\bborder-white\/10\b/);
-    assert.match(className, /bg-\[rgba\(18,24,38,0\.72\)\]/);
+    assert.match(className, /\bborder-slate-200\/90\b/);
+    assert.match(
+      className,
+      /bg-\[linear-gradient\(180deg,rgba\(255,255,255,0\.94\),rgba\(241,245,249,0\.92\)\)\]/
+    );
     assert.match(className, /\bpx-5\b/);
     assert.match(className, /\bpy-3\.5\b/);
     assert.match(className, /\bsm:px-6\b/);
@@ -43,13 +46,16 @@ describe("components/chat/message-frame", () => {
     assert.doesNotMatch(className, /(?:^|\s)py-2(?:\s|$)/);
   });
 
-  it("renders assistant responses as a darker glass response card", () => {
+  it("renders assistant responses as a soft light-gray card", () => {
     const className = getMessageSurfaceClassName(false);
 
     assert.match(className, /\bchat-message-surface-assistant\b/);
     assert.match(className, /rounded-\[32px\]/);
-    assert.match(className, /\bborder-white\/10\b/);
-    assert.match(className, /bg-\[rgba\(28,35,49,0\.82\)\]/);
+    assert.match(className, /\bborder-slate-200\/90\b/);
+    assert.match(
+      className,
+      /bg-\[linear-gradient\(180deg,rgba\(255,255,255,0\.94\),rgba\(241,245,249,0\.92\)\)\]/
+    );
     assert.match(className, /\bpx-7\b/);
     assert.match(className, /\bpy-6\b/);
     assert.match(className, /\bsm:px-9\b/);

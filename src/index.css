@@ -30,23 +30,23 @@
 
 @layer base {
   :root {
-    --background: 222 24% 9%;
-    --foreground: 220 20% 92%;
-    --card: 222 20% 14%;
-    --card-foreground: 220 20% 92%;
-    --primary: 206 72% 64%;
-    --primary-foreground: 222 28% 10%;
-    --secondary: 222 18% 18%;
-    --secondary-foreground: 220 18% 88%;
-    --muted: 222 16% 16%;
-    --muted-foreground: 220 10% 66%;
-    --accent: 222 16% 20%;
-    --accent-foreground: 220 18% 92%;
-    --destructive: 0 60% 45%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 220 12% 28%;
-    --input: 220 12% 28%;
-    --ring: 206 68% 62%;
+    --background: 220 20% 96%;
+    --foreground: 220 16% 18%;
+    --card: 0 0% 99%;
+    --card-foreground: 220 16% 18%;
+    --primary: 220 10% 46%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 16% 92%;
+    --secondary-foreground: 220 16% 24%;
+    --muted: 220 12% 93%;
+    --muted-foreground: 220 10% 56%;
+    --accent: 220 14% 90%;
+    --accent-foreground: 220 16% 24%;
+    --destructive: 0 68% 54%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 12% 84%;
+    --input: 220 12% 84%;
+    --ring: 220 10% 56%;
     --radius: 12px;
   }
 
@@ -155,9 +155,8 @@
 
   .app-shell {
     background:
-      radial-gradient(circle at 14% 16%, hsl(208 70% 60% / 0.14), transparent 24%),
-      radial-gradient(circle at 82% 8%, hsl(222 56% 38% / 0.24), transparent 28%),
-      radial-gradient(circle at 50% 120%, hsl(214 44% 22% / 0.32), transparent 42%),
+      radial-gradient(circle at 18% 14%, hsl(220 24% 99% / 0.88), transparent 24%),
+      radial-gradient(circle at 86% 10%, hsl(220 16% 90% / 0.52), transparent 26%),
       linear-gradient(180deg, hsl(var(--echo-shell-bg-start)), hsl(var(--echo-shell-bg-mid)) 52%, hsl(var(--echo-shell-bg-end)));
   }
 
@@ -166,11 +165,11 @@
     border-radius: var(--echo-shell-radius);
     border: 1px solid hsl(var(--border) / var(--echo-shell-frame-border-alpha));
     background:
-      linear-gradient(180deg, hsl(222 20% 13% / var(--echo-shell-frame-bg-alpha)), hsl(222 22% 10% / 0.82));
+      linear-gradient(180deg, hsl(0 0% 100% / var(--echo-shell-frame-bg-alpha)), hsl(220 20% 97% / 0.92));
     padding: var(--echo-shell-padding-compact);
     box-shadow:
       var(--echo-shell-shadow-window),
-      inset 0 1px 0 hsl(220 40% 96% / 0.08);
+      inset 0 1px 0 hsl(0 0% 100% / 0.72);
     backdrop-filter: blur(var(--echo-shell-glass-blur));
   }
 
@@ -182,8 +181,8 @@
 
   .sketch-panel {
     border: 1px solid hsl(var(--border) / var(--echo-panel-border-alpha));
-    background: linear-gradient(180deg, hsl(222 18% 16% / var(--echo-panel-bg-alpha)), hsl(222 18% 12% / calc(var(--echo-panel-bg-alpha) + 0.06)));
-    box-shadow: 0 18px 42px hsl(222 28% 4% / 0.24);
+    background: linear-gradient(180deg, hsl(0 0% 100% / var(--echo-panel-bg-alpha)), hsl(220 18% 97% / 0.96));
+    box-shadow: 0 14px 30px hsl(220 16% 78% / 0.12);
   }
 
   .app-shell-panel {
@@ -195,12 +194,12 @@
 
   .app-shell-panel-sidebar {
     box-shadow:
-      inset -1px 0 0 hsl(220 26% 88% / 0.08),
-      1px 0 0 hsl(220 26% 88% / 0.04),
-      24px 0 48px hsl(222 26% 4% / 0.22);
+      inset -1px 0 0 hsl(220 16% 74% / 0.12),
+      1px 0 0 hsl(0 0% 100% / 0.48),
+      18px 0 36px hsl(220 14% 78% / 0.12);
     border-radius: 0;
     background:
-      linear-gradient(180deg, hsl(222 18% 16% / 0.94), hsl(222 18% 12% / 0.9));
+      linear-gradient(180deg, hsl(220 12% 92% / 0.94), hsl(220 10% 90% / 0.9));
   }
 
   .sketch-title {
@@ -321,19 +320,22 @@
 
   .sidebar-surface {
     background:
-      linear-gradient(180deg, hsl(222 18% 18% / var(--echo-sidebar-bg-alpha)), hsl(222 18% 13% / calc(var(--echo-sidebar-bg-alpha) + 0.08)));
-    backdrop-filter: blur(calc(var(--echo-shell-glass-blur) - 2px));
+      linear-gradient(180deg, hsl(220 12% 93% / 0.82), hsl(220 10% 91% / 0.76));
+    backdrop-filter: blur(calc(var(--echo-shell-glass-blur) - 6px));
+    box-shadow:
+      inset -1px 0 0 hsl(220 16% 74% / 0.08),
+      inset 0 1px 0 hsl(0 0% 100% / 0.72);
   }
 
   .mode-switch-track {
     border: 1px solid hsl(var(--border) / var(--echo-mode-switch-border-alpha));
-    background: hsl(var(--card) / var(--echo-mode-switch-bg-alpha));
+    background: hsl(220 12% 94% / var(--echo-mode-switch-bg-alpha));
     padding: 2px;
-    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.28);
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.9);
   }
 
   .mode-switch-thumb {
-    background: hsl(var(--accent) / var(--echo-mode-switch-thumb-bg-alpha));
+    background: linear-gradient(180deg, hsl(0 0% 100% / 0.96), hsl(220 16% 95% / 0.94));
     box-shadow: var(--echo-mode-switch-thumb-shadow);
     transition:
       transform var(--echo-motion-slow) var(--echo-ease-standard),
@@ -342,53 +344,59 @@
   }
 
   .sidebar-nav-button[data-active="true"] {
-    background: hsl(42 18% 88% / 0.68);
-    color: hsl(var(--foreground));
+    background: linear-gradient(180deg, hsl(0 0% 100% / 0.94), hsl(220 16% 95% / 0.92));
+    color: hsl(var(--foreground) / 0.96);
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / 0.94),
+      0 8px 18px hsl(220 16% 74% / 0.14);
   }
 
   .sidebar-nav-button[data-active="false"] {
-    color: hsl(var(--foreground) / 0.8);
+    color: hsl(var(--foreground) / 0.72);
   }
 
   .sidebar-nav-button {
     transition:
       background-color var(--echo-motion-fast) var(--echo-ease-standard),
-      color var(--echo-motion-fast) var(--echo-ease-standard);
+      color var(--echo-motion-fast) var(--echo-ease-standard),
+      box-shadow var(--echo-motion-fast) var(--echo-ease-standard);
   }
 
   .sidebar-nav-button[data-active="false"]:hover {
-    background: hsl(42 24% 91% / 0.78);
-    color: hsl(var(--foreground));
+    background: hsl(220 14% 90% / 0.9);
+    color: hsl(var(--foreground) / 0.92);
   }
 
   .session-list-item[data-active="true"] {
-    background: linear-gradient(180deg, hsl(42 22% 92% / 0.96), hsl(38 16% 90% / 0.92));
+    background: linear-gradient(180deg, hsl(0 0% 100% / 0.94), hsl(220 14% 95% / 0.92));
     box-shadow:
-      inset 0 0 0 1px hsl(34 16% 78% / 0.22),
-      0 16px 34px hsl(28 18% 38% / 0.045);
+      inset 0 1px 0 hsl(0 0% 100% / 0.95),
+      0 8px 18px hsl(220 14% 76% / 0.12);
   }
 
   .dark .session-list-item[data-active="true"] {
-    background: hsl(28 10% 22% / 0.92);
-    box-shadow: inset 0 0 0 1px hsl(34 18% 88% / 0.06);
+    background: linear-gradient(180deg, hsl(220 18% 23% / 0.76), hsl(220 16% 17% / 0.72));
+    box-shadow:
+      inset 0 1px 0 hsl(220 20% 98% / 0.05),
+      0 14px 30px hsl(222 28% 2% / 0.18);
   }
 
   .session-list-item-button-active,
   .session-list-item-title-active {
-    color: hsl(var(--foreground) / 0.94);
+    color: hsl(var(--foreground) / 0.96);
   }
 
   .session-list-item-meta-active {
-    color: hsl(var(--foreground) / 0.62);
+    color: hsl(var(--foreground) / 0.52);
   }
 
   .dark .session-list-item-button-active,
   .dark .session-list-item-title-active {
-    color: hsl(34 18% 92% / 0.94);
+    color: hsl(220 20% 96% / 0.96);
   }
 
   .dark .session-list-item-meta-active {
-    color: hsl(34 18% 92% / 0.68);
+    color: hsl(220 18% 92% / 0.56);
   }
 
   .session-list-item[data-active="false"]:hover {
@@ -402,22 +410,27 @@
   .session-list-item {
     transition:
       background-color var(--echo-motion-fast) var(--echo-ease-standard),
-      box-shadow var(--echo-motion-fast) var(--echo-ease-standard);
+      box-shadow var(--echo-motion-fast) var(--echo-ease-standard),
+      transform var(--echo-motion-fast) var(--echo-ease-standard);
+  }
+
+  .session-list-item[data-active="false"]:hover {
+    transform: translateY(-1px);
   }
 
   .floating-sidebar-toggle {
-    background: hsl(222 18% 18% / 0.74);
-    border: 1px solid hsl(220 24% 92% / 0.1);
+    background: hsl(0 0% 100% / 0.76);
+    border: 1px solid hsl(220 14% 80% / 0.24);
     box-shadow: var(--echo-floating-toggle-shadow);
     transition:
       background-color var(--echo-motion-fast) var(--echo-ease-standard),
       color var(--echo-motion-fast) var(--echo-ease-standard),
       box-shadow var(--echo-motion-fast) var(--echo-ease-standard);
-    backdrop-filter: blur(22px);
+    backdrop-filter: blur(20px);
   }
 
   .floating-sidebar-toggle:hover {
-    background: hsl(222 18% 20% / 0.86);
+    background: hsl(0 0% 100% / 0.94);
   }
 
   .echo-card {
@@ -467,27 +480,28 @@
 
   .chat-home-stage {
     background:
-      radial-gradient(circle at 50% 0%, hsl(208 74% 70% / 0.08), transparent 24%),
-      linear-gradient(180deg, hsl(222 20% 14% / 0.34), transparent 22%);
+      radial-gradient(circle at 50% -4%, hsl(0 0% 100% / 0.92), transparent 20%),
+      radial-gradient(circle at 92% 8%, hsl(220 16% 92% / 0.46), transparent 24%),
+      linear-gradient(180deg, hsl(220 18% 97% / 0.7), transparent 24%);
   }
 
   .chat-home-toolbar-shell {
     margin-inline: auto;
     width: 100%;
     max-width: var(--echo-topbar-max-width);
-    border: 1px solid hsl(220 24% 92% / 0.08);
-    border-radius: 22px;
+    border: 1px solid hsl(220 14% 82% / 0.18);
+    border-radius: 24px;
     background:
-      linear-gradient(180deg, hsl(222 18% 16% / var(--echo-toolbar-bg-alpha)), hsl(222 18% 12% / calc(var(--echo-toolbar-bg-alpha) + 0.08)));
+      linear-gradient(180deg, hsl(0 0% 100% / 0.82), hsl(220 18% 97% / 0.78));
     box-shadow:
-      inset 0 1px 0 hsl(220 30% 96% / 0.08),
-      0 18px 36px hsl(222 26% 4% / 0.18);
-    backdrop-filter: blur(calc(var(--echo-shell-glass-blur) - 4px));
+      inset 0 1px 0 hsl(0 0% 100% / 0.92),
+      0 14px 30px hsl(220 16% 76% / 0.1);
+    backdrop-filter: blur(calc(var(--echo-shell-glass-blur) - 6px));
   }
 
   .chat-reading-stage-meta {
-    border-bottom: 1px solid hsl(220 20% 88% / 0.08);
-    padding-bottom: 1rem;
+    border-bottom: 1px solid hsl(220 14% 82% / 0.22);
+    padding-bottom: 0.9rem;
   }
 
   .chat-message-column-user {
