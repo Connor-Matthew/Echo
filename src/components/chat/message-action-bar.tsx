@@ -80,7 +80,7 @@ export const MessageActionBar = ({
 
 export const getMessageActionBarClassName = (isUser: boolean) =>
   [
-    "mt-0.5 flex w-fit max-w-full items-center gap-1 text-muted-foreground/88 transition-[opacity,transform] duration-150 md:translate-y-1 md:opacity-0 md:group-hover:translate-y-0 md:group-hover:opacity-100 md:group-focus-within:translate-y-0 md:group-focus-within:opacity-100",
+    "mt-0 flex w-fit max-w-full items-center gap-1 text-muted-foreground/88 transition-[opacity,transform] duration-150 md:translate-y-1 md:opacity-0 md:group-hover:translate-y-0 md:group-hover:opacity-100 md:group-focus-within:translate-y-0 md:group-focus-within:opacity-100",
     isUser ? "ml-auto justify-end" : "justify-start"
   ].join(" ");
 

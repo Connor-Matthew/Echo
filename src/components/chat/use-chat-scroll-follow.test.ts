@@ -82,7 +82,8 @@ describe("components/chat/use-chat-scroll-follow helpers", () => {
       getAnchoredMessageTargetScrollTop({
         messageOffsetTop: 620,
         contentOffsetTop: 0,
-        contentPaddingTop: 20
+        contentPaddingTop: 20,
+        preservedOffset: null
       }),
       600
     );
@@ -93,9 +94,22 @@ describe("components/chat/use-chat-scroll-follow helpers", () => {
       getAnchoredMessageTargetScrollTop({
         messageOffsetTop: 620,
         contentOffsetTop: 48,
-        contentPaddingTop: 20
+        contentPaddingTop: 20,
+        preservedOffset: null
       }),
       552
+    );
+  });
+
+  it("preserves the user's current viewport offset while assistant replies stream in", () => {
+    assert.equal(
+      getAnchoredMessageTargetScrollTop({
+        messageOffsetTop: 620,
+        contentOffsetTop: 48,
+        contentPaddingTop: 20,
+        preservedOffset: 96
+      }),
+      456
     );
   });
 

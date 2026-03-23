@@ -14,7 +14,7 @@ describe("components/chat/conversation-viewport layout", () => {
 
     assert.match(layoutClassNames.scrollContent, /\bchat-scroll-content\b/);
     assert.match(layoutClassNames.scrollContent, /\bmx-auto\b/);
-    assert.match(layoutClassNames.scrollContent, /\bgap-14\b/);
+    assert.match(layoutClassNames.scrollContent, /\bgap-6\b/);
     assert.match(layoutClassNames.scrollContent, /max-w-\[1240px\]/);
     assert.match(layoutClassNames.scrollContent, /\bpb-80\b/);
     assert.match(layoutClassNames.scrollContent, /\bpt-10\b/);

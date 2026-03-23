@@ -116,7 +116,7 @@ export const getComposerToolMenuItemLabels = ({
 
 export const getComposerToolMenuClassNames = () => ({
   trigger:
-    "h-10 w-10 rounded-full border border-slate-300/60 bg-white/80 text-foreground/66 shadow-[0_8px_18px_rgba(148,163,184,0.12)] backdrop-blur-xl hover:bg-white hover:text-foreground",
+    "h-8 w-8 rounded-full text-foreground/58 transition-colors hover:bg-slate-100/70 hover:text-foreground",
   surface:
     "absolute bottom-full left-0 z-[80] mb-3 w-[340px] rounded-[24px] border border-slate-200 bg-white/92 p-3 shadow-[0_18px_40px_rgba(148,163,184,0.16)] backdrop-blur-2xl",
   section: "flex flex-col gap-0",
@@ -140,8 +140,8 @@ export const getComposerFooterClassName = ({
   minimalControls: boolean;
 }) =>
   minimalControls
-    ? "mt-3 flex items-center justify-between gap-3"
-    : "mt-3 flex items-center justify-between gap-3 border-t border-slate-200/80 pt-3";
+    ? "mt-2 flex items-center justify-between gap-2.5"
+    : "mt-2 flex items-center justify-between gap-2.5 border-t border-slate-200/55 pt-2";
 
 export const getComposerContainerClassName = ({
   minimalControls
@@ -149,10 +149,10 @@ export const getComposerContainerClassName = ({
   minimalControls: boolean;
 }) =>
   cn(
-    "flex w-full flex-col border transition-[border-color,box-shadow,background-color,transform] duration-200",
+    "flex w-full flex-col transition-[border-color,box-shadow,background-color,transform] duration-200",
     minimalControls
-      ? "min-h-[124px] rounded-[34px] border-slate-200/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.92),rgba(246,248,251,0.9))] px-6 py-4 shadow-[0_18px_36px_rgba(148,163,184,0.14),inset_0_1px_0_rgba(255,255,255,0.9)] backdrop-blur-[24px] supports-[backdrop-filter]:bg-[linear-gradient(180deg,rgba(255,255,255,0.84),rgba(246,248,251,0.82))] sm:px-7"
-      : "rounded-[28px] border-slate-200/80 bg-white/88 px-5 py-4 shadow-[0_12px_28px_rgba(148,163,184,0.12)] backdrop-blur-2xl sm:px-7 sm:py-5"
+      ? "min-h-[88px] rounded-[24px] border-2 border-slate-300/80 bg-transparent px-4 py-3 sm:px-5"
+      : "rounded-[20px] border-2 border-slate-300/80 bg-transparent px-4 py-3 sm:px-5 sm:py-4"
   );
 
 export const getComposerTextareaClassName = ({
@@ -163,26 +163,26 @@ export const getComposerTextareaClassName = ({
   cn(
     "resize-none border-0 bg-transparent px-0 py-0 text-[16px] text-foreground shadow-none placeholder:text-muted-foreground/58 focus-visible:ring-0",
     minimalControls
-      ? "h-[56px] min-h-[56px] text-[16px] leading-[1.72] placeholder:text-[16px]"
-      : "h-[44px] min-h-[44px] leading-[1.85]"
+      ? "h-[40px] min-h-[40px] text-[16px] leading-[1.72] placeholder:text-[16px]"
+      : "h-[40px] min-h-[40px] leading-[1.85]"
   );
 
 export const getComposerMinimalControlClassNames = () => ({
   trigger:
-    "inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200/80 bg-white/62 p-0 text-foreground/62 transition-colors hover:bg-white hover:text-foreground focus-visible:outline-none focus-visible:ring-0 disabled:pointer-events-none disabled:opacity-45",
-  modelWrap: "relative shrink-0 rounded-full border border-slate-200/80 bg-slate-50/90 px-4 pr-9 shadow-[inset_0_1px_0_rgba(255,255,255,0.92)] backdrop-blur-xl",
+    "inline-flex h-8 w-8 items-center justify-center rounded-full bg-transparent p-0 text-foreground/56 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-0 disabled:pointer-events-none disabled:opacity-45",
+  modelWrap: "relative shrink-0 rounded-full px-2.5 pr-7",
   modelSelect:
-    "h-9 w-auto max-w-[220px] appearance-none rounded-full border-0 bg-transparent px-0 pr-4 text-[12px] font-semibold uppercase tracking-[0.12em] text-foreground/70 focus-visible:outline-none focus-visible:ring-0 disabled:opacity-70",
+    "h-8 w-auto max-w-[180px] appearance-none rounded-full border-0 bg-transparent px-0 pr-3 text-[11px] font-medium uppercase tracking-[0.08em] text-foreground/64 focus-visible:outline-none focus-visible:ring-0 disabled:opacity-70",
   modelChevron:
-    "pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/72",
+    "pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground/68",
   actionButton:
-    "inline-flex h-12 w-12 items-center justify-center rounded-full border border-slate-300/90 bg-[linear-gradient(180deg,rgba(255,255,255,0.98),rgba(238,242,247,0.96))] text-foreground shadow-[0_12px_24px_rgba(148,163,184,0.16),inset_0_1px_0_rgba(255,255,255,0.96)] backdrop-blur-xl transition-all hover:-translate-y-[1px] hover:bg-[linear-gradient(180deg,rgba(255,255,255,1),rgba(243,246,250,0.98))] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:bg-secondary disabled:text-muted-foreground/70 disabled:shadow-none",
+    "inline-flex h-9 w-9 items-center justify-center rounded-full bg-transparent text-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:text-muted-foreground/70",
   stopButton:
-    "inline-flex h-12 w-12 items-center justify-center rounded-full border border-slate-200/90 bg-white/90 text-destructive shadow-[0_10px_20px_rgba(148,163,184,0.12)] backdrop-blur-xl transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-45"
+    "inline-flex h-9 w-9 items-center justify-center rounded-full bg-transparent text-destructive transition-colors hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-45"
 });
 
 const DEFAULT_MIN_TEXTAREA_HEIGHT = 40;
-const MINIMAL_MIN_TEXTAREA_HEIGHT = 60;
+const MINIMAL_MIN_TEXTAREA_HEIGHT = 40;
 const MAX_TEXTAREA_ROWS = 4;
 const CONTEXT_WINDOW_OPTIONS: Array<{ value: ChatContextWindow; label: string }> = [
   { value: 5, label: "5" },
@@ -733,11 +733,11 @@ export const Composer = ({
               <CapabilityIndicators modelCapabilities={modelCapabilities} usageLabel={usageLabel} />
             ) : null}
           </div>
-          <div className={cn("flex shrink-0 items-center", minimalControls ? "ml-1.5 gap-1.5" : "ml-2 gap-2")}>
+          <div className={cn("flex shrink-0 items-center", minimalControls ? "ml-1 gap-1" : "ml-1.5 gap-1.5")}>
             <div
               className={cn(
                 "relative shrink-0",
-                minimalControls ? minimalControlClassNames.modelWrap : "w-[156px] sm:w-[184px]"
+                minimalControls ? minimalControlClassNames.modelWrap : "w-[140px] sm:w-[168px]"
               )}
             >
               <select
@@ -748,7 +748,7 @@ export const Composer = ({
                 className={
                   minimalControls
                     ? minimalControlClassNames.modelSelect
-                    : "h-10 w-full appearance-none overflow-hidden text-ellipsis whitespace-nowrap rounded-[14px] border border-border/70 bg-background px-4 pr-9 text-[12px] font-medium text-foreground/78 hover:bg-accent/28 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-70"
+                    : "h-8 w-full appearance-none overflow-hidden text-ellipsis whitespace-nowrap rounded-[12px] border-0 bg-transparent px-2 pr-7 text-[11px] font-medium text-foreground/70 hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-70"
                 }
               >
                 {!hasSelectedModel ? (
@@ -764,7 +764,7 @@ export const Composer = ({
                 className={
                   minimalControls
                     ? minimalControlClassNames.modelChevron
-                    : "pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                    : "pointer-events-none absolute right-1.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
                 }
               />
             </div>
@@ -782,7 +782,7 @@ export const Composer = ({
                 <Button
                   type="button"
                   variant="outline"
-                  className="h-10 w-10 rounded-[14px] border-destructive/35 bg-transparent p-0 text-destructive hover:bg-destructive/8"
+                  className="h-9 w-9 rounded-full border-0 bg-transparent p-0 text-destructive hover:bg-destructive/8"
                   onClick={onStop}
                   aria-label="停止生成"
                 >
@@ -805,7 +805,7 @@ export const Composer = ({
                   type="button"
                   onClick={submit}
                   disabled={disabled || !canSubmit}
-                  className="h-10 w-10 rounded-[14px] p-0 disabled:border-border/40 disabled:bg-secondary disabled:text-muted-foreground"
+                  className="h-9 w-9 rounded-full border-0 bg-transparent p-0 hover:bg-slate-100/80 disabled:bg-transparent disabled:text-muted-foreground"
                   aria-label="发送消息"
                 >
                   <ArrowUp className="h-4 w-4" />

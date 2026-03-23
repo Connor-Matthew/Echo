@@ -4,6 +4,7 @@ import {
   getComposerChromeVisibility,
   getComposerContainerClassName,
   getComposerMinimalControlClassNames,
+  getComposerTextareaClassName,
   getComposerToolMenuClassNames,
   getComposerToolMenuItemLabels
 } from "./Composer";
@@ -61,10 +62,10 @@ describe("components/Composer tool menu classes", () => {
   it("uses a light floating sheet style for the plus-button menu", () => {
     const classNames = getComposerToolMenuClassNames();
 
-    assert.match(classNames.trigger, /\bh-10\b/);
-    assert.match(classNames.trigger, /\bw-10\b/);
-    assert.match(classNames.trigger, /border-slate-300\/60/);
+    assert.match(classNames.trigger, /\bh-8\b/);
+    assert.match(classNames.trigger, /\bw-8\b/);
     assert.match(classNames.trigger, /rounded-full/);
+    assert.doesNotMatch(classNames.trigger, /bg-white\/80/);
     assert.match(classNames.surface, /w-\[340px\]/);
     assert.match(classNames.surface, /rounded-\[24px\]/);
     assert.match(classNames.surface, /bg-white\/92/);
@@ -77,25 +78,42 @@ describe("components/Composer tool menu classes", () => {
 });
 
 describe("components/Composer container classes", () => {
-  it("uses a silver-glass shell in minimal mode", () => {
+  it("uses a lighter minimal shell without a wrapped background", () => {
     const className = getComposerContainerClassName({ minimalControls: true });
 
-    assert.match(className, /rounded-\[34px\]/);
-    assert.match(className, /border-slate-200\/90/);
-    assert.match(className, /min-h-\[124px\]/);
-    assert.match(className, /shadow-\[0_18px_36px_rgba\(148,163,184,0\.14\)/);
+    assert.match(className, /rounded-\[24px\]/);
+    assert.match(className, /min-h-\[88px\]/);
+    assert.match(className, /border-2/);
+    assert.match(className, /border-slate-300\/80/);
+    assert.doesNotMatch(className, /bg-\[linear-gradient/);
+    assert.doesNotMatch(className, /shadow-\[/);
   });
 
-  it("keeps a blurred glass treatment around the landing composer shell", () => {
+  it("keeps the minimal shell visually plain", () => {
     const className = getComposerContainerClassName({ minimalControls: true });
-    const tokens = className.split(/\s+/);
 
-    assert.ok(tokens.includes("backdrop-blur-[24px]"));
-    assert.ok(
-      tokens.includes(
-        "supports-[backdrop-filter]:bg-[linear-gradient(180deg,rgba(255,255,255,0.84),rgba(246,248,251,0.82))]"
-      )
-    );
+    assert.doesNotMatch(className, /backdrop-blur-\[24px\]/);
+    assert.doesNotMatch(className, /supports-\[backdrop-filter\]:bg-\[linear-gradient/);
+  });
+});
+
+describe("components/Composer textarea classes", () => {
+  it("uses a 40px textarea height in minimal mode", () => {
+    const className = getComposerTextareaClassName({ minimalControls: true });
+
+    assert.match(className, /h-\[40px\]/);
+    assert.match(className, /min-h-\[40px\]/);
+    assert.doesNotMatch(className, /h-\[56px\]/);
+    assert.doesNotMatch(className, /min-h-\[56px\]/);
+  });
+
+  it("uses a 40px textarea height in standard mode", () => {
+    const className = getComposerTextareaClassName({ minimalControls: false });
+
+    assert.match(className, /h-\[40px\]/);
+    assert.match(className, /min-h-\[40px\]/);
+    assert.doesNotMatch(className, /h-\[44px\]/);
+    assert.doesNotMatch(className, /min-h-\[44px\]/);
   });
 });
 
@@ -104,18 +122,21 @@ describe("components/Composer minimal controls", () => {
     const classNames = getComposerMinimalControlClassNames();
 
     assert.ok(classNames.trigger.includes("rounded-full"));
-    assert.ok(classNames.trigger.includes("h-10"));
-    assert.ok(classNames.trigger.includes("w-10"));
+    assert.ok(classNames.trigger.includes("h-8"));
+    assert.ok(classNames.trigger.includes("w-8"));
+    assert.ok(classNames.trigger.includes("bg-transparent"));
     assert.ok(classNames.modelWrap.includes("rounded-full"));
-    assert.ok(classNames.modelWrap.includes("border-slate-200/80"));
+    assert.ok(!classNames.modelWrap.includes("border-slate-200/80"));
     assert.ok(classNames.modelSelect.includes("rounded-full"));
-    assert.ok(classNames.actionButton.includes("h-12"));
-    assert.ok(classNames.actionButton.includes("w-12"));
+    assert.ok(classNames.actionButton.includes("h-9"));
+    assert.ok(classNames.actionButton.includes("w-9"));
     assert.ok(classNames.actionButton.includes("rounded-full"));
-    assert.ok(classNames.actionButton.includes("bg-[linear-gradient"));
-    assert.ok(classNames.stopButton.includes("h-12"));
-    assert.ok(classNames.stopButton.includes("w-12"));
+    assert.ok(classNames.actionButton.includes("bg-transparent"));
+    assert.ok(!classNames.actionButton.includes("bg-[linear-gradient"));
+    assert.ok(classNames.stopButton.includes("h-9"));
+    assert.ok(classNames.stopButton.includes("w-9"));
     assert.ok(classNames.stopButton.includes("rounded-full"));
-    assert.ok(classNames.stopButton.includes("bg-white/90"));
+    assert.ok(classNames.stopButton.includes("bg-transparent"));
+    assert.ok(!classNames.stopButton.includes("bg-white/90"));
   });
 });

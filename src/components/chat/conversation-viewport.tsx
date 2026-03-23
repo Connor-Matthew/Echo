@@ -16,7 +16,7 @@ type ConversationViewportProps = {
 export const getConversationViewportLayoutClassNames = () => ({
   scrollContainer: "chat-scroll-stage echo-scrollbar-minimal h-full w-full overflow-auto",
   scrollContent:
-    "chat-scroll-content mx-auto flex w-full max-w-[1240px] flex-col gap-14 px-5 pb-80 pt-10 sm:px-8 md:px-12"
+    "chat-scroll-content mx-auto flex w-full max-w-[1240px] flex-col gap-6 px-5 pb-80 pt-10 sm:px-8 md:px-12"
 });
 
 export const ConversationViewport = ({
@@ -48,10 +48,16 @@ export const ConversationViewport = ({
   const layoutClassNames = getConversationViewportLayoutClassNames();
 
   const renderMessageFrames = (items: ChatMessage[], isTopSnapActive: boolean) =>
-    items.map((message) => (
+    items.map((message, index) => {
+      const previousMessage = index > 0 ? items[index - 1] : null;
+      const compactSpacingAbove =
+        previousMessage?.role === "user" && message.role === "assistant";
+
+      return (
       <MessageFrame
         key={message.id}
         message={message}
+        compactSpacingAbove={compactSpacingAbove}
         isGenerating={isGenerating}
         isTopSnapActive={isTopSnapActive}
         activeGeneratingAssistantId={activeGeneratingAssistantId}
@@ -63,7 +69,8 @@ export const ConversationViewport = ({
         onDeleteMessage={onDeleteMessage}
         onResendMessage={onResendMessage}
       />
-    ));
+      );
+    });
   if (!isConfigured) {
     return (
       <section className="paper-conversation-stage mx-auto flex h-full w-full items-center justify-center px-4 py-6 sm:px-5 sm:py-7 md:px-6 md:py-8">

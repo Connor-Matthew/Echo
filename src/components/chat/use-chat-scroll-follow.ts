@@ -102,10 +102,14 @@ export const getAnchoredMessageTargetScrollTop = (payload: {
   messageOffsetTop: number;
   contentOffsetTop: number;
   contentPaddingTop: number;
+  preservedOffset?: number | null;
 }) =>
   Math.max(
     0,
-    payload.messageOffsetTop - payload.contentOffsetTop - payload.contentPaddingTop
+    payload.messageOffsetTop -
+      payload.contentOffsetTop -
+      payload.contentPaddingTop -
+      (payload.preservedOffset ?? 0)
   );
 
 export const getTopSnapBottomSpacerHeight = (payload: {
@@ -248,6 +252,7 @@ export const useChatScrollFollow = ({
   const shouldAutoScrollRef = useRef(true);
   const scrollModeRef = useRef<ChatScrollMode>("idle_follow_bottom");
   const programmaticScrollTargetRef = useRef<number | null>(null);
+  const anchoredViewportOffsetRef = useRef<number | null>(null);
   const [anchoredUserMessageId, setAnchoredUserMessageId] = useState<string | null>(null);
 
   const activeGeneratingAssistantId = useMemo(
@@ -275,6 +280,7 @@ export const useChatScrollFollow = ({
 
   const clearAnchor = () => {
     anchoredUserMessageIdRef.current = null;
+    anchoredViewportOffsetRef.current = null;
     setAnchoredUserMessageId(null);
     // Do NOT clear the bottom spacer here. The spacer is what makes the current
     // scroll position reachable. Removing it immediately would shrink scrollHeight
@@ -309,13 +315,20 @@ export const useChatScrollFollow = ({
 
     const contentPaddingTop =
       Number.parseFloat(window.getComputedStyle(content).paddingTop || "0") || 0;
+    const messageRect = messageElement.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    const preservedOffset = anchoredViewportOffsetRef.current;
+    const nextPreservedOffset =
+      preservedOffset ?? Math.max(0, messageRect.top - containerRect.top - container.clientTop);
     // Use layout coordinates relative to the scroll content so entry transforms
     // and outer container offsets do not skew the anchor target.
     const targetTop = getAnchoredMessageTargetScrollTop({
       messageOffsetTop: messageElement.offsetTop,
       contentOffsetTop: content.offsetTop,
-      contentPaddingTop
+      contentPaddingTop,
+      preservedOffset: nextPreservedOffset
     });
+    anchoredViewportOffsetRef.current = nextPreservedOffset;
     const topDelta = container.scrollTop - targetTop;
 
     const currentBottomSpacerHeight =
@@ -459,6 +472,7 @@ export const useChatScrollFollow = ({
 
     if (nextAction === "anchor-latest-user-message" && latestUserMessageId) {
       anchoredUserMessageIdRef.current = latestUserMessageId;
+      anchoredViewportOffsetRef.current = null;
       setAnchoredUserMessageId(latestUserMessageId);
       shouldAutoScrollRef.current = mode === "agent";
       scrollModeRef.current = "anchored_latest_user";

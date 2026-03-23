@@ -12,6 +12,7 @@ import type { ChatMessage, MarkdownRenderMode } from "../../shared/contracts";
 
 type MessageFrameProps = {
   message: ChatMessage;
+  compactSpacingAbove?: boolean;
   isGenerating: boolean;
   isTopSnapActive: boolean;
   activeGeneratingAssistantId?: string | null;
@@ -22,6 +23,7 @@ type MessageFrameProps = {
 
 const MessageFrameInner = ({
   message,
+  compactSpacingAbove = false,
   isGenerating,
   isTopSnapActive,
   activeGeneratingAssistantId,
@@ -77,6 +79,8 @@ const MessageFrameInner = ({
       data-chat-message-id={message.id}
       data-chat-message-role={message.role}
       className={`group paper-message-enter flex items-start gap-3 ${
+        compactSpacingAbove ? "mt-[-6px]" : ""
+      } ${
         renderContext.isUser ? "justify-end" : "justify-start"
       }`}
     >
@@ -123,8 +127,8 @@ export const getMessageSurfaceClassName = (isUser: boolean) =>
   [
     "max-w-full break-words transition-opacity duration-150",
     isUser
-      ? "chat-message-surface-user inline-block w-fit rounded-[28px] border border-slate-200/95 bg-[linear-gradient(180deg,rgba(248,250,252,0.98),rgba(238,242,247,0.96))] px-5 py-3.5 shadow-[0_8px_18px_rgba(148,163,184,0.08)] backdrop-blur-xl sm:px-6"
-      : "chat-message-surface-assistant w-full rounded-[32px] border border-slate-200/95 bg-[linear-gradient(180deg,rgba(248,250,252,0.98),rgba(238,242,247,0.96))] px-7 py-6 shadow-[0_10px_20px_rgba(148,163,184,0.08)] backdrop-blur-xl sm:px-9 sm:py-7"
+      ? "chat-message-surface-user inline-block w-fit rounded-[22px] border border-white/[0.09] bg-black/10 px-4 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-xl sm:px-4.5"
+      : "chat-message-surface-assistant w-full"
   ].join(" ");
 
 const areMessageFramePropsEqual = (prev: MessageFrameProps, next: MessageFrameProps) => {
